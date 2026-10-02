@@ -1,11 +1,35 @@
+# Secrets: never commit keys (.env.example is the template)
 .env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
-*.pyc
-.pytest_cache/
+*.py[cod]
 *.egg-info/
 .venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local data: request logs, benchmark responses and reports
 data/
 benchmarks/results/
+*.log
+
+# Desktop build output (rebuild with: python -m scripts.build_desktop)
 build/
 dist/
 *.spec
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
