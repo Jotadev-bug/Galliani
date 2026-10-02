@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Router</title>
+<style>
+:root {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-2: #f0efec;
+  --border: #e3e1dc;
+  --text: #1d1c1a;
+  --muted: #6b6862;
+  --faint: #9a968f;
+  --accent: #3b5bdb;
+  --accent-text: #ffffff;
+  --accent-soft: #e8ecfb;
+  --good: #2f7d4f;
+  --good-soft: #e5f2ea;
+  --warn: #9a5b00;
+  --warn-soft: #fbf0dc;
+  --bad: #b3261e;
+  --bad-soft: #fbe7e5;
+  --code-bg: #f3f2ef;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+  --radius: 14px;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141413;
+    --surface: #1c1c1a;
+    --surface-2: #252523;
+    --border: #33322f;
+    --text: #ecebe7;
+    --muted: #a3a09a;
+    --faint: #75726c;
+    --accent: #7b93f0;
+    --accent-text: #0f1220;
+    --accent-soft: #232a45;
+    --good: #6fc392;
+    --good-soft: #1d3326;
+    --warn: #e0a54a;
+    --warn-soft: #3a2c14;
+    --bad: #f08a80;
+    --bad-soft: #3d1f1c;
+    --code-bg: #232321;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased;
+  display: flex; flex-direction: column;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- header */
+header {
+  position: sticky; top: 0; z-index: 5;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.bar { max-width: 860px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
+.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: none; }
+.brand b { font-size: 17px; letter-spacing: -.01em; }
+.brand span { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spacer { flex: 1; }
+.savings {
+  display: none; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  background: var(--good-soft); color: var(--good); font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.savings.show { display: inline-flex; }
+.icon-btn {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 10px;
+  height: 34px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+}
+.icon-btn:hover { background: var(--surface-2); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+.dot.ok { background: var(--good); }
+
+/* ---------------------------------------------------------------- thread */
+main { flex: 1; width: 100%; max-width: 860px; margin: 0 auto; padding: 24px 16px 8px; }
+.empty { text-align: center; padding: 8vh 0 24px; }
+.empty h1 { font-size: clamp(24px, 4vw, 34px); letter-spacing: -.02em; margin: 0 0 8px; }
+.empty p { color: var(--muted); margin: 0 auto 28px; max-width: 520px; }
+.examples { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; text-align: left; }
+@media (max-width: 560px) { .examples { grid-template-columns: 1fr; } }
+.example {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding: 12px 14px;
+  text-align: left; box-shadow: var(--shadow);
+}
+.example:hover { border-color: var(--accent); }
+.example small { display: block; color: var(--faint); font-size: 12px; margin-bottom: 2px; text-transform: uppercase; letter-spacing: .04em; }
+
+.msg { margin: 0 0 22px; }
+.msg.user { display: flex; justify-content: flex-end; }
+.bubble {
+  background: var(--accent-soft); border-radius: var(--radius) var(--radius) 4px var(--radius);
+  padding: 10px 14px; max-width: min(640px, 92%); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.answer {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.answer .body { padding: 14px 18px; overflow-wrap: anywhere; }
+.body > :first-child { margin-top: 0; }
+.body > :last-child { margin-bottom: 0; }
+.body p { margin: 0 0 .8em; }
+.body h1, .body h2, .body h3, .body h4 { margin: 1.1em 0 .5em; line-height: 1.3; }
+.body h1 { font-size: 1.3em; } .body h2 { font-size: 1.15em; } .body h3, .body h4 { font-size: 1em; }
+.body ul, .body ol { margin: 0 0 .8em; padding-left: 1.4em; }
+.body code, .tech { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+.body code { font-family: var(--mono); font-size: .88em; background: var(--code-bg); padding: .1em .35em; border-radius: 5px; }
+.body pre { background: var(--code-bg); border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: 0 0 .9em; }
+.body pre code { background: none; padding: 0; font-size: 13px; line-height: 1.5; }
+.body a { color: var(--accent); }
+.body blockquote { margin: 0 0 .8em; padding-left: 12px; border-left: 3px solid var(--border); color: var(--muted); }
+
+/* ---------------------------------------------------------------- route card */
+.route {
+  border-top: 1px solid var(--border); background: var(--surface-2);
+  padding: 10px 18px; font-size: 13px; color: var(--muted);
+}
+.route.standalone { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); padding: 14px 18px; }
+.route-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px 2px 8px;
+}
+.route.standalone .chip { background: var(--surface-2); }
+.vendor { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.v-anthropic { background: #d97757; } .v-google { background: #4285f4; } .v-openai { background: #10a37f; }
+.metric b { color: var(--text); font-weight: 600; }
+.saved { color: var(--good); font-weight: 600; }
+.badge { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+.why-btn { border: 0; background: none; color: var(--accent); padding: 0; font-size: 13px; margin-left: auto; }
+.why { display: none; margin-top: 10px; }
+.why.open { display: block; }
+.reason { color: var(--text); margin: 0 0 4px; }
+.tech { font-family: var(--mono); font-size: 11px; color: var(--faint); margin: 0 0 12px; overflow-wrap: anywhere; }
+.first-tag { font-size: 11px; color: var(--faint); font-weight: 400; margin-left: 6px; }
+.options { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.options td { padding: 4px 0; vertical-align: middle; }
+.options td.name { width: 42%; padding-right: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; }
+.options td.cost { text-align: right; width: 84px; padding-left: 10px; white-space: nowrap; }
+.options tr.picked td.name { color: var(--text); font-weight: 600; }
+.track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.fill { height: 100%; background: var(--faint); border-radius: 3px; }
+tr.picked .fill { background: var(--accent); }
+.run-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+.error {
+  border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent); background: var(--bad-soft); color: var(--bad);
+  border-radius: var(--radius); padding: 12px 16px; font-size: 14px;
+}
+.error pre { white-space: pre-wrap; font-size: 12px; margin: 8px 0 0; font-family: var(--mono); }
+.thinking { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; padding: 6px 2px; }
+.spin { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.4s; } }
+
+/* ---------------------------------------------------------------- composer */
+.composer-wrap { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg) 28%); padding: 16px 0 18px; }
+.composer {
+  max-width: 860px; margin: 0 auto; padding: 0 16px;
+}
+.box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow);
+  padding: 10px 10px 10px 14px;
+}
+.box:focus-within { border-color: var(--accent); }
+textarea {
+  width: 100%; border: 0; outline: 0; resize: none; background: transparent;
+  min-height: 26px; max-height: 40vh; padding: 4px 0; line-height: 1.5;
+}
+textarea::placeholder { color: var(--faint); }
+textarea:focus-visible { outline: none; }
+.controls { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.modes { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; }
+.modes button {
+  border: 0; background: none; padding: 4px 10px; border-radius: 8px; font-size: 13px; color: var(--muted);
+}
+.modes button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.btn {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 10px; height: 34px; padding: 0 12px; font-size: 13px;
+}
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; padding: 0 16px; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn:disabled { opacity: .5; cursor: default; }
+.hint { color: var(--faint); font-size: 12px; text-align: center; margin-top: 8px; }
+
+/* ---------------------------------------------------------------- settings */
+dialog {
+  border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text);
+  padding: 0; width: min(560px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+dialog::backdrop { background: rgba(0,0,0,.35); }
+.dlg { padding: 20px 22px; }
+.dlg h2 { margin: 0 0 4px; font-size: 18px; }
+.dlg p { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+.field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.field input {
+  width: 100%; height: 38px; border: 1px solid var(--border); border-radius: 10px; padding: 0 12px; background: var(--bg);
+  font-family: var(--mono); font-size: 13px;
+}
+.field small { display: block; color: var(--muted); font-size: 12px; margin-top: 6px; }
+.models { margin-top: 18px; font-size: 13px; }
+.models h3 { font-size: 13px; margin: 0 0 8px; }
+.model-row { display: flex; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); align-items: baseline; }
+.model-row .n { font-weight: 600; flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.model-row .p { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dlg-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+
+@media (max-width: 560px) {
+  .brand span, .savings .spent, .hint { display: none; }
+  .savings { font-size: 12px; padding: 3px 8px; }
+  .answer .body, .route { padding-left: 14px; padding-right: 14px; }
+  .controls .btn.primary { margin-left: auto; }
+  .options td.name { width: 50%; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand"><b>Router</b><span>Write anything. Jev picks the right model.</span></div>
+    <div class="spacer"></div>
+    <div class="savings" id="savings" title="Compared with sending every message to the most capable model"></div>
+    <button class="icon-btn" id="settingsBtn" aria-label="Settings"><span class="dot" id="keyDot"></span>Settings</button>
+  </div>
+</header>
+
+<main id="thread" aria-live="polite">
+  <section class="empty" id="empty">
+    <h1>What do you want to do?</h1>
+    <p>Jev reads your request and sends it to the cheapest model that can handle it well. Every answer shows which model ran, what it cost, and why.</p>
+    <div class="examples" id="examples"></div>
+  </section>
+</main>
+
+<div class="composer-wrap">
+  <div class="composer">
+    <div class="box">
+      <textarea id="prompt" rows="1" placeholder="What do you want to do?" aria-label="Your request"></textarea>
+      <div class="controls">
+        <div class="modes" role="group" aria-label="Routing mode" id="modes"></div>
+        <div class="spacer"></div>
+        <button class="btn" id="previewBtn" title="See which model Jev would pick, without generating an answer">Preview route</button>
+        <button class="btn primary" id="sendBtn">Send</button>
+      </div>
+    </div>
+    <div class="hint">Enter to send · Shift+Enter for a new line · Preview costs about $0.0001</div>
+  </div>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" class="dlg">
+    <h2>Settings</h2>
+    <p>Requests run on your own OpenRouter account. Your key is stored only in this browser and sent only with your own requests; the server never saves it.</p>
+    <div class="field">
+      <label for="keyInput">OpenRouter API key</label>
+      <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-...">
+      <small id="keyNote"></small>
+    </div>
+    <div class="models">
+      <h3>Models Jev chooses from</h3>
+      <div id="modelList"></div>
+    </div>
+    <div class="dlg-actions">
+      <button class="btn" value="cancel">Close</button>
+      <button class="btn primary" id="saveKey" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch {} },
+};
+
+const MODES = [
+  ["auto", "Auto", "Cheapest model that will get it right"],
+  ["cheapest", "Cheapest", "Lowest price that is still acceptable"],
+  ["fastest", "Fastest", "Quickest model that is still acceptable"],
+  ["best", "Best", "Highest quality, regardless of price"],
+];
+const EXAMPLES = [
+  ["Quick", "Translate 'see you tomorrow at the station' into Japanese."],
+  ["Everyday", "Write a polite email asking my landlord to fix the heating this week."],
+  ["Coding", "Write a Python function that merges overlapping intervals, with tests."],
+  ["Hard", "How many squarefree integers are there between 1 and 1,000,000? Explain your method."],
+];
+
+const state = { messages: [], mode: store.get("mode") || "auto", config: null, busy: false, spent: 0, frontier: 0 };
+
+// ---------------------------------------------------------------- formatting
+function modelName(id) {
+  const name = id.split("/").pop();
+  return name.split("-").map((p) => {
+    if (p === "gpt") return "GPT";
+    if (/^\d/.test(p)) return p;
+    return p[0].toUpperCase() + p.slice(1);
+  }).join(" ").replace(/^GPT (\d)/, "GPT-$1");
+}
+function vendorOf(id) { return id.split("/")[0]; }
+function money(x) {
+  if (x === 0) return "$0";
+  if (x < 0.0001) return "<$0.0001";
+  if (x < 0.01) return "$" + x.toFixed(4);
+  return "$" + x.toFixed(x < 1 ? 3 : 2);
+}
+function esc(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function chip(id) {
+  return `<span class="chip"><span class="vendor v-${esc(vendorOf(id))}"></span>${esc(modelName(id))}</span>`;
+}
+
+// Minimal, safe markdown: HTML is escaped first; only a small set of constructs is rendered.
+function markdown(src) {
+  const blocks = [];
+  let text = src.replace(/```([\w+-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    blocks.push(`<pre><code>${esc(code.replace(/\n$/, ""))}</code></pre>`);
+    return `\u0000${blocks.length - 1}\u0000`;
+  });
+  text = esc(text);
+  const inline = (s) => s
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  const out = [];
+  let list = null;
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  let para = [];
+  const flush = () => { if (para.length) { out.push(`<p>${inline(para.join("<br>"))}</p>`); para = []; } };
+  for (const line of text.split("\n")) {
+    const block = line.match(/^\u0000(\d+)\u0000$/);
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    const ul = line.match(/^\s*[-*•]\s+(.*)$/);
+    const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    const quote = line.match(/^&gt;\s?(.*)$/);
+    if (block) { flush(); closeList(); out.push(blocks[+block[1]]); }
+    else if (h) { flush(); closeList(); out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); }
+    else if (ul || ol) {
+      flush();
+      const kind = ul ? "ul" : "ol";
+      if (list !== kind) { closeList(); out.push(`<${kind}>`); list = kind; }
+      out.push(`<li>${inline((ul || ol)[1])}</li>`);
+    }
+    else if (quote) { flush(); closeList(); out.push(`<blockquote>${inline(quote[1])}</blockquote>`); }
+    else if (!line.trim()) { flush(); closeList(); }
+    else { closeList(); para.push(line); }
+  }
+  flush(); closeList();
+  return out.join("").replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[+i]);
+}
+
+// ---------------------------------------------------------------- rendering
+function add(html, cls = "msg") {
+  $("empty")?.remove();
+  const el = document.createElement("div");
+  el.className = cls;
+  el.innerHTML = html;
+  $("thread").appendChild(el);
+  // Scroll the page, not the element: the sticky composer would otherwise cover the newest message.
+  requestAnimationFrame(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" }));
+  return el;
+}
+
+function routeDetails(route) {
+  if (!route) return "";
+  const top = Math.max(...route.options.map((o) => o.score), 0.0001);
+  const rows = route.options.map((o) => `
+    <tr class="${o.model_id === route.model_id ? "picked" : ""}">
+      <td class="name">${esc(modelName(o.model_id))}${route.escalated && o.model_id === route.first_choice ? '<span class="first-tag">Jev\'s first choice</span>' : ""}</td>
+      <td><div class="track"><div class="fill" style="width:${Math.max(2, (o.score / top) * 100).toFixed(0)}%"></div></div></td>
+      <td class="cost">~${money(o.est_cost)}</td>
+    </tr>`).join("");
+  return `<p class="reason">${friendlyReason(route)}</p>
+    <p class="tech" title="Raw routing signals">${esc(route.reason)}</p>
+    ${rows ? `<table class="options" aria-label="Jev's preference per model and estimated cost">${rows}</table>` : ""}
+    <p style="margin:10px 0 0;color:var(--faint)">Bars: how strongly Jev preferred each model. Costs are estimates for this request. Routing cost ${money(route.router_cost)}, ${route.router_ms.toFixed(0)} ms.</p>`;
+}
+
+const SIGNAL_WORDS = { reasoning: "reasoning", coding: "coding", writing: "writing quality", knowledge: "specialist knowledge", precision: "exactness" };
+
+function friendlyReason(route) {
+  if (route.router_error) return "Jev couldn't be reached, so the request went to a safe, capable default.";
+  const task = route.task_type ? route.task_type.replace("_", " ") : "general";
+  const demanding = Object.entries(route.signals || {}).filter(([, v]) => v >= 0.6).sort((a, b) => b[1] - a[1])
+    .map(([k]) => SIGNAL_WORDS[k]);
+  const needs = demanding.length ? `, needing strong ${demanding.slice(0, 2).join(" and ")}` : ", without heavy demands";
+  const picked = `<strong>${esc(modelName(route.model_id))}</strong>`;
+  if (route.escalated) {
+    return `Jev read this as a ${esc(task)} task${needs}. Its first choice was ${esc(modelName(route.first_choice))}, `
+      + `but it was only ${Math.round(route.confidence * 100)}% confident, so the request moves up to ${picked}, `
+      + `the strongest model Jev still considered a good fit.`;
+  }
+  return `Jev read this as a ${esc(task)} task${needs}, and picked ${picked} as the cheapest model likely to do it well.`;
+}
+
+function whyToggle(el) {
+  const btn = el.querySelector(".why-btn"), why = el.querySelector(".why");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const open = why.classList.toggle("open");
+    btn.textContent = open ? "Hide" : "Why this model?";
+    btn.setAttribute("aria-expanded", open);
+  });
+}
+
+function renderAnswer(res, route) {
+  const saved = res.frontier_cost - res.total_cost;
+  const pct = res.frontier_cost > 0 ? Math.round((saved / res.frontier_cost) * 100) : 0;
+  const fellBack = res.attempts.length > 1;
+  const conf = route ? `<span class="metric">Confidence <b>${Math.round(route.confidence * 100)}%</b></span>` : "";
+  const esc8 = route?.escalated ? `<span class="badge" title="Jev was unsure, so a stronger model was used">Escalated</span>` : "";
+  const fb = fellBack ? `<span class="badge" title="${esc(res.errors.join("\n"))}">Fallback after ${res.attempts.length - 1} failure${res.attempts.length > 2 ? "s" : ""}</span>` : "";
+  const savedTxt = res.model_id === res.frontier_model ? "" :
+    `<span class="metric saved">${pct}% cheaper than ${esc(modelName(res.frontier_model))} (${money(res.frontier_cost)})</span>`;
+  const el = add(`
+    <div class="answer">
+      <div class="body">${markdown(res.answer || "_(empty answer)_")}</div>
+      <div class="route">
+        <div class="route-line">
+          ${chip(res.model_id)} ${esc8} ${fb}
+          <span class="metric">Cost <b>${money(res.total_cost)}</b></span>
+          ${savedTxt}
+          ${conf}
+          <span class="metric">${(res.latency_ms / 1000).toFixed(1)} s</span>
+          ${route ? `<button class="why-btn" aria-expanded="false">Why this model?</button>` : ""}
+        </div>
+        ${route ? `<div class="why">${routeDetails(route)}</div>` : ""}
+      </div>
+    </div>`);
+  whyToggle(el);
+  state.spent += res.total_cost;
+  state.frontier += res.frontier_cost;
+  updateSavings();
+}
+
+function renderPreview(route, prompt) {
+  const el = add(`
+    <div class="route standalone">
+      <div class="route-line">
+        <span>Jev would use</span> ${chip(route.model_id)}
+        ${route.escalated ? `<span class="badge">Escalated</span>` : ""}
+        <span class="metric">Confidence <b>${Math.round(route.confidence * 100)}%</b></span>
+        ${route.task_type ? `<span class="metric">Task <b>${esc(route.task_type.replace("_", " "))}</b></span>` : ""}
+      </div>
+      <div class="why open" style="margin-top:12px">${routeDetails(route)}</div>
+      <div class="run-row">
+        <button class="btn primary run">Run with ${esc(modelName(route.model_id))}</button>
+        <button class="btn edit">Edit request</button>
+      </div>
+    </div>`);
+  el.querySelector(".run").addEventListener("click", () => { el.querySelector(".run-row").remove(); send(prompt, route); });
+  el.querySelector(".edit").addEventListener("click", () => { $("prompt").value = prompt; grow(); $("prompt").focus(); });
+}
+
+function renderError(err) {
+  const detail = err.detail;
+  let msg = typeof detail === "string" ? detail : detail?.message || err.message || "Something went wrong.";
+  let extra = Array.isArray(detail?.errors) ? detail.errors.join("\n") : "";
+  if (/credits|402/i.test(msg + extra)) msg += " Your OpenRouter account may be out of credits.";
+  add(`<div class="error"><strong>${esc(msg)}</strong>${extra ? `<pre>${esc(extra)}</pre>` : ""}</div>`);
+  if (err.status === 401) openSettings();
+}
+
+function updateSavings() {
+  const saved = state.frontier - state.spent;
+  const el = $("savings");
+  if (state.frontier <= 0) return;
+  el.innerHTML = saved >= 0 ? `Saved ${money(saved)}<span class="spent">&nbsp;· spent ${money(state.spent)}</span>`
+                            : `Spent ${money(state.spent)}`;
+  el.classList.add("show");
+}
+
+// ---------------------------------------------------------------- API
+async function api(path, body) {
+  const headers = { "Content-Type": "application/json" };
+  const key = store.get("openrouter_key");
+  if (key) headers["X-OpenRouter-Key"] = key;
+  const res = await fetch(path, { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status, detail: data.detail });
+  return data;
+}
+
+function setBusy(on, label) {
+  state.busy = on;
+  $("sendBtn").disabled = on; $("previewBtn").disabled = on;
+  document.querySelector(".thinking")?.remove();
+  if (on) add(`<div class="thinking"><span class="spin"></span>${esc(label)}</div>`, "msg");
+}
+
+async function preview() {
+  const prompt = $("prompt").value.trim();
+  if (!prompt || state.busy) return;
+  add(`<div class="bubble">${esc(prompt)}</div>`, "msg user");
+  $("prompt").value = ""; grow();
+  setBusy(true, "Jev is choosing a model…");
+  try {
+    const route = await api("/api/route", { messages: [...state.messages, { role: "user", content: prompt }], mode: state.mode });
+    setBusy(false);
+    renderPreview(route, prompt);
+  } catch (e) { setBusy(false); renderError(e); }
+}
+
+async function send(text, plannedRoute) {
+  const prompt = (text ?? $("prompt").value).trim();
+  if (!prompt || state.busy) return;
+  if (!plannedRoute) { add(`<div class="bubble">${esc(prompt)}</div>`, "msg user"); $("prompt").value = ""; grow(); }
+  const messages = [...state.messages, { role: "user", content: prompt }];
+  setBusy(true, plannedRoute ? `${modelName(plannedRoute.model_id)} is writing…` : "Choosing a model and writing…");
+  try {
+    const body = { messages, mode: state.mode };
+    if (plannedRoute) body.route = { model_id: plannedRoute.model_id, fallbacks: plannedRoute.fallbacks,
+                                     confidence: plannedRoute.confidence, reason: plannedRoute.reason };
+    const res = await api("/api/chat", body);
+    setBusy(false);
+    state.messages = [...messages, { role: "assistant", content: res.answer }];
+    renderAnswer(res, res.route || plannedRoute);
+  } catch (e) { setBusy(false); renderError(e); }
+}
+
+// ---------------------------------------------------------------- settings
+function refreshKeyState() {
+  const has = !!store.get("openrouter_key") || !!state.config?.server_key;
+  $("keyDot").classList.toggle("ok", has);
+  $("keyNote").textContent = store.get("openrouter_key") ? "Using your key." :
+    state.config?.server_key ? "No key saved here: using the server's key." : "Required. Get one at openrouter.ai/settings/keys.";
+}
+function openSettings() {
+  $("keyInput").value = store.get("openrouter_key") || "";
+  refreshKeyState();
+  $("settings").showModal();
+}
+$("settingsBtn").addEventListener("click", openSettings);
+$("settings").addEventListener("close", () => {
+  if ($("settings").returnValue === "save") { store.set("openrouter_key", $("keyInput").value.trim()); refreshKeyState(); }
+});
+
+// ---------------------------------------------------------------- composer
+function grow() { const t = $("prompt"); t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
+$("prompt").addEventListener("input", grow);
+$("prompt").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+});
+$("sendBtn").addEventListener("click", () => send());
+$("previewBtn").addEventListener("click", preview);
+
+function renderModes() {
+  $("modes").innerHTML = MODES.map(([id, label, title]) =>
+    `<button type="button" data-mode="${id}" title="${title}" aria-pressed="${id === state.mode}">${label}</button>`).join("");
+  $("modes").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+    state.mode = b.dataset.mode; store.set("mode", state.mode); renderModes();
+  }));
+}
+
+$("examples").innerHTML = EXAMPLES.map(([tag, text]) =>
+  `<button class="example" data-text="${esc(text)}"><small>${tag}</small>${esc(text)}</button>`).join("");
+$("examples").querySelectorAll(".example").forEach((b) => b.addEventListener("click", () => {
+  $("prompt").value = b.dataset.text; grow(); $("prompt").focus();
+}));
+
+renderModes();
+api("/api/config").then((cfg) => {
+  state.config = cfg;
+  $("modelList").innerHTML = cfg.models.map((m) => `
+    <div class="model-row"><span class="n"><span class="vendor v-${esc(m.vendor)}"></span>${esc(modelName(m.id))}</span>
+    <span class="p">$${m.input_per_million} / $${m.output_per_million} per M tokens</span></div>`).join("");
+  refreshKeyState();
+  if (!store.get("openrouter_key") && !cfg.server_key) openSettings();
+}).catch(() => {});
+$("prompt").focus();
+</script>
+</body>
+</html>

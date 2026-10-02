@@ -13,8 +13,15 @@ from app.providers.mock import MockProvider
 from app.providers.openai_compatible import OpenAICompatibleProvider
 
 
-def build_provider(name: str, cfg: ProviderConfig) -> ModelProvider:
-    api_key = os.environ.get(cfg.api_key_env) if cfg.api_key_env else None
+def resolve_key(cfg: ProviderConfig, keys: dict[str, str] | None = None) -> str | None:
+    """A caller-supplied key (by env-var name, e.g. a tester's own OPENROUTER_API_KEY) wins over the environment."""
+    if not cfg.api_key_env:
+        return None
+    return (keys or {}).get(cfg.api_key_env) or os.environ.get(cfg.api_key_env)
+
+
+def build_provider(name: str, cfg: ProviderConfig, keys: dict[str, str] | None = None) -> ModelProvider:
+    api_key = resolve_key(cfg, keys)
     if cfg.adapter == "openai_compatible":
         return OpenAICompatibleProvider(name, cfg.base_url or "", api_key)
     if cfg.adapter == "anthropic":
@@ -34,18 +41,21 @@ class ProviderPool:
         registry: ModelRegistry,
         overrides: dict[str, ModelProvider] | None = None,
         wrapper: Callable[[ModelProvider], ModelProvider] | None = None,
+        keys: dict[str, str] | None = None,
     ):
-        """`overrides` replace adapters by provider name; `wrapper` decorates every built adapter (e.g. caching)."""
+        """`overrides` replace adapters by provider name; `wrapper` decorates every built adapter (e.g. caching);
+        `keys` maps api_key_env names to caller-supplied keys that take precedence over the environment."""
         self.registry = registry
         self._providers: dict[str, ModelProvider] = dict(overrides or {})
         self._wrapper = wrapper
+        self._keys = keys or {}
 
     def wrap(self, provider: ModelProvider) -> ModelProvider:
         return self._wrapper(provider) if self._wrapper else provider
 
     def for_model(self, model: ModelSpec) -> ModelProvider:
         if model.provider not in self._providers:
-            built = build_provider(model.provider, self.registry.providers[model.provider])
+            built = build_provider(model.provider, self.registry.providers[model.provider], self._keys)
             self._providers[model.provider] = self.wrap(built)
         return self._providers[model.provider]
 
@@ -55,7 +65,7 @@ class ProviderPool:
             if m.provider in self._providers:
                 continue
             cfg = self.registry.providers[m.provider]
-            if cfg.api_key_env and not os.environ.get(cfg.api_key_env):
+            if cfg.api_key_env and not resolve_key(cfg, self._keys):
                 missing.add(cfg.api_key_env)
         return sorted(missing)
 

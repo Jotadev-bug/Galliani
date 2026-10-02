@@ -253,3 +253,15 @@ async def test_production_router_uses_config_escalation(config):
     r2 = build_router("jev", shipped, config)
     assert r2.escalate is False and r2.name == "jev-choice-raw"
     await r.aclose(); await r2.aclose()
+
+
+def test_state_uses_latest_message_with_trimmed_context():
+    from app.models.schemas import Message
+    req = RouteRequest(messages=[
+        Message(role="user", content="Write a haiku about rain"),
+        Message(role="assistant", content="x" * 5000),
+        Message(role="user", content="Now translate it to Spanish"),
+    ])
+    state = build_state(req, max_chars=6000)
+    assert state["user_request"] == "Now translate it to Spanish"
+    assert state["conversation_so_far"].startswith("...") and len(state["conversation_so_far"]) <= 2003

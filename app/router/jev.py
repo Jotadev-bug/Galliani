@@ -130,11 +130,23 @@ OUTPUT_LENGTH = (
 )
 
 
+CONTEXT_CHARS = 2000
+
+
 def build_state(request: RouteRequest, max_chars: int) -> dict[str, str]:
-    text = request.prompt_text
+    """`user_request` is the latest user message; earlier turns go in as trimmed context.
+
+    Jev loses accuracy on large, unfocused state, so earlier turns are kept to their tail.
+    """
+    users = [i for i, m in enumerate(request.messages) if m.role == "user"]
+    last = users[-1] if users else len(request.messages) - 1
+    text = request.messages[last].content
     state = {"user_request": text[:max_chars]}
     if len(text) > max_chars:
         state["note"] = "user_request was cut short; the full request is much longer."
+    earlier = "\n\n".join(f"{m.role}: {m.content}" for m in request.messages[:last] if m.role != "system")
+    if earlier:
+        state["conversation_so_far"] = ("..." + earlier[-CONTEXT_CHARS:]) if len(earlier) > CONTEXT_CHARS else earlier
     return state
 
 
