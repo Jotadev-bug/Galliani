@@ -246,7 +246,9 @@ class JevRouter(Router):
         config: RoutingConfig,
         fallback_router: Router,
         decision: str | None = None,
+        escalate: bool = True,
     ):
+        """`escalate=False` always keeps Jev's own pick (the confidence policy still applies if Jev fails)."""
         self.client = client
         self.selector = selector
         self.config = config
@@ -254,7 +256,8 @@ class JevRouter(Router):
         self.decision = decision or config.jev.decision
         if self.decision not in ("choice", "profile", "sufficiency"):
             raise ValueError(f"Unknown Jev decision style {self.decision!r}")
-        self.name = f"jev-{self.decision}"
+        self.escalate = escalate
+        self.name = f"jev-{self.decision}" + ("" if escalate else "-raw")
 
     async def aclose(self) -> None:
         await self.client.aclose()
@@ -367,9 +370,12 @@ class JevRouter(Router):
         error: str | None = None,
     ) -> RouteDecision:
         probabilities = {s.model_id: s.p_success for s in decision.scores} if self.decision == "choice" else None
-        new_id, note = policies.apply_confidence(
-            decision.model_id, confidence, decision.scores, candidates, self.config.confidence, probabilities
-        )
+        if self.escalate or error is not None:
+            new_id, note = policies.apply_confidence(
+                decision.model_id, confidence, decision.scores, candidates, self.config.confidence, probabilities
+            )
+        else:
+            new_id, note = decision.model_id, None
         fallbacks = decision.fallbacks
         if new_id != decision.model_id:
             fallbacks = [decision.model_id] + [f for f in fallbacks if f != new_id]

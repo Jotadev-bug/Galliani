@@ -20,7 +20,7 @@ from app.router.jev import JevRouter
 from app.router.policies import most_capable
 from app.telemetry.costs import JsonlSink, build_record
 
-ROUTER_NAMES = ("jev", "jev-choice", "jev-profile", "jev-sufficiency", "rules", "random", "frontier", "cheapest")
+ROUTER_NAMES = ("jev", "jev-choice", "jev-choice-raw", "jev-profile", "jev-sufficiency", "rules", "random", "frontier", "cheapest")
 
 
 def jev_client(
@@ -56,7 +56,10 @@ def build_router(
     seed: int = 0,
     cache_dir: Path | None = None,
 ) -> Router:
-    """Router names: jev (configured style), jev-choice, jev-profile, jev-sufficiency, rules, random, frontier, cheapest."""
+    """Router names: jev (configured style), jev-<choice|profile|sufficiency>[-raw], rules, random, frontier, cheapest.
+
+    A `-raw` suffix keeps Jev's own pick without confidence escalation.
+    """
     candidates = registry.candidates()
     if name == "rules":
         return RulesRouter(config.rules)
@@ -68,8 +71,10 @@ def build_router(
         return FixedRouter(cheapest(candidates).id, name="cheapest")
     if name == "jev" or name.startswith("jev-"):
         selector, client = jev_client(registry, config, cache_dir)
-        style = name.removeprefix("jev-") if name != "jev" else None
-        return JevRouter(client, selector, config, fallback_router=RulesRouter(config.rules), decision=style)
+        raw = name.endswith("-raw")
+        style = name.removeprefix("jev-").removesuffix("-raw") if name.startswith("jev-") else None
+        return JevRouter(client, selector, config, fallback_router=RulesRouter(config.rules),
+                         decision=style or None, escalate=not raw)
     raise ValueError(f"Unknown router {name!r}; choose from {ROUTER_NAMES}")
 
 

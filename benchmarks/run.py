@@ -385,7 +385,7 @@ async def main(args: argparse.Namespace) -> int:
 
 def cli() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--routers", default="frontier,jev-choice,jev-profile,jev-sufficiency,rules,random,cheapest")
+    p.add_argument("--routers", default="frontier,jev-choice,jev-choice-raw,jev-profile,jev-sufficiency,rules,random,cheapest")
     p.add_argument("--simulate", action="store_true", help="offline mock models; numbers are NOT real")
     p.add_argument("--no-exec", action="store_true", help="skip tasks that execute model-generated code")
     p.add_argument("--categories", help="comma-separated category filter")

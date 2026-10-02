@@ -218,3 +218,25 @@ def test_low_confidence_stays_within_jevs_plausible_models(config):
     literal = config.confidence.model_copy(update={"respect_router_distribution": False})
     chosen, _ = apply_confidence("google/gemini-3.1-flash-lite", 0.55, ranked, reg.candidates(), literal, probs)
     assert chosen == "anthropic/claude-fable-5.1"  # the old behaviour
+
+
+async def test_raw_variant_keeps_jevs_pick(registry, config):
+    from app.service import build_router
+    probs = {"cheap": 0.6, "mid": 0.3, "frontier": 0.1}
+    body = response(answers(0, model="cheap", model_probs=probs, model_confidence=0.3))
+    raw = JevRouter(client(body=body), registry.get("selector"), config, RulesRouter(config.rules),
+                    decision="choice", escalate=False)
+    d = await raw.route(RouteRequest.from_prompt("x"), registry.candidates())
+    assert raw.name == "jev-choice-raw" and d.model_id == "cheap" and not d.escalated
+    # A Jev failure still goes through the safety policy.
+    failing = JevRouter(client(status=500, body={}), registry.get("selector"), config, RulesRouter(config.rules),
+                        decision="choice", escalate=False)
+    d = await failing.route(RouteRequest.from_prompt("x"), registry.candidates())
+    assert d.model_id == "frontier"
+    from app.config import CONFIG_DIR
+    from app.models.registry import ModelRegistry
+    shipped = ModelRegistry.from_yaml(CONFIG_DIR / "models.yaml")
+    for name in ("jev-choice-raw", "jev-choice", "jev-profile"):
+        built = build_router(name, shipped, config)
+        assert built.name == name
+        await built.aclose()
