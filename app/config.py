@@ -29,6 +29,9 @@ class SuccessModel(BaseModel):
 class ConfidencePolicy(BaseModel):
     execute_threshold: float = Field(ge=0, le=1)
     safer_threshold: float = Field(ge=0, le=1)
+    # When a router returns a probability per model, only escalate to models it found plausible.
+    respect_router_distribution: bool = True
+    plausible_min_probability: float = Field(default=0.05, ge=0, le=1)
 
 
 class JevConfig(BaseModel):

@@ -159,11 +159,18 @@ async def test_choice_mode_uses_jevs_pick_and_probability_order(registry, config
     assert d.confidence == 0.9 and "Jev chose mid" in d.reason
 
 
-async def test_choice_mode_low_confidence_escalates(registry, config):
-    body = response(answers(0, model="cheap", model_confidence=0.6))
+async def test_choice_mode_low_confidence_escalates_within_plausible(registry, config):
+    probs = {"cheap": 0.6, "mid": 0.3, "frontier": 0.1}
+    body = response(answers(0, model="cheap", model_probs=probs, model_confidence=0.6))
     d = await router(registry, config, body, decision="choice").route(
         RouteRequest.from_prompt("x"), registry.candidates())
     assert d.model_id == "frontier" and d.escalated
+
+    probs = {"cheap": 0.7, "mid": 0.28, "frontier": 0.02}  # Jev ruled frontier out
+    body = response(answers(0, model="cheap", model_probs=probs, model_confidence=0.6))
+    d = await router(registry, config, body, decision="choice").route(
+        RouteRequest.from_prompt("x"), registry.candidates())
+    assert d.model_id == "mid" and "plausible" in d.reason
 
 
 async def test_choice_mode_unknown_model_falls_back(registry, config):
@@ -186,3 +193,28 @@ def test_choice_instructions_follow_mode(registry, config):
     cands = registry.candidates()
     best = model_choice(RouteRequest.from_prompt("x", mode="best"), cands, config.jev.choice_instructions["best"], 500)
     assert "regardless of price" in best.instructions
+
+
+def test_low_confidence_stays_within_jevs_plausible_models(config):
+    """Replays a real Jev decision for 'Prove there are infinitely many primes' (confidence 0.55)."""
+    from app.config import CONFIG_DIR
+    from app.models.registry import ModelRegistry
+    from app.models.schemas import CandidateScore
+    from app.router.policies import apply_confidence
+
+    reg = ModelRegistry.from_yaml(CONFIG_DIR / "models.yaml")
+    probs = {
+        "google/gemini-3.1-flash-lite": 0.61, "google/gemini-3.8-flash": 0.17, "openai/gpt-5.4-mini": 0.10,
+        "anthropic/claude-haiku-4.5": 0.10, "anthropic/claude-sonnet-5.5": 0.02,
+        "anthropic/claude-opus-5.5": 0.0, "anthropic/claude-fable-5.1": 0.0,
+    }
+    ranked = [CandidateScore(model_id=m, p_success=p, est_cost=0, est_latency_ms=0, utility=p)
+              for m, p in sorted(probs.items(), key=lambda kv: -kv[1])]
+    chosen, note = apply_confidence("google/gemini-3.1-flash-lite", 0.55, ranked, reg.candidates(),
+                                    config.confidence, probs)
+    assert chosen in {"google/gemini-3.8-flash", "openai/gpt-5.4-mini", "anthropic/claude-haiku-4.5"}
+    assert "plausible" in note
+
+    literal = config.confidence.model_copy(update={"respect_router_distribution": False})
+    chosen, _ = apply_confidence("google/gemini-3.1-flash-lite", 0.55, ranked, reg.candidates(), literal, probs)
+    assert chosen == "anthropic/claude-fable-5.1"  # the old behaviour

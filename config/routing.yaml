@@ -27,6 +27,11 @@ confidence:
   execute_threshold: 0.90   # >= : execute the routed model
   safer_threshold: 0.70     # [safer, execute) : escalate one capability step
                             # <  safer : fall back to the most capable candidate
+  # When the router gives a probability per model (jev-choice), escalate only among models it
+  # rated at least plausible_min_probability. Set false for the literal PROJECT.md section 11
+  # behaviour (low confidence -> most capable model overall, even one the router ruled out).
+  respect_router_distribution: true
+  plausible_min_probability: 0.05
 
 # Jev settings. Jev (TypeSafe) is a decision model called through the OpenRouter Decisions API.
 jev:

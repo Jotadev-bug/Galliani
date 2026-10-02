@@ -366,8 +366,9 @@ class JevRouter(Router):
         usage: Usage,
         error: str | None = None,
     ) -> RouteDecision:
+        probabilities = {s.model_id: s.p_success for s in decision.scores} if self.decision == "choice" else None
         new_id, note = policies.apply_confidence(
-            decision.model_id, confidence, decision.scores, candidates, self.config.confidence
+            decision.model_id, confidence, decision.scores, candidates, self.config.confidence, probabilities
         )
         fallbacks = decision.fallbacks
         if new_id != decision.model_id:
