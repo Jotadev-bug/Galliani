@@ -3,6 +3,8 @@
 # Fields:
 #   id, category        identifier and PROJECT.md section-16 category
 #   difficulty          0-1 author estimate. Used ONLY by --simulate dry-runs, never by routers.
+#   min_tier            cheapest tier expected to solve it reliably (author label, used by
+#                       benchmarks/routing_eval.py to judge routing without generating answers)
 #   prompt              sent verbatim to the model
 #   checks              automatic quality checks (see benchmarks/evaluate.py)
 #   reference           a correct answer; tests assert it passes every check
@@ -12,6 +14,7 @@
 - id: conv-01
   category: conversation
   difficulty: 0.05
+  min_tier: cheap
   prompt: "Hi! What's a good name for a golden retriever puppy? Give me just one name, no explanation."
   checks:
     - {type: word_count, max: 12}
@@ -20,6 +23,7 @@
 - id: conv-02
   category: conversation
   difficulty: 0.05
+  min_tier: cheap
   prompt: "¿Qué día de la semana viene después del martes? Responde con una sola palabra."
   checks:
     - {type: contains, value: "miércoles"}
@@ -29,6 +33,7 @@
 - id: conv-03
   category: conversation
   difficulty: 0.1
+  min_tier: cheap
   prompt: "What is the capital of Australia? Answer in one short sentence."
   checks:
     - {type: contains, value: "Canberra"}
@@ -37,6 +42,7 @@
 - id: conv-04
   category: conversation
   difficulty: 0.1
+  min_tier: cheap
   prompt: "I'm stressed about an exam tomorrow. Give me exactly 3 short tips as a numbered list (1., 2., 3.) and nothing else."
   checks:
     - {type: count_regex, pattern: "(?m)^\\s*\\**\\d+[.)]", min: 3, max: 3}
@@ -49,6 +55,7 @@
 - id: tr-01
   category: translation
   difficulty: 0.1
+  min_tier: cheap
   prompt: "Translate into Spanish: 'The library opens at nine in the morning.' Reply with only the translation."
   checks:
     - {type: contains_all, values: ["biblioteca", "nueve", "mañana"]}
@@ -57,6 +64,7 @@
 - id: tr-02
   category: translation
   difficulty: 0.1
+  min_tier: cheap
   prompt: "Traduce al inglés: 'Me gustaría reservar una mesa para dos personas esta noche.' Responde solo con la traducción."
   checks:
     - {type: contains_all, values: ["table", "two", "tonight"]}
@@ -66,6 +74,7 @@
 - id: tr-03
   category: translation
   difficulty: 0.2
+  min_tier: cheap
   prompt: "Translate into French: 'I have been living in this city for five years.' Reply with only the translation."
   checks:
     - {type: contains_all, values: ["depuis", "cinq ans", "ville"]}
@@ -74,6 +83,7 @@
 - id: tr-04
   category: translation
   difficulty: 0.45
+  min_tier: mid
   prompt: "Translate the English idiom 'It's raining cats and dogs' into natural Spanish using an equivalent Spanish idiom, not a literal translation. Reply with only the Spanish phrase."
   checks:
     - {type: contains_any, values: ["cántaros", "a mares", "chuzos"]}
@@ -83,6 +93,7 @@
 - id: tr-05
   category: translation
   difficulty: 0.15
+  min_tier: cheap
   prompt: "Translate into German: 'Please close the window.' Reply with only the translation."
   checks:
     - {type: contains, value: "fenster"}
@@ -93,6 +104,7 @@
 - id: sum-01
   category: summarization
   difficulty: 0.2
+  min_tier: cheap
   prompt: |
     Summarize the following in ONE sentence of at most 35 words.
 
@@ -109,6 +121,7 @@
 - id: sum-02
   category: summarization
   difficulty: 0.25
+  min_tier: cheap
   prompt: |
     Resume el siguiente texto en exactamente 3 viñetas que empiecen por "- ". No añadas nada más.
 
@@ -127,6 +140,7 @@
 - id: sum-03
   category: summarization
   difficulty: 0.3
+  min_tier: mid
   prompt: |
     Give a TL;DR (max 50 words) of these meeting notes. It must state the decision, its owner and the deadline.
 
@@ -144,6 +158,7 @@
 - id: sum-04
   category: summarization
   difficulty: 0.3
+  min_tier: mid
   prompt: |
     Summarize this for a non-technical reader in at most 50 words.
 
@@ -161,6 +176,7 @@
 - id: sum-05
   category: summarization
   difficulty: 0.15
+  min_tier: cheap
   prompt: |
     Summarize this fable in at most two sentences, then state its moral on a separate line starting with "Moral:".
 
@@ -179,6 +195,7 @@
 - id: ext-01
   category: extraction
   difficulty: 0.15
+  min_tier: cheap
   prompt: |
     Extract a JSON object with keys "name", "email" and "phone" from this message. Return only JSON.
 
@@ -191,6 +208,7 @@
 - id: ext-02
   category: extraction
   difficulty: 0.5
+  min_tier: strong
   prompt: |
     List every date mentioned in the text in ISO format (YYYY-MM-DD), one per line, in order of appearance. Output only the dates.
 
@@ -206,6 +224,7 @@
 - id: ext-03
   category: extraction
   difficulty: 0.3
+  min_tier: mid
   prompt: |
     Convert this order into JSON with the shape {"items": [{"name": str, "qty": int, "unit_price": number}], "total": number}.
     Return only JSON.
@@ -219,6 +238,7 @@
 - id: ext-04
   category: extraction
   difficulty: 0.35
+  min_tier: mid
   prompt: |
     From this access log, return a JSON array (and nothing else) of the unique IP addresses that received a 500 status, sorted ascending as strings.
 
@@ -236,6 +256,7 @@
 - id: ext-05
   category: extraction
   difficulty: 0.25
+  min_tier: cheap
   prompt: |
     Extrae los productos y sus precios en euros como un objeto JSON {"producto": precio_numérico}. Devuelve solo el JSON.
 
@@ -250,6 +271,7 @@
 - id: ext-06
   category: extraction
   difficulty: 0.2
+  min_tier: cheap
   prompt: |
     List only the email addresses that belong to the acme.com domain, one per line, nothing else.
 
@@ -265,6 +287,7 @@
 - id: cls-01
   category: classification
   difficulty: 0.1
+  min_tier: cheap
   prompt: "Classify the sentiment of this review as positive, negative or mixed. End with 'Answer: <label>'.\n\nReview: \"Food was cold, the waiter was rude and we waited an hour. Never again.\""
   checks:
     - {type: answer, value: "negative"}
@@ -273,6 +296,7 @@
 - id: cls-02
   category: classification
   difficulty: 0.2
+  min_tier: cheap
   prompt: "Classify the sentiment of this review as positive, negative or mixed. End with 'Answer: <label>'.\n\nReview: \"Great camera and a lovely design. The battery, on the other hand, barely lasts half a day.\""
   checks:
     - {type: answer, value: "mixed"}
@@ -281,6 +305,7 @@
 - id: cls-03
   category: classification
   difficulty: 0.1
+  min_tier: cheap
   prompt: "Clasifica este ticket de soporte en una categoría: facturación, técnico, envío u otro. Termina con 'Respuesta: <categoría>'.\n\nTicket: \"Me han cobrado dos veces el mismo pedido este mes.\""
   checks:
     - {type: answer, value: "facturación"}
@@ -289,6 +314,7 @@
 - id: cls-04
   category: classification
   difficulty: 0.4
+  min_tier: mid
   prompt: |
     Identify the language of each sentence. Answer with one line per sentence in the form "N: Language".
 
@@ -310,6 +336,7 @@
 - id: cls-05
   category: classification
   difficulty: 0.15
+  min_tier: cheap
   prompt: "Is the following message sarcastic? End with 'Answer: yes' or 'Answer: no'.\n\n\"Oh fantastic, my flight got delayed again. Just what I needed today.\""
   checks:
     - {type: answer, value: "yes"}
@@ -319,6 +346,7 @@
 - id: wr-01
   category: writing
   difficulty: 0.15
+  min_tier: cheap
   prompt: "Write a haiku about autumn rain. Output only the three lines of the haiku."
   checks:
     - {type: line_count, min: 3, max: 3}
@@ -331,6 +359,7 @@
 - id: wr-02
   category: writing
   difficulty: 0.2
+  min_tier: cheap
   prompt: "Escribe un correo formal (máximo 120 palabras) para rechazar una reunión el jueves y proponer otra fecha. Empieza con un saludo formal."
   checks:
     - {type: contains_any, values: ["estimado", "estimada", "estimados"]}
@@ -348,6 +377,7 @@
 - id: wr-03
   category: writing
   difficulty: 0.35
+  min_tier: mid
   prompt: "Write a product description for a hiking backpack in exactly 2 paragraphs. Mention that it is waterproof. Do not use any exclamation marks."
   checks:
     - {type: paragraphs, min: 2, max: 2}
@@ -361,6 +391,7 @@
 - id: wr-04
   category: writing
   difficulty: 0.75
+  min_tier: frontier
   prompt: "Write one sentence of at least 12 words about the ocean without using the letter 'e' anywhere (uppercase or lowercase). Output only the sentence."
   checks:
     - {type: not_contains, values: ["e"]}
@@ -370,6 +401,7 @@
 - id: wr-05
   category: writing
   difficulty: 0.3
+  min_tier: mid
   prompt: "Write a 5-line poem whose lines start with the letters R, I, V, E, R in that order (an acrostic spelling RIVER). Output only the poem."
   checks:
     - {type: regex, pattern: "(?is)^[\\W_]*r[^\\n]*\\n+[\\W_]*i[^\\n]*\\n+[\\W_]*v[^\\n]*\\n+[\\W_]*e[^\\n]*\\n+[\\W_]*r"}
@@ -384,6 +416,7 @@
 - id: rea-01
   category: reasoning
   difficulty: 0.3
+  min_tier: mid
   prompt: "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost, in cents? End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 5}
@@ -392,6 +425,7 @@
 - id: rea-02
   category: reasoning
   difficulty: 0.4
+  min_tier: mid
   prompt: "On an island, knights always tell the truth and knaves always lie. A says: \"B is a knave.\" B says: \"A and I are both knights.\" What are A and B? End with 'Answer: A=<knight|knave>, B=<knight|knave>'."
   checks:
     - {type: answer, value: "", pattern: "a\\W*=\\W*knight\\W*,?\\W*b\\W*=\\W*knave"}
@@ -400,6 +434,7 @@
 - id: rea-03
   category: reasoning
   difficulty: 0.6
+  min_tier: strong
   prompt: |
     Ana, Ben, Carla, Dev and Eva stand in a row in positions 1 (left) to 5 (right).
     - Ben is immediately to the left of Eva.
@@ -417,6 +452,7 @@
 - id: rea-04
   category: reasoning
   difficulty: 0.35
+  min_tier: mid
   prompt: "What is the smaller angle, in degrees, between the hour and minute hands of a clock at 3:40? End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 130}
@@ -425,6 +461,7 @@
 - id: rea-05
   category: reasoning
   difficulty: 0.2
+  min_tier: cheap
   prompt: "If 5 machines take 5 minutes to make 5 widgets, how many minutes would 100 machines take to make 100 widgets? End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 5}
@@ -433,6 +470,7 @@
 - id: rea-06
   category: reasoning
   difficulty: 0.55
+  min_tier: strong
   prompt: "How many times does the digit 1 appear when you write out every integer from 1 to 199? End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 140}
@@ -441,6 +479,7 @@
 - id: rea-07
   category: reasoning
   difficulty: 0.4
+  min_tier: mid
   prompt: "What day of the week was 1 January 2000? End with 'Answer: <weekday in English>'."
   checks:
     - {type: answer, value: "Saturday"}
@@ -450,6 +489,7 @@
 - id: math-01
   category: math
   difficulty: 0.05
+  min_tier: cheap
   prompt: "Compute 17 × 24. End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 408}
@@ -458,6 +498,7 @@
 - id: math-02
   category: math
   difficulty: 0.1
+  min_tier: cheap
   prompt: "Solve for x: 3x + 7 = 2x - 5. End with 'Answer: <number>'."
   checks:
     - {type: answer, value: -12}
@@ -466,6 +507,7 @@
 - id: math-03
   category: math
   difficulty: 0.3
+  min_tier: mid
   prompt: "Two fair six-sided dice are rolled. What is the probability that the sum is 8? Give a decimal rounded to 4 places. End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 0.1389, tol: 0.0006}
@@ -474,6 +516,7 @@
 - id: math-04
   category: math
   difficulty: 0.35
+  min_tier: mid
   prompt: "How many positive divisors does 360 have? End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 24}
@@ -482,6 +525,7 @@
 - id: math-05
   category: math
   difficulty: 0.6
+  min_tier: strong
   prompt: "What is the remainder when 7^2026 is divided by 13? End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 4}
@@ -490,6 +534,7 @@
 - id: math-06
   category: math
   difficulty: 0.55
+  min_tier: strong
   prompt: "In how many distinct ways can 8 people sit around a round table (rotations considered the same) if Alice and Bob refuse to sit next to each other? End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 3600}
@@ -498,6 +543,7 @@
 - id: math-07
   category: math
   difficulty: 0.4
+  min_tier: mid
   prompt: "Evaluate the definite integral of x·e^x from 0 to 1. End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 1, tol: 0.001}
@@ -506,6 +552,7 @@
 - id: math-08
   category: math
   difficulty: 0.6
+  min_tier: strong
   prompt: "How many lattice paths go from (0,0) to (6,6) using unit steps right or up that never go above the line y = x? End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 132}
@@ -515,6 +562,7 @@
 - id: code-01
   category: coding
   difficulty: 0.15
+  min_tier: cheap
   prompt: "Write a Python function is_palindrome(s: str) -> bool that returns True if s reads the same backwards, ignoring case, spaces and punctuation. Return only the code in a ```python block."
   checks:
     - type: python
@@ -533,6 +581,7 @@
 - id: code-02
   category: coding
   difficulty: 0.25
+  min_tier: cheap
   prompt: "Write a Python function roman_to_int(s: str) -> int that converts a valid Roman numeral (1-3999) to an integer. Return only the code in a ```python block."
   checks:
     - type: python
@@ -557,6 +606,7 @@
 - id: code-03
   category: coding
   difficulty: 0.35
+  min_tier: mid
   prompt: "Write a Python function merge_intervals(intervals: list[list[int]]) -> list[list[int]] that merges overlapping (or touching) closed intervals and returns them sorted by start. The input may be unsorted. Return only the code in a ```python block."
   checks:
     - type: python
@@ -581,6 +631,7 @@
 - id: code-04
   category: coding
   difficulty: 0.45
+  min_tier: mid
   prompt: "Implement a Python class LRUCache(capacity: int) with methods get(key) -> value or -1 if missing, and put(key, value), both O(1). When capacity is exceeded, evict the least recently used key; get() counts as a use. Return only the code in a ```python block."
   checks:
     - type: python
@@ -621,6 +672,7 @@
 - id: code-05
   category: coding
   difficulty: 0.65
+  min_tier: strong
   prompt: "Write a Python function eval_expr(s: str) -> float that evaluates an arithmetic expression with integers, + - * /, parentheses, unary minus and arbitrary whitespace, respecting precedence. Do not use eval, exec or ast. Return only the code in a ```python block."
   checks:
     - type: python
@@ -681,6 +733,7 @@
 - id: code-06
   category: coding
   difficulty: 0.45
+  min_tier: mid
   prompt: |
     SQLite schema:
       customers(id INTEGER, name TEXT, country TEXT)
@@ -711,6 +764,7 @@
 - id: code-07
   category: coding
   difficulty: 0.55
+  min_tier: strong
   prompt: "Write a Python function longest_valid_parentheses(s: str) -> int returning the length of the longest well-formed (balanced, contiguous) parentheses substring of s, which contains only '(' and ')'. Must run in O(n). Return only the code in a ```python block."
   checks:
     - type: python
@@ -741,6 +795,7 @@
 - id: dbg-01
   category: debugging
   difficulty: 0.35
+  min_tier: mid
   prompt: |
     This binary search sometimes loops forever or misses the target. Return the corrected function only, in a ```python block.
 
@@ -785,6 +840,7 @@
 - id: dbg-02
   category: debugging
   difficulty: 0.3
+  min_tier: mid
   prompt: |
     Calling add_tag("a") then add_tag("b") returns ['a', 'b'] the second time instead of ['b']. Fix it while keeping the same signature semantics (tags is optional). Return only the fixed function in a ```python block.
 
@@ -812,6 +868,7 @@
 - id: dbg-03
   category: debugging
   difficulty: 0.4
+  min_tier: mid
   prompt: |
     This median function has two bugs: it is wrong for even-length lists and it modifies the caller's list. Return only the fixed function in a ```python block.
 
@@ -840,6 +897,7 @@
 - id: dbg-04
   category: debugging
   difficulty: 0.4
+  min_tier: mid
   prompt: |
     moving_average should return the average of each window of k consecutive values, e.g. moving_average([1,2,3,4], 2) == [1.5, 2.5, 3.5]. It returns the wrong number of values. Fix it and return only the function in a ```python block.
 
@@ -865,6 +923,7 @@
 - id: dbg-05
   category: debugging
   difficulty: 0.5
+  min_tier: strong
   prompt: |
     parse_duration("1h30m") should return 5400 (seconds) and accept any combination of h, m and s in that order, e.g. "45s", "2h", "1m5s". It currently fails for several inputs. Return only the fixed function in a ```python block.
 
@@ -905,6 +964,7 @@
 - id: doc-01
   category: document_analysis
   difficulty: 0.5
+  min_tier: strong
   prompt: |
     Read this services agreement and identify the two clauses that contradict each other. End with 'Answer: <n>, <m>' (clause numbers).
 
@@ -925,6 +985,7 @@
 - id: doc-02
   category: document_analysis
   difficulty: 0.55
+  min_tier: strong
   prompt: |
     Using the travel policy below, compute the total reimbursable per-diem for this trip. End with 'Answer: <amount in EUR>'.
 
@@ -942,6 +1003,7 @@
 - id: doc-03
   category: document_analysis
   difficulty: 0.35
+  min_tier: mid
   prompt: |
     Extract the action items from this transcript as a JSON array of objects with keys "owner" and "task". Return only JSON.
 
@@ -960,6 +1022,7 @@
 - id: doc-04
   category: document_analysis
   difficulty: 0.45
+  min_tier: mid
   prompt: |
     According to this API documentation, what is the maximum request body size in MB for POST /v2/upload when the caller is authenticated with an enterprise API key? End with 'Answer: <number>'.
 
@@ -981,6 +1044,7 @@
 - id: plan-01
   category: planning
   difficulty: 0.2
+  min_tier: cheap
   prompt: "Create a short 3-day itinerary for Lisbon with sections titled 'Day 1', 'Day 2' and 'Day 3'. Keep it under 200 words."
   checks:
     - {type: contains_all, values: ["day 1", "day 2", "day 3"]}
@@ -993,6 +1057,7 @@
 - id: plan-02
   category: planning
   difficulty: 0.35
+  min_tier: mid
   prompt: "Propose a plan to migrate a monolith to microservices in exactly 5 numbered steps (1. to 5.), one line each, nothing else."
   checks:
     - {type: count_regex, pattern: "(?m)^\\s*\\**\\d+[.)]", min: 5, max: 5}
@@ -1007,6 +1072,7 @@
 - id: plan-03
   category: planning
   difficulty: 0.45
+  min_tier: mid
   prompt: |
     Schedule four meetings in a single room between 09:00 and 12:00 with no overlaps:
     A lasts 60 min, B 30 min, C 60 min, D 30 min.
@@ -1041,6 +1107,7 @@
 - id: ana-01
   category: analysis
   difficulty: 0.35
+  min_tier: mid
   prompt: |
     Monthly sales: Jan 120, Feb 150, Mar 135, Apr 180, May 171, Jun 200.
     Which month had the largest percentage increase over the previous month? End with 'Answer: <month abbreviation>'.
@@ -1051,6 +1118,7 @@
 - id: ana-02
   category: analysis
   difficulty: 0.3
+  min_tier: mid
   prompt: |
     Un usuario consume 12 GB al mes. Plan A: 15 €/mes con 10 GB incluidos y 2 € por cada GB extra. Plan B: 20 €/mes con 20 GB incluidos.
     ¿Qué plan le sale más barato? Termina con 'Respuesta: A' o 'Respuesta: B'.
@@ -1061,6 +1129,7 @@
 - id: ana-03
   category: analysis
   difficulty: 0.3
+  min_tier: mid
   prompt: "An A/B test had 500 conversions from 10,000 visitors in control and 560 from 10,000 in the variant. What is the relative lift of the variant's conversion rate, in percent, to one decimal place? End with 'Answer: <number>'."
   checks:
     - {type: answer, value: 12.0, tol: 0.05}

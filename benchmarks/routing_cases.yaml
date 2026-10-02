@@ -1,0 +1,103 @@
+# Routing-only cases: realistic requests a user would type, with no answer checking.
+# Used by benchmarks/routing_eval.py together with tasks.yaml.
+#
+#   min_tier   cheapest tier expected to handle the request reliably (author judgment):
+#              cheap    = Gemini Flash-Lite
+#              mid      = Claude Haiku, GPT-5.4 mini, Gemini Flash
+#              strong   = Claude Sonnet
+#              frontier = Claude Opus, Claude Fable
+#
+# A pick is "correct" at min_tier or one tier above, "underpowered" below it and
+# "overspend" two or more tiers above. Edit freely: these labels are opinions.
+
+- id: user-01
+  min_tier: cheap
+  prompt: "hola, ¿qué tal estás?"
+
+- id: user-02
+  min_tier: cheap
+  prompt: "What's the capital of Canada?"
+
+- id: user-03
+  min_tier: cheap
+  prompt: "Traduce al inglés: 'Mañana no podré ir a la oficina porque tengo cita con el médico.'"
+
+- id: user-04
+  min_tier: cheap
+  prompt: "Escribe un email corto a mi jefe pidiendo el viernes libre."
+
+- id: user-05
+  min_tier: cheap
+  prompt: "Give me 5 name ideas for a coffee shop."
+
+- id: user-06
+  min_tier: cheap
+  prompt: "Explain what an API is to a 10 year old."
+
+- id: user-07
+  min_tier: mid
+  prompt: "Prove there are infinitely many primes."
+
+- id: user-08
+  min_tier: mid
+  prompt: "Write a Python script that reads a CSV file and prints the average of the 'price' column."
+
+- id: user-09
+  min_tier: mid
+  prompt: "Resume en 5 puntos los pros y contras de trabajar en remoto."
+
+- id: user-10
+  min_tier: mid
+  prompt: "Write a cover letter for a junior data analyst position. I studied economics and know SQL and Excel."
+
+- id: user-11
+  min_tier: mid
+  prompt: "Write a SQL query that returns the top 3 customers by total spend in the last 30 days from tables customers(id, name) and orders(id, customer_id, amount, created_at)."
+
+- id: user-12
+  min_tier: mid
+  prompt: "Explain the difference between a mutex and a semaphore, with an example of when to use each."
+
+- id: user-13
+  min_tier: strong
+  prompt: "Build me a complete app from 0 and from your own idea."
+
+- id: user-14
+  min_tier: strong
+  prompt: |
+    My React component re-renders forever and the browser freezes. Find the bug and fix it.
+
+    ```jsx
+    function Profile({ userId }) {
+      const [user, setUser] = useState(null);
+      const options = { headers: { Authorization: token } };
+      useEffect(() => {
+        fetch(`/api/users/${userId}`, options).then(r => r.json()).then(setUser);
+      }, [userId, options]);
+      return <div>{user?.name}</div>;
+    }
+    ```
+
+- id: user-15
+  min_tier: strong
+  prompt: "Design the database schema and REST API for a multi-tenant SaaS invoicing system with recurring billing, taxes per country and audit logs."
+
+- id: user-16
+  min_tier: strong
+  prompt: "Review this business plan idea: an AI router that picks the cheapest capable model for each prompt and charges a margin on inference. What are the biggest risks and how would you validate it in 30 days?"
+
+- id: user-17
+  min_tier: strong
+  prompt: "Write a Go worker pool that processes jobs from a channel with a configurable number of workers, graceful shutdown on context cancellation, and per-job timeouts. Include tests."
+
+- id: user-18
+  min_tier: frontier
+  prompt: "Let p be an odd prime. Prove that the sum of the quadratic residues modulo p in {1, ..., p-1} is divisible by p when p > 3, and determine exactly when it is."
+
+- id: user-19
+  min_tier: frontier
+  prompt: "Design a globally distributed, strongly consistent rate limiter handling 5 million requests per second across 12 regions with a p99 added latency under 5 ms. Explain the consensus approach, failure modes and how you would prove correctness."
+
+- id: user-20
+  min_tier: frontier
+  prompt: "Find the subtle race condition: two goroutines append to a shared slice guarded by a sync.RWMutex, but readers call len() and then index into the slice under RLock while the writer may reallocate it. Explain precisely which interleavings corrupt data, and give a lock-free alternative with a correctness argument."
