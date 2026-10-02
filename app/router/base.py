@@ -22,6 +22,9 @@ class Router(ABC):
     async def route(self, request: RouteRequest, candidates: Sequence[ModelSpec]) -> RouteDecision:
         """Choose a model for `request` among `candidates` (already filtered for hard constraints)."""
 
+    async def aclose(self) -> None:  # noqa: B027 - optional hook
+        pass
+
 
 def decide_from_profile(
     router_name: str,

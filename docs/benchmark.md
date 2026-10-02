@@ -12,7 +12,8 @@
 3. **Oracle.** The cheapest model that actually passed each task. This is the upper bound on what
    any router could save on this task set.
 
-Routers compared: `frontier` (baseline, experiment #1), `jev`, `random` (experiment #2), `rules`
+Routers compared: `frontier` (baseline, experiment #1), `jev-profile` and `jev-sufficiency` (one cached
+Jev call serves both), `random` (experiment #2), `rules`
 (experiment #3) and `cheapest`. Routing overhead (experiment #4) is reported as the selector's
 cost and latency, and as a share of gross savings.
 

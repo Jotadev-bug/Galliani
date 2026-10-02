@@ -33,6 +33,22 @@ def fetch_prices() -> dict[str, tuple[float, float, int]]:
     }
 
 
+def fetch_endpoint_price(model_id: str) -> tuple[float, float, int] | None:
+    """Models outside the main list (e.g. decision models such as Jev) via the endpoints API."""
+    resp = httpx.get(f"https://openrouter.ai/api/v1/models/{model_id}/endpoints", timeout=30)
+    if resp.status_code != 200:
+        return None
+    endpoints = resp.json()["data"].get("endpoints") or []
+    if not endpoints:
+        return None
+    e = endpoints[0]
+    return (
+        round(float(e["pricing"]["prompt"]) * 1_000_000, 6),
+        round(float(e["pricing"]["completion"]) * 1_000_000, 6),
+        int(e.get("context_length") or 0),
+    )
+
+
 def fmt(x: float) -> str:
     return f"{x:g}"
 
@@ -50,12 +66,13 @@ def main() -> int:
     changed = 0
 
     for m in registry.all():
-        if registry.providers[m.provider].base_url != "https://openrouter.ai/api/v1":
+        if not (registry.providers[m.provider].base_url or "").startswith("https://openrouter.ai/api"):
             continue
-        if m.api_model not in live:
-            print(f"!! {m.id}: not listed by OpenRouter (renamed or retired?)", file=sys.stderr)
+        price = live.get(m.api_model) or fetch_endpoint_price(m.api_model)
+        if price is None:
+            print(f"!! {m.id}: not found on OpenRouter (renamed or retired?)", file=sys.stderr)
             continue
-        inp, out, _ctx = live[m.api_model]
+        inp, out, _ctx = price
         old = (m.pricing.input_per_million, m.pricing.output_per_million)
         status = "ok" if old == (inp, out) else f"CHANGED {old} -> {(inp, out)}"
         print(f"{m.id:<40} in ${fmt(inp)}/M  out ${fmt(out)}/M  {status}")

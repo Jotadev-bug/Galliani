@@ -32,11 +32,15 @@ class ConfidencePolicy(BaseModel):
 
 
 class JevConfig(BaseModel):
-    decision: str = Field(pattern="^(profile|direct)$")
+    decision: str = Field(pattern="^(profile|sufficiency)$")
     selector_model: str
     timeout_s: float = 20
-    max_output_tokens: int = 300
-    temperature: float = 0.0
+    max_state_chars: int = Field(default=6000, gt=0)
+    # Token estimate for each output-length level Jev can return (shortest first).
+    output_tokens_by_level: list[int] = Field(min_length=4, max_length=4)
+    # Plain-language description of each tier, used in Jev's "is this model sufficient?" questions.
+    # Order is from least to most capable.
+    tier_descriptions: dict[str, str]
 
 
 class RulesConfig(BaseModel):

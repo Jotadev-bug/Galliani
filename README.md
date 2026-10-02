@@ -9,9 +9,9 @@ offline router + execution + metrics, validated by a benchmark. No API or UI yet
 ```bash
 pip install -e ".[dev]"
 cp .env.example .env                  # add OPENROUTER_API_KEY (one key covers Google, OpenAI and Anthropic models)
-python -m pytest                      # 178 tests, no network
+python -m pytest                      # 184 tests, no network
 python benchmark.py --simulate        # offline pipeline check; numbers are SIMULATED
-python benchmark.py                   # the real experiment (~335 generations + 67 Jev calls)
+python benchmark.py                   # the real experiment (~335 generations + 67 Jev decisions)
 python -m app.main "Translate 'good morning' into French"
 ```
 
@@ -21,8 +21,8 @@ python -m app.main "Translate 'good morning' into French"
 |---|---|
 | `config/models.yaml` | Model Registry: providers, models, prices, capability priors. No model facts live in code. |
 | `config/routing.yaml` | Utility weights per mode, success model, confidence thresholds, Jev and fallback settings. |
-| `app/router/` | `Router` interface; `JevRouter`; baselines (`rules`, `random`, `fixed`); scoring and policies. |
-| `app/providers/` | `ModelProvider` interface; OpenAI-compatible (OpenAI, OpenRouter, vLLM, Ollama), Anthropic, mock, cache. |
+| `app/router/` | `Router` interface; `JevRouter` (TypeSafe Jev via the Decisions API); baselines (`rules`, `random`, `fixed`); scoring and policies. |
+| `app/providers/` | `ModelProvider` interface; OpenAI-compatible (OpenAI, OpenRouter, vLLM, Ollama), Anthropic, mock, cache; `DecisionsClient` for Jev. |
 | `app/executor.py` | Runs a decision, walking the fallback chain under a cost cap. |
 | `app/telemetry/costs.py` | Per-request cost/latency records (JSONL; prompts not stored by default). |
 | `benchmarks/` | 67 auto-graded tasks across 13 categories, evaluator, runner. |

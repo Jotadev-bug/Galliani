@@ -27,7 +27,7 @@ async def _main(args: argparse.Namespace) -> int:
             return 0
         ex = await service.run(request)
     finally:
-        await service.pool.aclose()
+        await service.aclose()
 
     d = ex.decision
     if ex.result:

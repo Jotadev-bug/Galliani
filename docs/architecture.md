@@ -23,10 +23,10 @@ RouteRequest ──► ModelRegistry.candidates()      hard constraints: status,
   `providers/factory.py`. Prices are synced from OpenRouter (`scripts/sync_pricing.py`), never typed in code.
 - **Jev is one `Router` among several.** The product depends on the `Router` interface, so Jev
   can be swapped for a learned or rules router without touching the executor, providers or telemetry.
-- **Jev classifies, scoring decides (by default).** In `profile` mode Jev returns a structured task
-  profile and the utility function picks the model, which keeps prices and capabilities out of the
-  LLM's hands and makes the choice auditable. `direct` mode (Jev names the model) exists so the two
-  can be compared in the benchmark.
+- **Jev answers typed questions; code decides.** Jev is a decision model reached through the
+  OpenRouter Decisions API (`app/providers/decisions.py`), not through the chat adapters. It never
+  sees prices or model names, only plain-language tier descriptions. Converting its answers into a
+  model choice (scoring, budgets, fallbacks) happens in code, where it can be audited.
 - **Failures are typed.** Providers raise `ProviderError` subclasses (timeout, rate limit, outage,
   context overflow, model unavailable, auth, invalid request). The executor uses `try_other_model`
   to decide whether a fallback can help.

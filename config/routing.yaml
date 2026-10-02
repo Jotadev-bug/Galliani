@@ -28,15 +28,20 @@ confidence:
   safer_threshold: 0.70     # [safer, execute) : escalate one capability step
                             # <  safer : fall back to the most capable candidate
 
-# Jev settings.
+# Jev settings. Jev (TypeSafe) is a decision model called through the OpenRouter Decisions API.
 jev:
-  # profile: Jev classifies the task, the scoring function picks the model.
-  # direct:  Jev also picks the model; scoring only validates it.
+  # profile:     Jev scores the task's requirements; the utility function above picks the model.
+  # sufficiency: Jev answers "would a <tier> model get this right?" per tier; cheapest sufficient tier wins.
   decision: profile
-  selector_model: openai/gpt-5.4-nano
+  selector_model: typesafe/jev-1.13
   timeout_s: 20
-  max_output_tokens: 300
-  temperature: 0.0
+  max_state_chars: 6000        # Jev has a 32K context and loses accuracy on large state
+  output_tokens_by_level: [20, 150, 600, 2500]
+  tier_descriptions:
+    cheap: "small, fast, low-cost AI model (good at simple questions, translation, short summaries, extraction and classification; weak at multi-step reasoning, hard math and non-trivial code)"
+    mid: "mid-size general-purpose AI model (solid at writing, everyday coding and moderate reasoning; can slip on hard math or tricky logic)"
+    strong: "strong AI model (reliable at complex coding, debugging, document analysis and most reasoning)"
+    frontier: "most capable frontier AI model available (best at hard reasoning, proofs, difficult math and expert-level problems)"
 
 # Baseline rules router (experiment #3): task_type -> tier.
 rules:

@@ -242,8 +242,8 @@ def by_category(outcomes: list[Outcome]) -> dict[str, dict]:
     }
 
 
-def print_report(report: dict, focus: str) -> None:
-    line = "=" * 72
+def print_report(report: dict, focus: list[str]) -> None:
+    line = "=" * 78
     s, b = report["routers"], report["baseline"]
     print(line)
     print("AI MODEL ROUTER BENCHMARK" + ("   [SIMULATED - NOT REAL RESULTS]" if report["simulated"] else ""))
@@ -257,38 +257,40 @@ def print_report(report: dict, focus: str) -> None:
         print(f"  Latency:    {m['mean_latency_ms']:.0f} ms mean, {m['p50_latency_ms']:.0f} ms p50")
 
     block(f"Baseline ({b})", s["frontier"]["summary"])
-    if focus not in s:
-        print(f"\n{focus.upper()} Router: not run (see warnings above)")
-    else:
-        f = s[focus]
-        block(f"{focus.upper()} Router", f["summary"])
+    for name in focus:
+        if name not in s:
+            print(f"\n{name} router: not run (see warnings above)")
+            continue
+        f = s[name]
+        block(f"{name} router", f["summary"])
         c = f["vs_baseline"]
-        print(f"\nSavings:\n  {c['savings'] * 100:.1f}%")
-        print(f"\nQuality delta:\n  {c['quality_delta_pts']:+.1f} pts   (success {c['success_delta_pts']:+.1f} pts)")
         share = c["routing_overhead_share_of_savings"]
-        print(f"\nRouting overhead:\n  {f['summary']['mean_routing_latency_ms']:.0f} ms/request, "
-              f"${f['summary']['routing_cost']:.4f} total"
-              + (f" ({share * 100:.1f}% of gross savings)" if share is not None else ""))
+        print(f"  Savings:    {c['savings'] * 100:.1f}%")
+        print(f"  Quality delta: {c['quality_delta_pts']:+.1f} pts   (success {c['success_delta_pts']:+.1f} pts)")
+        print(f"  Routing overhead: {f['summary']['mean_routing_latency_ms']:.0f} ms/request, "
+              f"${f['summary']['routing_cost']:.5f} total"
+              + (f" ({share * 100:.2f}% of gross savings)" if share is not None else ""))
 
-    print(f"\n{line}\n{'router':<12}{'quality':>9}{'success':>9}{'cost $':>10}{'savings':>9}"
-          f"{'d.qual':>10}{'lat ms':>9}{'route ms':>10}")
+    print(f"\n{line}\n{'router':<17}{'quality':>9}{'success':>9}{'cost $':>10}{'savings':>9}"
+          f"{'d.qual':>9}{'lat ms':>8}{'route ms':>9}")
     for name, r in s.items():
         m, c = r["summary"], r["vs_baseline"]
-        print(f"{name:<12}{m['quality'] * 100:>8.1f}%{m['success_rate'] * 100:>8.1f}%{m['total_cost']:>10.4f}"
-              f"{c['savings'] * 100:>8.1f}%{c['quality_delta_pts']:>+9.1f}p{m['mean_latency_ms']:>9.0f}"
-              f"{m['mean_routing_latency_ms']:>10.0f}")
+        print(f"{name:<17}{m['quality'] * 100:>8.1f}%{m['success_rate'] * 100:>8.1f}%{m['total_cost']:>10.4f}"
+              f"{c['savings'] * 100:>8.1f}%{c['quality_delta_pts']:>+8.1f}p{m['mean_latency_ms']:>8.0f}"
+              f"{m['mean_routing_latency_ms']:>9.0f}")
 
-    print(f"\n{line}\nModel selection (share of tasks):")
+    print(f"\n{line}\nModel selection (tasks served by each model):")
     for name, r in s.items():
         sel = ", ".join(f"{k.split('/')[-1]} {v}" for k, v in r["summary"]["selection"].items())
-        print(f"  {name:<10} {sel}")
+        print(f"  {name:<16} {sel}")
 
-    if focus in s and s[focus].get("calibration"):
-        f = s[focus]["summary"]
-        print(f"\n{focus.upper()} confidence calibration (stated confidence vs actual success):")
-        for row in s[focus]["calibration"]:
-            print(f"  {row['confidence']:<12} n={row['n']:<4} success={row['success_rate'] * 100:.0f}%")
-        print(f"  escalations: {f['escalation_rate'] * 100:.0f}%   selector errors: {f['router_errors']}")
+    for name in focus:
+        if name in s and s[name].get("calibration"):
+            f = s[name]["summary"]
+            print(f"\n{name} confidence calibration (Jev's stated confidence vs actual success):")
+            for row in s[name]["calibration"]:
+                print(f"  {row['confidence']:<12} n={row['n']:<4} success={row['success_rate'] * 100:.0f}%")
+            print(f"  escalations: {f['escalation_rate'] * 100:.0f}%   Jev errors: {f['router_errors']}")
     print(line)
 
 
@@ -329,18 +331,18 @@ async def main(args: argparse.Namespace) -> int:
     if "frontier" not in router_names:
         router_names.insert(0, "frontier")
     outcomes: dict[str, list[Outcome]] = {}
-    # Jev always calls a real selector (cached), even when generation is simulated.
-    jev_pool = ProviderPool(registry, wrapper=cache_wrapper)
+    # Jev always makes real (cached) calls, even when generation is simulated.
+    jev_reason = jev_unavailable_reason(registry, config)
     for name in router_names:
-        if name == "jev" and (reason := jev_unavailable_reason(registry, config, jev_pool)):
-            print(f"Skipping Jev: {reason}", file=sys.stderr)
+        if name.startswith("jev") and jev_reason:
+            print(f"Skipping {name}: {jev_reason}", file=sys.stderr)
             continue
-        router = build_router(name, registry, config, jev_pool, seed=args.seed)
+        router = build_router(name, registry, config, seed=args.seed, cache_dir=cache)
         print(f"Routing with {name}...", file=sys.stderr)
         outcomes[name] = await run_router(router, tasks, registry, matrix, args.concurrency)
+        await router.aclose()
     outcomes["oracle"] = oracle(tasks, models, matrix, frontier_id)
     await pool.aclose()
-    await jev_pool.aclose()
 
     base = summarize(outcomes["frontier"])
     report = {
@@ -368,11 +370,11 @@ async def main(args: argparse.Namespace) -> int:
             "summary": summary,
             "vs_baseline": compare(summary, base),
             "by_category": by_category(outs),
-            "calibration": calibration(outs) if name == "jev" else None,
+            "calibration": calibration(outs) if name.startswith("jev") else None,
             "outcomes": [asdict(o) for o in outs],
         }
 
-    print_report(report, focus="jev")
+    print_report(report, focus=[n for n in router_names if n.startswith("jev")])
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out = RESULTS_DIR / f"report-{stamp}{'-simulated' if args.simulate else ''}.json"
@@ -383,7 +385,7 @@ async def main(args: argparse.Namespace) -> int:
 
 def cli() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--routers", default="frontier,jev,rules,random,cheapest")
+    p.add_argument("--routers", default="frontier,jev-profile,jev-sufficiency,rules,random,cheapest")
     p.add_argument("--simulate", action="store_true", help="offline mock models; numbers are NOT real")
     p.add_argument("--no-exec", action="store_true", help="skip tasks that execute model-generated code")
     p.add_argument("--categories", help="comma-separated category filter")

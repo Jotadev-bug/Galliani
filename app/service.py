@@ -5,56 +5,58 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.config import CONFIG_DIR, RoutingConfig, load_dotenv, load_routing_config, settings
 from app.executor import Executor
 from app.models.registry import ModelRegistry
-from app.models.schemas import ExecutionResult, ModelSpec, Pricing, RouteRequest
-from app.providers.base import ModelProvider, estimate_tokens
+from app.models.schemas import ExecutionResult, ModelSpec, RouteRequest
+from app.providers.base import estimate_tokens
+from app.providers.decisions import DecisionsClient
 from app.providers.factory import ProviderPool
-from app.providers.openai_compatible import OpenAICompatibleProvider
 from app.router.base import Router
 from app.router.baselines import FixedRouter, RandomRouter, RulesRouter, cheapest
 from app.router.jev import JevRouter
 from app.router.policies import most_capable
 from app.telemetry.costs import JsonlSink, build_record
 
-ROUTER_NAMES = ("jev", "rules", "random", "frontier", "cheapest")
+ROUTER_NAMES = ("jev", "jev-profile", "jev-sufficiency", "rules", "random", "frontier", "cheapest")
 
 
-def jev_selector(registry: ModelRegistry, config: RoutingConfig, pool: ProviderPool) -> tuple[ModelSpec, ModelProvider]:
-    """Resolve the Jev selector model and its provider, honouring JEV_* env overrides."""
-    selector = registry.get(config.jev.selector_model)
-    override_model = os.environ.get("JEV_MODEL")
-    if override_model:
-        if override_model in registry:
-            selector = registry.get(override_model)
-        else:
-            print(
-                f"warning: JEV_MODEL={override_model!r} is not in the registry; its cost is recorded as $0",
-                file=sys.stderr,
-            )
-            selector = selector.model_copy(update={
-                "id": override_model, "provider_model": override_model,
-                "pricing": Pricing(input_per_million=0, output_per_million=0),
-            })
-    base_url = os.environ.get("JEV_BASE_URL")
-    if base_url:
-        return selector, pool.wrap(OpenAICompatibleProvider("jev", base_url, os.environ.get("JEV_API_KEY")))
-    return selector, pool.for_model(selector)
+def jev_client(
+    registry: ModelRegistry, config: RoutingConfig, cache_dir: Path | None = None
+) -> tuple[ModelSpec, DecisionsClient]:
+    """Resolve the Jev model and its Decisions API client, honouring JEV_* env overrides."""
+    model_id = os.environ.get("JEV_MODEL") or config.jev.selector_model
+    if model_id in registry:
+        selector = registry.get(model_id)
+    else:
+        print(f"warning: JEV_MODEL={model_id!r} is not in the registry; using the configured "
+              f"selector's pricing for cost estimates", file=sys.stderr)
+        selector = registry.get(config.jev.selector_model).model_copy(update={"id": model_id, "provider_model": model_id})
+    provider = registry.providers[selector.provider]
+    base_url = os.environ.get("JEV_BASE_URL") or provider.base_url or ""
+    api_key = os.environ.get("JEV_API_KEY") or (os.environ.get(provider.api_key_env) if provider.api_key_env else None)
+    return selector, DecisionsClient(base_url, api_key, cache_dir=cache_dir)
 
 
-def jev_unavailable_reason(registry: ModelRegistry, config: RoutingConfig, pool: ProviderPool) -> str | None:
+def jev_unavailable_reason(registry: ModelRegistry, config: RoutingConfig) -> str | None:
     """Why Jev cannot run with the current environment, or None if it can."""
-    if os.environ.get("JEV_BASE_URL"):
+    if os.environ.get("JEV_API_KEY"):
         return None
-    override = os.environ.get("JEV_MODEL")
-    selector = registry.get(override if override in registry else config.jev.selector_model)
-    missing = pool.missing_keys([selector])
-    return f"missing {', '.join(missing)} for selector {selector.id}" if missing else None
+    selector = registry.get(config.jev.selector_model)
+    env = registry.providers[selector.provider].api_key_env
+    return f"missing {env} for {selector.id}" if env and not os.environ.get(env) else None
 
 
-def build_router(name: str, registry: ModelRegistry, config: RoutingConfig, pool: ProviderPool, seed: int = 0) -> Router:
+def build_router(
+    name: str,
+    registry: ModelRegistry,
+    config: RoutingConfig,
+    seed: int = 0,
+    cache_dir: Path | None = None,
+) -> Router:
+    """Router names: jev (configured style), jev-profile, jev-sufficiency, rules, random, frontier, cheapest."""
     candidates = registry.candidates()
     if name == "rules":
         return RulesRouter(config.rules)
@@ -64,9 +66,10 @@ def build_router(name: str, registry: ModelRegistry, config: RoutingConfig, pool
         return FixedRouter(most_capable(candidates).id, name="frontier")
     if name == "cheapest":
         return FixedRouter(cheapest(candidates).id, name="cheapest")
-    if name == "jev":
-        selector, provider = jev_selector(registry, config, pool)
-        return JevRouter(provider, selector, config, fallback_router=RulesRouter(config.rules))
+    if name == "jev" or name.startswith("jev-"):
+        selector, client = jev_client(registry, config, cache_dir)
+        style = name.removeprefix("jev-") if name != "jev" else None
+        return JevRouter(client, selector, config, fallback_router=RulesRouter(config.rules), decision=style)
     raise ValueError(f"Unknown router {name!r}; choose from {ROUTER_NAMES}")
 
 
@@ -88,7 +91,7 @@ class RouterService:
         s = settings()
         return cls(
             registry=registry, config=config, pool=pool,
-            router=build_router(router_name, registry, config, pool),
+            router=build_router(router_name, registry, config),
             sink=JsonlSink(s["log_path"]),
             store_prompts=s["store_prompts"].lower() == "true",
         )
@@ -103,3 +106,7 @@ class RouterService:
                 request, execution, provider=provider, user_id=user_id, store_prompt=self.store_prompts
             ))
         return execution
+
+    async def aclose(self) -> None:
+        await self.router.aclose()
+        await self.pool.aclose()

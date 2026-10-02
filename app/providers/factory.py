@@ -21,6 +21,8 @@ def build_provider(name: str, cfg: ProviderConfig) -> ModelProvider:
         return AnthropicProvider(name, cfg.base_url or "https://api.anthropic.com", api_key)
     if cfg.adapter == "mock":
         return MockProvider(name)
+    if cfg.adapter == "decisions":
+        raise ValueError(f"Provider {name!r} serves decision models (e.g. Jev); they cannot be generation candidates")
     raise ValueError(f"Unknown adapter {cfg.adapter!r}")
 
 

@@ -6,7 +6,7 @@ from datetime import date
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Score = float  # 0.0 - 1.0
 
@@ -86,7 +86,8 @@ class ModelSpec(BaseModel):
     provider: str
     vendor: str
     tier: Tier
-    skills: Skills
+    # Capability priors; required for candidates, unused for router-only models such as Jev.
+    skills: Skills | None = None
     features: Features = Features()
     pricing: Pricing
     pricing_checked: date | None = None
@@ -97,13 +98,19 @@ class ModelSpec(BaseModel):
     # Model id to send to the provider when it differs from the registry id.
     provider_model: str | None = None
 
+    @model_validator(mode="after")
+    def _candidates_need_skills(self) -> ModelSpec:
+        if self.candidate and self.skills is None:
+            raise ValueError(f"candidate model {self.id} needs skills")
+        return self
+
     @property
     def api_model(self) -> str:
         return self.provider_model or self.id
 
 
 class ProviderConfig(BaseModel):
-    adapter: Literal["openai_compatible", "anthropic", "mock"]
+    adapter: Literal["openai_compatible", "anthropic", "decisions", "mock"]
     base_url: str | None = None
     api_key_env: str | None = None
 
