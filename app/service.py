@@ -20,7 +20,7 @@ from app.router.jev import JevRouter
 from app.router.policies import most_capable
 from app.telemetry.costs import JsonlSink, build_record
 
-ROUTER_NAMES = ("jev", "jev-profile", "jev-sufficiency", "rules", "random", "frontier", "cheapest")
+ROUTER_NAMES = ("jev", "jev-choice", "jev-profile", "jev-sufficiency", "rules", "random", "frontier", "cheapest")
 
 
 def jev_client(
@@ -56,7 +56,7 @@ def build_router(
     seed: int = 0,
     cache_dir: Path | None = None,
 ) -> Router:
-    """Router names: jev (configured style), jev-profile, jev-sufficiency, rules, random, frontier, cheapest."""
+    """Router names: jev (configured style), jev-choice, jev-profile, jev-sufficiency, rules, random, frontier, cheapest."""
     candidates = registry.candidates()
     if name == "rules":
         return RulesRouter(config.rules)

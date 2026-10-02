@@ -32,7 +32,11 @@ class ConfidencePolicy(BaseModel):
 
 
 class JevConfig(BaseModel):
-    decision: str = Field(pattern="^(profile|sufficiency)$")
+    decision: str = Field(pattern="^(choice|profile|sufficiency)$")
+    # Instruction for Jev's model-choice question, per user mode (auto, cheapest, fastest, best).
+    choice_instructions: dict[str, str]
+    # Output length assumed when telling Jev how prices compare (before Jev has judged the length).
+    choice_assumed_output_tokens: int = Field(default=500, gt=0)
     selector_model: str
     timeout_s: float = 20
     max_state_chars: int = Field(default=6000, gt=0)

@@ -12,6 +12,7 @@ per request (`app/router/jev.py`) sends `state = {"user_request": <prompt, max 6
 
 | Question | Type | Becomes |
 |---|---|---|
+| `model` | Choice over the candidate models | Jev's pick and a probability for each model |
 | `task_type` | Choice over 15 task types | `profile.task_type` |
 | `reasoning`, `coding`, `writing`, `knowledge`, `precision` | Score over 5 described levels | requirement = score / 4 |
 | `output_length` | Score over 4 length buckets | token estimate from `jev.output_tokens_by_level` |
@@ -23,8 +24,16 @@ and names `user_request`, and no arithmetic or counting is asked of it, so token
 are computed in code. Jev bills only input tokens ($0.042/M), and `usage.cost` from the API is
 recorded as the routing cost.
 
-Two decision styles use the same answers, so the benchmark compares them from one call:
+Each option in the `model` question is a real model ID with its registry `description`, its exact
+price ($ per million input and output tokens), a relative-cost phrase computed in code for this
+request ("about 10x the cost of the cheapest option") and a speed label. Options are listed cheapest
+first. The instruction depends on the mode (`jev.choice_instructions`). For example, `auto` says
+"pick the cheapest model that will answer it completely and correctly".
 
+Three decision styles use the same answers, so the benchmark compares them from one call:
+
+- **`jev-choice`** (default): Jev's pick is used directly. The other models are ordered by Jev's
+  probability and become fallbacks, and the Choice's own confidence feeds the confidence policy.
 - **`jev-profile`**: the Score answers form the profile, and the utility function below picks the model.
 - **`jev-sufficiency`**: the cheapest candidate whose tier Noul is at least `min_success` wins.
   This uses Jev's own probabilities directly, with no skill priors.

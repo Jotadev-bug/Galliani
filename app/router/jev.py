@@ -3,12 +3,15 @@
 Jev is not a generative model. It answers typed questions about a `state` with probabilities
 (https://docs.typesafe.ai/primitives). One call asks every question at once:
 
+- model                 Choice over the candidate models, each described by its strengths,
+                          its $/token price and its cost relative to the cheapest option
 - task_type             Choice over TaskType
 - reasoning ... precision Score over ordered, descriptive levels -> requirement in [0, 1]
 - output_length         Score over length buckets -> token estimate (numbers stay in code)
 - sufficient_<tier>     Noul per candidate tier: "would this class of model answer correctly?"
 
-Two decision styles reuse the same answers, so the benchmark compares them at no extra cost:
+Three decision styles reuse the same answers, so the benchmark compares them at no extra cost:
+- choice:      Jev picks the model directly, weighing task against price (the default).
 - profile:     the Score answers form a TaskProfile and the utility function picks the model.
 - sufficiency: the cheapest tier whose Noul clears min_success wins.
 
@@ -135,8 +138,48 @@ def build_state(request: RouteRequest, max_chars: int) -> dict[str, str]:
     return state
 
 
-def build_questions(tiers: Sequence[str], tier_descriptions: dict[str, str]) -> dict[str, Question]:
-    questions: dict[str, Question] = {
+def _relative_cost(ratio: float) -> str:
+    if ratio < 1.15:
+        return "the cheapest option for this request"
+    if ratio < 1.5:
+        return "slightly more expensive than the cheapest option"
+    return f"about {ratio:.0f}x the cost of the cheapest option" if ratio < 10 else \
+        f"about {round(ratio, -1):.0f}x the cost of the cheapest option"
+
+
+def _speed(latency_ms: float, fastest: float) -> str:
+    ratio = latency_ms / fastest
+    return "very fast" if ratio < 1.5 else "fast" if ratio < 2.5 else "moderate speed" if ratio < 5 else "slow"
+
+
+def model_choice(
+    request: RouteRequest, candidates: Sequence[ModelSpec], instructions: str, assumed_output_tokens: int
+) -> ChoiceQuestion:
+    """One option per candidate: strengths, $/M tokens, and cost/speed relative to the alternatives.
+
+    Jev reads numbers poorly, so code turns prices into a relative-cost phrase for this request
+    and keeps the exact $/M figures alongside for reference. Options are listed cheapest first.
+    """
+    input_tokens = estimate_tokens(request.prompt_text)
+    cost = {m.id: sum(m.pricing.cost(input_tokens, assumed_output_tokens)) for m in candidates}
+    latency = {m.id: m.latency.estimate_ms(assumed_output_tokens) for m in candidates}
+    cheapest, fastest = min(cost.values()), min(latency.values())
+    criteria = {}
+    for m in sorted(candidates, key=lambda m: cost[m.id]):
+        p = m.pricing
+        criteria[m.id] = (
+            f"{m.description or m.tier + ' tier model.'} "
+            f"Price: ${p.input_per_million:g} per million input tokens and ${p.output_per_million:g} per million "
+            f"output tokens, {_relative_cost(cost[m.id] / cheapest)}. Speed: {_speed(latency[m.id], fastest)}."
+        )
+    return ChoiceQuestion(instructions=instructions, criteria=criteria)
+
+
+def build_questions(
+    tiers: Sequence[str], tier_descriptions: dict[str, str], choice: ChoiceQuestion | None = None
+) -> dict[str, Question]:
+    questions: dict[str, Question] = {"model": choice} if choice else {}
+    questions |= {
         "task_type": ChoiceQuestion(
             instructions="What kind of task is `user_request` asking for?",
             criteria={t.value: desc for t, desc in TASK_TYPES.items()},
@@ -209,7 +252,7 @@ class JevRouter(Router):
         self.config = config
         self.fallback_router = fallback_router
         self.decision = decision or config.jev.decision
-        if self.decision not in ("profile", "sufficiency"):
+        if self.decision not in ("choice", "profile", "sufficiency"):
             raise ValueError(f"Unknown Jev decision style {self.decision!r}")
         self.name = f"jev-{self.decision}"
 
@@ -221,15 +264,20 @@ class JevRouter(Router):
             raise NoCandidatesError("No candidate model satisfies the request constraints")
         cfg = self.config.jev
         tiers = sorted({m.tier for m in candidates}, key=lambda t: list(cfg.tier_descriptions).index(t))
+        choice = model_choice(
+            request, candidates, cfg.choice_instructions[request.mode], cfg.choice_assumed_output_tokens
+        )
         start = time.perf_counter()
         try:
             result = await self.client.decide(
                 self.selector.api_model,
                 build_state(request, cfg.max_state_chars),
-                build_questions(tiers, cfg.tier_descriptions),
+                build_questions(tiers, cfg.tier_descriptions, choice),
                 timeout_s=cfg.timeout_s,
             )
             profile = to_profile(result, cfg.output_tokens_by_level)
+            if result.answers["model"].choice not in {m.id for m in candidates}:
+                raise JevAnswerError(f"Jev chose an unknown model {result.answers['model'].choice!r}")
         except (ProviderError, KeyError) as e:
             # Jev failed: let the fallback router decide, with zero confidence so the confidence
             # policy sends the request to the most capable model.
@@ -237,7 +285,10 @@ class JevRouter(Router):
             return self._finish(decision, candidates, 0.0, start, Usage(), error=f"{type(e).__name__}: {e}")
 
         confidence = overall_confidence(result)
-        if self.decision == "profile":
+        if self.decision == "choice":
+            decision = self._by_choice(result, profile, request, candidates)
+            confidence = decision.confidence
+        elif self.decision == "profile":
             decision = decide_from_profile(
                 self.name, profile, request, candidates, self.config, confidence=confidence, reason=describe(profile)
             )
@@ -250,6 +301,34 @@ class JevRouter(Router):
             in_cost, out_cost = u.cost, 0.0
         usage = Usage(input_tokens=u.input_tokens, output_tokens=u.output_tokens, input_cost=in_cost, output_cost=out_cost)
         return self._finish(decision, candidates, confidence, start, usage)
+
+    def _by_choice(
+        self, result: DecisionResult, profile: TaskProfile, request: RouteRequest, candidates: Sequence[ModelSpec]
+    ) -> RouteDecision:
+        """Jev's own pick. Fallbacks follow Jev's probability for each model; confidence is the Choice's."""
+        answer = result.answers["model"]
+        probs = answer.probabilities or {answer.choice: 1.0}
+        input_tokens = estimate_tokens(request.prompt_text)
+        out_tokens = profile.expected_output_tokens
+        scores = sorted(
+            (
+                CandidateScore(
+                    # For this style p_success holds Jev's choice probability, not a success estimate.
+                    model_id=m.id, p_success=probs.get(m.id, 0.0),
+                    est_cost=sum(m.pricing.cost(input_tokens, out_tokens)),
+                    est_latency_ms=m.latency.estimate_ms(out_tokens), utility=probs.get(m.id, 0.0),
+                )
+                for m in candidates
+            ),
+            key=lambda s: (s.model_id != answer.choice, -s.utility, s.est_cost),
+        )
+        top = ", ".join(f"{s.model_id.split('/')[-1]} {s.p_success:.2f}" for s in scores[:3])
+        return RouteDecision(
+            router=self.name, model_id=answer.choice,
+            confidence=answer.confidence if answer.confidence is not None else max(probs.values()),
+            profile=profile, reason=f"Jev chose {answer.choice} ({top}); {describe(profile)}",
+            fallbacks=[s.model_id for s in scores[1:]], scores=scores,
+        )
 
     def _by_sufficiency(
         self,

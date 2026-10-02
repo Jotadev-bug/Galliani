@@ -2,7 +2,7 @@
 
     python -m app.main "Translate 'good morning' into French"
     python -m app.main --router rules --mode cheapest "..."
-    python -m app.main --route-only "..."      # show the decision without executing
+    python -m app.main --route-only "..."      # show Jev's decision without generating (costs ~$0.00004)
 """
 
 from __future__ import annotations
@@ -23,7 +23,20 @@ async def _main(args: argparse.Namespace) -> int:
         if args.route_only:
             candidates = service.registry.candidates(request, input_tokens=estimate_tokens(args.prompt))
             d = await service.router.route(request, candidates)
-            print(d.model_dump_json(indent=2))
+            if args.json:
+                print(d.model_dump_json(indent=2))
+                return 0
+            print(f"Selected:    {d.model_id}")
+            print(f"Confidence:  {d.confidence:.0%}" + ("  (escalated)" if d.escalated else ""))
+            print(f"Why:         {d.reason}")
+            if d.router_error:
+                print(f"Router error: {d.router_error}")
+            print(f"Routing:     ${d.router_usage.total_cost:.6f}, {d.router_latency_ms:.0f} ms")
+            if d.scores:
+                print("\nOptions (router score, estimated cost of this request):")
+                for s in d.scores:
+                    mark = "->" if s.model_id == d.model_id else "  "
+                    print(f"  {mark} {s.model_id:<32} {s.p_success:>5.2f}   ${s.est_cost:.5f}")
             return 0
         ex = await service.run(request)
     finally:
@@ -50,7 +63,8 @@ def main() -> None:
     p.add_argument("prompt")
     p.add_argument("--router", default="jev", choices=ROUTER_NAMES)
     p.add_argument("--mode", default="auto", choices=["auto", "cheapest", "fastest", "best"])
-    p.add_argument("--route-only", action="store_true")
+    p.add_argument("--route-only", action="store_true", help="show the routing decision without generating")
+    p.add_argument("--json", action="store_true", help="with --route-only, print the raw decision as JSON")
     sys.exit(asyncio.run(_main(p.parse_args())))
 
 

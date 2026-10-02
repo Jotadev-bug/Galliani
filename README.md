@@ -9,10 +9,11 @@ offline router + execution + metrics, validated by a benchmark. No API or UI yet
 ```bash
 pip install -e ".[dev]"
 cp .env.example .env                  # add OPENROUTER_API_KEY (one key covers Google, OpenAI and Anthropic models)
-python -m pytest                      # 184 tests, no network
+python -m pytest                      # 189 tests, no network
 python benchmark.py --simulate        # offline pipeline check; numbers are SIMULATED
 python benchmark.py                   # the real experiment (~335 generations + 67 Jev decisions)
-python -m app.main "Translate 'good morning' into French"
+python -m app.main --route-only "Prove there are infinitely many primes"   # see which model Jev picks and why
+python -m app.main "Translate 'good morning' into French"                  # route and answer
 ```
 
 ## Layout

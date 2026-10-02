@@ -30,9 +30,17 @@ confidence:
 
 # Jev settings. Jev (TypeSafe) is a decision model called through the OpenRouter Decisions API.
 jev:
+  # choice:      Jev picks the model itself from the candidates' descriptions and prices.
   # profile:     Jev scores the task's requirements; the utility function above picks the model.
   # sufficiency: Jev answers "would a <tier> model get this right?" per tier; cheapest sufficient tier wins.
-  decision: profile
+  # All three come from the same Jev call; the benchmark compares them.
+  decision: choice
+  choice_instructions:
+    auto: "Which model should answer `user_request`? Pick the cheapest model that will answer it completely and correctly. Choose a more expensive model only when the task clearly needs its extra capability."
+    cheapest: "Which model should answer `user_request`? Pick the lowest-priced model that can still give an acceptable answer."
+    fastest: "Which model should answer `user_request`? Pick the fastest model that can still give an acceptable answer."
+    best: "Which model should answer `user_request`? Pick the model most likely to give the best possible answer, regardless of price."
+  choice_assumed_output_tokens: 500
   selector_model: typesafe/jev-1.13
   timeout_s: 20
   max_state_chars: 6000        # Jev has a 32K context and loses accuracy on large state

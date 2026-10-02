@@ -86,6 +86,8 @@ class ModelSpec(BaseModel):
     provider: str
     vendor: str
     tier: Tier
+    # Plain-language strengths and weaknesses; Jev reads this when choosing a model.
+    description: str | None = None
     # Capability priors; required for candidates, unused for router-only models such as Jev.
     skills: Skills | None = None
     features: Features = Features()

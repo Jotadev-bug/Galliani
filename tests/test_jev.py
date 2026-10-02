@@ -8,12 +8,15 @@ import pytest
 from app.models.schemas import RouteRequest
 from app.providers.decisions import DecisionsClient
 from app.router.baselines import RulesRouter
-from app.router.jev import LEVELS, OUTPUT_LENGTH, JevRouter, build_questions, build_state
+from app.router.jev import LEVELS, OUTPUT_LENGTH, JevRouter, build_questions, build_state, model_choice
 
 
-def answers(level: int, *, task_type="reasoning", length=1, confidence=0.95, sufficient=None) -> dict:
-    """Decisions API answers: every requirement at `level` (0-4), plus per-tier Nouls."""
+def answers(level: int, *, task_type="reasoning", length=1, confidence=0.95, sufficient=None,
+            model="mid", model_probs=None, model_confidence=0.9) -> dict:
+    """Decisions API answers: every requirement at `level` (0-4), per-tier Nouls and a model Choice."""
     out = {
+        "model": {"type": "choice", "choice": model, "confidence": model_confidence,
+                  "probabilities": model_probs or {model: 1.0}},
         "task_type": {"type": "choice", "choice": task_type, "confidence": confidence,
                       "probabilities": {task_type: 1.0}},
         "output_length": {"type": "score", "score": length, "confidence": confidence},
@@ -58,6 +61,8 @@ async def test_request_shape_follows_decisions_api(registry, config):
     assert q["reasoning"]["type"] == "score" and len(q["reasoning"]["criteria"]) == 5
     assert set(k for k in q if k.startswith("sufficient_")) == {"sufficient_cheap", "sufficient_mid", "sufficient_frontier"}
     assert set(q["sufficient_cheap"]["criteria"]) == {"true", "false"}
+    assert q["model"]["type"] == "choice"
+    assert list(q["model"]["criteria"]) == ["cheap", "mid", "frontier"]  # cheapest first
 
 
 async def test_profile_mode_easy_task_goes_cheap(registry, config):
@@ -140,3 +145,44 @@ def test_state_truncation_and_questions_only_for_present_tiers(config):
     q = build_questions(["cheap", "frontier"], config.jev.tier_descriptions)
     assert "sufficient_mid" not in q and "sufficient_frontier" in q
     assert len(q["output_length"].criteria) == len(OUTPUT_LENGTH[1]) == len(config.jev.output_tokens_by_level)
+
+
+# --------------------------------------------------------------------------- choice style
+
+
+async def test_choice_mode_uses_jevs_pick_and_probability_order(registry, config):
+    body = response(answers(2, model="mid", model_probs={"mid": 0.7, "frontier": 0.25, "cheap": 0.05}))
+    d = await router(registry, config, body, decision="choice").route(
+        RouteRequest.from_prompt("x"), registry.candidates())
+    assert d.router == "jev-choice" and d.model_id == "mid" and not d.escalated
+    assert d.fallbacks == ["frontier", "cheap"]
+    assert d.confidence == 0.9 and "Jev chose mid" in d.reason
+
+
+async def test_choice_mode_low_confidence_escalates(registry, config):
+    body = response(answers(0, model="cheap", model_confidence=0.6))
+    d = await router(registry, config, body, decision="choice").route(
+        RouteRequest.from_prompt("x"), registry.candidates())
+    assert d.model_id == "frontier" and d.escalated
+
+
+async def test_choice_mode_unknown_model_falls_back(registry, config):
+    body = response(answers(0, model="gpt-99"))
+    d = await router(registry, config, body, decision="choice").route(
+        RouteRequest.from_prompt("x"), registry.candidates())
+    assert "unknown model" in d.router_error and d.model_id == "frontier"
+
+
+def test_model_choice_describes_price_and_relative_cost(registry, config):
+    reg = registry.with_overrides("mid", description="Good at writing.")
+    q = model_choice(RouteRequest.from_prompt("hello"), reg.candidates(), config.jev.choice_instructions["auto"], 500)
+    assert "cheapest model" in q.instructions
+    assert "the cheapest option for this request" in q.criteria["cheap"]
+    assert q.criteria["mid"].startswith("Good at writing. Price: $0.75 per million input tokens and $4 per million")
+    assert "x the cost of the cheapest option" in q.criteria["frontier"]
+
+
+def test_choice_instructions_follow_mode(registry, config):
+    cands = registry.candidates()
+    best = model_choice(RouteRequest.from_prompt("x", mode="best"), cands, config.jev.choice_instructions["best"], 500)
+    assert "regardless of price" in best.instructions
