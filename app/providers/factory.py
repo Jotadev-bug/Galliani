@@ -23,7 +23,7 @@ def resolve_key(cfg: ProviderConfig, keys: dict[str, str] | None = None) -> str 
 def build_provider(name: str, cfg: ProviderConfig, keys: dict[str, str] | None = None) -> ModelProvider:
     api_key = resolve_key(cfg, keys)
     if cfg.adapter == "openai_compatible":
-        return OpenAICompatibleProvider(name, cfg.base_url or "", api_key)
+        return OpenAICompatibleProvider(name, cfg.base_url or "", api_key, max_tokens_param=cfg.max_tokens_param)
     if cfg.adapter == "anthropic":
         return AnthropicProvider(name, cfg.base_url or "https://api.anthropic.com", api_key)
     if cfg.adapter == "mock":
@@ -53,11 +53,26 @@ class ProviderPool:
     def wrap(self, provider: ModelProvider) -> ModelProvider:
         return self._wrapper(provider) if self._wrapper else provider
 
+    def _provider(self, name: str) -> ModelProvider:
+        if name not in self._providers:
+            built = build_provider(name, self.registry.providers[name], self._keys)
+            self._providers[name] = self.wrap(built)
+        return self._providers[name]
+
     def for_model(self, model: ModelSpec) -> ModelProvider:
-        if model.provider not in self._providers:
-            built = build_provider(model.provider, self.registry.providers[model.provider], self._keys)
-            self._providers[model.provider] = self.wrap(built)
-        return self._providers[model.provider]
+        return self._provider(model.provider)
+
+    def routes(self, model: ModelSpec) -> list[tuple[ModelProvider, ModelSpec]]:
+        """Ways to call `model`, in order: the vendor's own API when the caller has that key, then the default.
+
+        The direct route sends the vendor's model id (e.g. claude-sonnet-5-5) instead of the registry id.
+        """
+        out = []
+        d = model.direct
+        if d and (d.provider in self._providers or resolve_key(self.registry.providers[d.provider], self._keys)):
+            out.append((self._provider(d.provider), model.model_copy(update={"provider_model": d.model})))
+        out.append((self.for_model(model), model))
+        return out
 
     def missing_keys(self, models: list[ModelSpec]) -> list[str]:
         missing = set()

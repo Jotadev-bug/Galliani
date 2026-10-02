@@ -51,6 +51,13 @@ class InvalidRequest(ProviderError):
     try_other_model = False
 
 
+class Refused(ProviderError):
+    """The model declined the request for safety reasons. Not retried on other models."""
+
+    kind = "refused"
+    try_other_model = False
+
+
 class AuthError(ProviderError):
     """Missing or rejected credentials for this provider; another provider may still work."""
 

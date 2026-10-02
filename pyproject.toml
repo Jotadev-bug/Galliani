@@ -1,5 +1,5 @@
 [project]
-name = "ai-model-router"
+name = "galliani"
 version = "0.1.0"
 description = "Routes each prompt to the cheapest model that is sufficiently capable of solving it."
 requires-python = ">=3.11"
@@ -9,12 +9,13 @@ dependencies = [
     "pyyaml>=6.0",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "anthropic>=1.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 desktop = ["pywebview>=5.0", "keyring>=25.0"]
-build = ["pyinstaller>=6.0"]
+build = ["pyinstaller>=6.0", "pillow>=10.0"]
 
 [build-system]
 requires = ["setuptools>=68"]

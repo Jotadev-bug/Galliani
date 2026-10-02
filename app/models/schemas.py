@@ -79,6 +79,17 @@ class Limits(BaseModel):
     max_output_tokens: int = Field(gt=0)
 
 
+class DirectRoute(BaseModel):
+    """Call the vendor's own API instead of an aggregator when the user has that vendor's key."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str  # a key of `providers` in models.yaml, e.g. "anthropic"
+    model: str  # the vendor's model id, e.g. "claude-sonnet-5-5"
+    # Anthropic server-side refusal fallback (`fallbacks: "default"`), where the model supports it.
+    refusal_fallback: bool = False
+
+
 class ModelSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -99,6 +110,7 @@ class ModelSpec(BaseModel):
     candidate: bool = True
     # Model id to send to the provider when it differs from the registry id.
     provider_model: str | None = None
+    direct: DirectRoute | None = None
 
     @model_validator(mode="after")
     def _candidates_need_skills(self) -> ModelSpec:
@@ -115,6 +127,9 @@ class ProviderConfig(BaseModel):
     adapter: Literal["openai_compatible", "anthropic", "decisions", "mock"]
     base_url: str | None = None
     api_key_env: str | None = None
+    label: str | None = None  # display name, e.g. "Anthropic"
+    # OpenAI's own API wants max_completion_tokens for current models; aggregators accept max_tokens.
+    max_tokens_param: str = "max_tokens"
 
 
 # --------------------------------------------------------------------------- #
@@ -203,6 +218,7 @@ class RouteDecision(BaseModel):
 class GenerationResult(BaseModel):
     model_id: str
     text: str
+    provider: str | None = None  # which provider actually served it (e.g. "openrouter", "anthropic")
     usage: Usage
     latency_ms: float
     finish_reason: str | None = None

@@ -1,7 +1,7 @@
 """Build the standalone desktop app with PyInstaller.
 
     pip install -e ".[desktop,build]"
-    python -m scripts.build_desktop            # -> dist/Router.exe (Windows) / dist/Router.app (macOS)
+    python -m scripts.build_desktop            # -> dist/Galliani.exe (Windows) / dist/Galliani.app (macOS)
 
 The build bundles config/ and the web UI, then runs the binary's --smoke-test to verify it.
 """
@@ -15,8 +15,10 @@ from pathlib import Path
 
 import PyInstaller.__main__
 
+from scripts.make_icon import main as make_icon
+
 ROOT = Path(__file__).resolve().parent.parent
-NAME = "Router"
+NAME = "Galliani"
 
 
 def main() -> int:
@@ -37,7 +39,8 @@ def main() -> int:
         "--collect-submodules", "keyring",
         "--collect-submodules", "app",
     ]
-    icon = ROOT / "assets" / ("router.ico" if sys.platform == "win32" else "router.icns")
+    make_icon()
+    icon = ROOT / "assets" / ("galliani.ico" if sys.platform == "win32" else "galliani.icns")
     if icon.exists():
         args += ["--icon", str(icon)]
     PyInstaller.__main__.run(args)

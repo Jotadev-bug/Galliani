@@ -17,8 +17,16 @@ from app.providers.base import (
 
 
 class OpenAICompatibleProvider(ModelProvider):
-    def __init__(self, name: str, base_url: str, api_key: str | None, client: httpx.AsyncClient | None = None):
+    def __init__(
+        self,
+        name: str,
+        base_url: str,
+        api_key: str | None,
+        client: httpx.AsyncClient | None = None,
+        max_tokens_param: str = "max_tokens",
+    ):
         self.name = name
+        self.max_tokens_param = max_tokens_param
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self._client = client or httpx.AsyncClient()
@@ -38,7 +46,7 @@ class OpenAICompatibleProvider(ModelProvider):
             "messages": [m.model_dump() for m in messages],
         }
         if max_output_tokens:
-            payload["max_tokens"] = max_output_tokens
+            payload[self.max_tokens_param] = max_output_tokens
         if temperature is not None:
             payload["temperature"] = temperature
         if json_mode:

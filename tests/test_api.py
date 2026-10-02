@@ -60,10 +60,11 @@ def body(text="Translate 'hola'", **kw):
 
 
 def test_index_and_config(api):
-    assert "Jev picks the right model" in api.get("/").text
+    assert "Welcome to Galliani" in api.get("/").text
     cfg = api.get("/api/config").json()
     assert cfg["modes"] == ["auto", "cheapest", "fastest", "best"]
-    assert cfg["server_key"] is True and cfg["router_model"] == "typesafe/jev-1.13"
+    assert cfg["keys"]["openrouter"]["env"] is True and cfg["router_model"] == "typesafe/jev-1.13"
+    assert set(cfg["keys"]) == {"openrouter", "openai", "anthropic"}
     assert any(m["id"] == "anthropic/claude-fable-5.1" for m in cfg["models"])
 
 
@@ -82,6 +83,7 @@ def test_chat_routes_generates_and_reports_savings(api):
     assert data["total_cost"] == pytest.approx(data["generation_cost"] + 0.0001)
     assert data["frontier_model"] == "anthropic/claude-fable-5.1"
     assert data["frontier_cost"] > data["generation_cost"]
+    assert data["provider"] == "mock"
     assert api.jev.seen[0].mode == "cheapest"
 
 
@@ -100,6 +102,13 @@ def test_planned_route_must_be_a_candidate(api):
 def test_caller_key_is_used_and_never_logged(api):
     api.post("/api/chat", json=body(), headers={"X-OpenRouter-Key": "sk-or-tester"})
     assert all(k == {"OPENROUTER_API_KEY": "sk-or-tester"} for k in api.keys_seen)
+
+
+def test_optional_vendor_keys_are_passed_through(api):
+    api.post("/api/chat", json=body(), headers={"X-OpenRouter-Key": "sk-or-1", "X-Anthropic-Key": "sk-ant-2",
+                                                "X-OpenAI-Key": "sk-oa-3"})
+    assert api.keys_seen[-1] == {"OPENROUTER_API_KEY": "sk-or-1", "ANTHROPIC_API_KEY": "sk-ant-2",
+                                 "OPENAI_API_KEY": "sk-oa-3"}
     log = api.log.read_text(encoding="utf-8")
     assert "sk-or-tester" not in log and "Translate" not in log  # neither key nor prompt stored
 
@@ -158,17 +167,36 @@ def test_desktop_requires_app_token(desktop):
 
 def test_desktop_key_lifecycle(desktop):
     cfg = desktop.get("/api/config").json()
-    assert cfg["desktop"] is True and cfg["saved_key"] is False
+    assert cfg["desktop"] is True and cfg["keys"]["openrouter"]["saved"] is False
     assert desktop.post("/api/route", json=body()).status_code == 401
 
-    assert desktop.put("/api/key", json={"key": "sk-or-desktop-123"}).json() == {"saved": True}
-    assert desktop.get("/api/config").json()["saved_key"] is True
+    assert desktop.put("/api/key", json={"key": "sk-or-desktop-123"}).json()["saved"] is True
+    assert desktop.put("/api/key", json={"provider": "anthropic", "key": "sk-ant-desktop"}).status_code == 200
+    keys = desktop.get("/api/config").json()["keys"]
+    assert keys["openrouter"]["saved"] and keys["anthropic"]["saved"] and not keys["openai"]["saved"]
     desktop.post("/api/chat", json=body())
-    assert desktop.keys_seen[-1] == {"OPENROUTER_API_KEY": "sk-or-desktop-123"}
+    assert desktop.keys_seen[-1] == {"OPENROUTER_API_KEY": "sk-or-desktop-123", "ANTHROPIC_API_KEY": "sk-ant-desktop"}
 
-    desktop.delete("/api/key")
-    assert desktop.saved == {} and desktop.get("/api/config").json()["saved_key"] is False
+    desktop.delete("/api/key/anthropic")
+    desktop.delete("/api/key/openrouter")
+    assert desktop.saved == {} and not desktop.get("/api/config").json()["keys"]["openrouter"]["saved"]
+    assert desktop.delete("/api/key/bogus").status_code == 422
 
 
 def test_key_endpoints_disabled_outside_desktop(api):
     assert api.put("/api/key", json={"key": "sk-or-xxxxxxxx"}).status_code == 404
+
+
+def test_credits_endpoint(api, monkeypatch):
+    import httpx as _httpx
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+        async def get(self, url, headers=None, timeout=None):
+            assert headers["Authorization"] == "Bearer server-key"
+            return _httpx.Response(200, json={"data": {"total_credits": 10, "total_usage": 2.5}})
+
+    monkeypatch.setattr(routes.httpx, "AsyncClient", FakeClient)
+    assert api.get("/api/credits").json()["balance"] == 7.5

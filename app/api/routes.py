@@ -1,9 +1,11 @@
-"""HTTP API and web UI.
+"""Galliani HTTP API and web UI.
 
     python -m app.api            # http://127.0.0.1:8000
 
-Bring-your-own-key: a caller may send `X-OpenRouter-Key`; it is used for that request only (Jev
-and generation) and is never stored or logged. Without it, the server's OPENROUTER_API_KEY is used.
+Bring-your-own-key: a caller may send `X-OpenRouter-Key` (required: Jev runs on OpenRouter) and,
+optionally, `X-OpenAI-Key` / `X-Anthropic-Key` to call those vendors' models on their own APIs.
+Keys are used for that request only and never stored or logged; missing ones fall back to the
+server environment.
 
 Desktop mode (ROUTER_DESKTOP=1, set by app/desktop.py): the user's key lives in the OS credential
 store (/api/key), and every /api/* call must carry the per-launch ROUTER_APP_TOKEN so other local
@@ -17,6 +19,8 @@ from __future__ import annotations
 
 import os
 import secrets
+
+import httpx
 from pathlib import Path
 from typing import Literal
 
@@ -36,7 +40,12 @@ from app.service import build_router
 from app.telemetry.costs import JsonlSink, build_record
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
-KEY_HEADER = "x-openrouter-key"
+KEY_HEADERS = {  # env-var name -> request header
+    "OPENROUTER_API_KEY": "x-openrouter-key",
+    "OPENAI_API_KEY": "x-openai-key",
+    "ANTHROPIC_API_KEY": "x-anthropic-key",
+}
+CREDITS_URL = "https://openrouter.ai/api/v1/credits"
 DEFAULT_MAX_OUTPUT_TOKENS = 4096  # caps what OpenRouter reserves from the caller's credits per call
 
 load_dotenv()
@@ -44,7 +53,7 @@ REGISTRY = ModelRegistry.from_yaml(CONFIG_DIR / "models.yaml")
 CONFIG = load_routing_config()
 SINK = JsonlSink(settings()["log_path"])
 
-app = FastAPI(title="AI Model Router", version="0.1.0")
+app = FastAPI(title="Galliani", version="0.1.0")
 
 
 def desktop_mode() -> bool:
@@ -121,15 +130,20 @@ class ChatView(BaseModel):
     errors: list[str]
     frontier_model: str
     frontier_cost: float
+    provider: str | None  # "openrouter", "anthropic" or "openai": who actually served the answer
 
 
 # --------------------------------------------------------------------------- helpers
 
 
 def caller_keys(request: Request) -> dict[str, str]:
-    """Header key (web testers) > key saved in the OS credential store (desktop) > server environment."""
-    key = request.headers.get(KEY_HEADER, "").strip() or (keystore.get() if desktop_mode() else None)
-    return {"OPENROUTER_API_KEY": key} if key else {}
+    """Per provider: header (web testers) > OS credential store (desktop) > server environment (resolved later)."""
+    keys = {}
+    for env, header in KEY_HEADERS.items():
+        key = request.headers.get(header, "").strip() or (keystore.get(env) if desktop_mode() else None)
+        if key:
+            keys[env] = key
+    return keys
 
 
 def require_key(keys: dict[str, str]) -> None:
@@ -190,9 +204,12 @@ def planned_decision(plan: PlannedRoute, request: RouteRequest) -> RouteDecision
 def get_config() -> dict:
     return {
         "modes": list(CONFIG.modes),
-        "server_key": bool(os.environ.get("OPENROUTER_API_KEY")),
         "desktop": desktop_mode(),
-        "saved_key": desktop_mode() and keystore.get() is not None,
+        # Per provider: saved in the OS credential store (desktop) and/or set in the server environment.
+        "keys": {
+            provider: {"saved": desktop_mode() and keystore.get(env) is not None, "env": bool(os.environ.get(env))}
+            for provider, env in keystore.PROVIDERS.items()
+        },
         "router_model": CONFIG.jev.selector_model,
         "frontier_model": most_capable(REGISTRY.candidates()).id,
         "models": [
@@ -243,10 +260,28 @@ async def post_chat(body: ChatBody, request: Request) -> ChatView:
         latency_ms=r.latency_ms, attempts=ex.attempts, errors=ex.errors,
         frontier_model=frontier.id,
         frontier_cost=sum(frontier.pricing.cost(r.usage.input_tokens, r.usage.output_tokens)),
+        provider=r.provider,
     )
 
 
+@app.get("/api/credits")
+async def get_credits(request: Request) -> dict:
+    """The caller's OpenRouter balance, for the sidebar card. Null fields if unavailable."""
+    key = resolve_key(REGISTRY.providers["openrouter"], caller_keys(request))
+    if not key:
+        return {"balance": None}
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(CREDITS_URL, headers={"Authorization": f"Bearer {key}"}, timeout=10)
+        data = resp.json().get("data") or {}
+        total, used = float(data["total_credits"]), float(data["total_usage"])
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return {"balance": None}
+    return {"balance": total - used, "total_credits": total, "total_usage": used}
+
+
 class KeyBody(BaseModel):
+    provider: Literal["openrouter", "openai", "anthropic"] = "openrouter"
     key: str = Field(min_length=8, max_length=500)
 
 
@@ -257,17 +292,17 @@ def _desktop_only() -> None:
 
 @app.put("/api/key")
 def put_key(body: KeyBody) -> dict:
-    """Save the user's OpenRouter key in the OS credential store (desktop only)."""
+    """Save one provider key in the OS credential store (desktop only)."""
     _desktop_only()
-    keystore.save(body.key.strip())
-    return {"saved": True}
+    keystore.save(body.key.strip(), keystore.PROVIDERS[body.provider])
+    return {"provider": body.provider, "saved": True}
 
 
-@app.delete("/api/key")
-def delete_key() -> dict:
+@app.delete("/api/key/{provider}")
+def delete_key(provider: Literal["openrouter", "openai", "anthropic"]) -> dict:
     _desktop_only()
-    keystore.delete()
-    return {"saved": False}
+    keystore.delete(keystore.PROVIDERS[provider])
+    return {"provider": provider, "saved": False}
 
 
 @app.get("/")

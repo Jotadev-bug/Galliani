@@ -1,4 +1,4 @@
-"""Desktop app: the web UI in a native window (pywebview), backed by the local API.
+"""Galliani desktop app: the web UI in a native window (pywebview), backed by the local API.
 
     python -m app.desktop                # open the app
     python -m app.desktop --smoke-test   # start the server, check it, exit (used to verify builds)
@@ -19,7 +19,7 @@ import threading
 import time
 from pathlib import Path
 
-APP_NAME = "Router"
+APP_NAME = "Galliani"
 
 
 def user_data_dir() -> Path:
@@ -29,7 +29,7 @@ def user_data_dir() -> Path:
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
-    path = base / "AI Model Router"
+    path = base / APP_NAME
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -65,7 +65,7 @@ def smoke_test(base: str, token: str) -> int:
     checks = {
         "config with token": ok.status_code == 200 and ok.json().get("desktop") is True,
         "config without token rejected": blocked.status_code == 403,
-        "UI served": page.status_code == 200 and "Jev picks the right model" in page.text,
+        "UI served": page.status_code == 200 and "Welcome to Galliani" in page.text,
     }
     for name, passed in checks.items():
         print(f"{'PASS' if passed else 'FAIL'}  {name}")

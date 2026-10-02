@@ -6,8 +6,16 @@ Only used in desktop mode: a shared server must never keep one user's key for ev
 
 from __future__ import annotations
 
-SERVICE = "ai-model-router"
-OPENROUTER = "OPENROUTER_API_KEY"
+SERVICE = "galliani"
+LEGACY_SERVICES = ("ai-model-router",)  # read-only, so keys saved before the rename keep working
+
+# provider id used by the API/UI -> environment-variable name used by the registry
+PROVIDERS = {
+    "openrouter": "OPENROUTER_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+}
+OPENROUTER = PROVIDERS["openrouter"]
 
 
 def _keyring():
@@ -26,10 +34,14 @@ def get(name: str = OPENROUTER) -> str | None:
     kr = _keyring()
     if kr is None:
         return None
-    try:
-        return kr.get_password(SERVICE, name) or None
-    except Exception:  # a locked or broken keyring must not take the app down
-        return None
+    for service in (SERVICE, *LEGACY_SERVICES):
+        try:
+            value = kr.get_password(service, name)
+        except Exception:  # a locked or broken keyring must not take the app down
+            return None
+        if value:
+            return value
+    return None
 
 
 def save(value: str, name: str = OPENROUTER) -> None:
@@ -43,7 +55,8 @@ def delete(name: str = OPENROUTER) -> None:
     kr = _keyring()
     if kr is None:
         return
-    try:
-        kr.delete_password(SERVICE, name)
-    except Exception:  # already absent
-        pass
+    for service in (SERVICE, *LEGACY_SERVICES):
+        try:
+            kr.delete_password(service, name)
+        except Exception:  # already absent
+            pass

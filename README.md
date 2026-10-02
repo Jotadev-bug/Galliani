@@ -1,4 +1,6 @@
-# AI Model Router
+# Galliani
+
+_You prompt. We pick the right model._
 
 Write any prompt; the router picks the cheapest model that is *sufficiently capable* of solving it.
 See [PROJECT.md](PROJECT.md) for the product thesis. This repository is at **Phase 1–3** of the plan:
@@ -40,9 +42,16 @@ python -m app.main "Translate 'good morning' into French"                  # rou
 
 ## Web UI
 
-`python -m app.api` serves the UI on localhost. Testers paste their own OpenRouter key in
-Settings; it stays in their browser and is sent only with their own requests (never stored or
-logged by the server). "Preview route" shows Jev's pick and reasoning without generating an answer.
+`python -m app.api` serves the UI on localhost. Testers add their keys under **API Keys**:
+
+- **OpenRouter** (required): runs Jev and every model.
+- **Anthropic**, **OpenAI** (optional): when present, those vendors' models are called on the
+  vendor's own API with the user's key (e.g. `claude-sonnet-5-5` via the Anthropic SDK, with
+  server-side refusal fallbacks enabled). A failed direct call retries the same model via OpenRouter.
+
+Keys stay in the browser (web) or the OS credential store (desktop) and are sent only with the
+user's own requests. "Preview" shows Jev's pick and reasoning without generating an answer.
+Chats are stored locally on the device.
 
 Before hosting it for others: add authentication, rate limiting and HTTPS (PROJECT.md §27).
 The server binds to 127.0.0.1 by default for that reason.
@@ -54,12 +63,12 @@ The same UI in a native window (pywebview on Edge WebView2 / WebKit), packaged a
 ```bash
 pip install -e ".[desktop,build]"
 python -m app.desktop                 # run from source
-python -m scripts.build_desktop       # -> dist/Router.exe, then runs its --smoke-test
+python -m scripts.build_desktop       # -> dist/Galliani.exe (with icon), then runs its --smoke-test
 ```
 
 - The OpenRouter key is saved in the OS credential store (Windows Credential Manager / macOS
   Keychain), not in a file or browser storage.
 - Each launch serves the UI on a random localhost port with a random token; `/api` calls without
   the token are rejected, so other local programs can't spend the saved key.
-- Logs (no prompts, no keys) go to `%LOCALAPPDATA%\AI Model Router\` (Windows).
-- Build on each target OS: a Windows build makes `Router.exe`; build on a Mac for macOS.
+- Logs (no prompts, no keys) go to `%LOCALAPPDATA%\Galliani\` (Windows).
+- Build on each target OS: a Windows build makes `Galliani.exe`; build on a Mac for macOS.

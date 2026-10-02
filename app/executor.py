@@ -36,18 +36,26 @@ class Executor:
             if model.limits.context_window <= min_context:
                 continue  # a previous model overflowed; only try models with more room
             attempts.append(model_id)
-            try:
-                result = await self.pool.for_model(model).generate(
-                    request.messages,
-                    model,
-                    max_output_tokens=request.max_output_tokens,
-                    timeout_s=self.config.fallback.request_timeout_s,
-                )
-                return ExecutionResult(decision=decision, result=result, attempts=attempts, errors=errors)
-            except ProviderError as e:
-                errors.append(f"{model_id}: {e.kind}: {str(e)[:200]}")
-                if isinstance(e, ContextOverflow):
-                    min_context = max(min_context, model.limits.context_window)
-                if not e.try_other_model:
-                    break
+            stop = False
+            # The vendor's own API first when the caller has that key, then the default provider.
+            for provider, spec in self.pool.routes(model):
+                try:
+                    result = await provider.generate(
+                        request.messages,
+                        spec,
+                        max_output_tokens=request.max_output_tokens,
+                        timeout_s=self.config.fallback.request_timeout_s,
+                    )
+                    result = result.model_copy(update={"provider": provider.name})
+                    return ExecutionResult(decision=decision, result=result, attempts=attempts, errors=errors)
+                except ProviderError as e:
+                    errors.append(f"{model_id} via {provider.name}: {e.kind}: {str(e)[:200]}")
+                    if isinstance(e, ContextOverflow):
+                        min_context = max(min_context, model.limits.context_window)
+                        break  # the same model elsewhere has the same context window
+                    if not e.try_other_model:
+                        stop = True
+                        break
+            if stop:
+                break
         return ExecutionResult(decision=decision, result=None, attempts=attempts, errors=errors)
