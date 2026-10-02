@@ -1,0 +1,1067 @@
+# Router benchmark tasks.
+#
+# Fields:
+#   id, category        identifier and PROJECT.md section-16 category
+#   difficulty          0-1 author estimate. Used ONLY by --simulate dry-runs, never by routers.
+#   prompt              sent verbatim to the model
+#   checks              automatic quality checks (see benchmarks/evaluate.py)
+#   reference           a correct answer; tests assert it passes every check
+#
+# Not yet covered (text-only MVP): multimodal analysis, tool-using tasks.
+
+- id: conv-01
+  category: conversation
+  difficulty: 0.05
+  prompt: "Hi! What's a good name for a golden retriever puppy? Give me just one name, no explanation."
+  checks:
+    - {type: word_count, max: 12}
+  reference: "Sunny"
+
+- id: conv-02
+  category: conversation
+  difficulty: 0.05
+  prompt: "¿Qué día de la semana viene después del martes? Responde con una sola palabra."
+  checks:
+    - {type: contains, value: "miércoles"}
+    - {type: word_count, max: 3}
+  reference: "Miércoles"
+
+- id: conv-03
+  category: conversation
+  difficulty: 0.1
+  prompt: "What is the capital of Australia? Answer in one short sentence."
+  checks:
+    - {type: contains, value: "Canberra"}
+  reference: "The capital of Australia is Canberra."
+
+- id: conv-04
+  category: conversation
+  difficulty: 0.1
+  prompt: "I'm stressed about an exam tomorrow. Give me exactly 3 short tips as a numbered list (1., 2., 3.) and nothing else."
+  checks:
+    - {type: count_regex, pattern: "(?m)^\\s*\\**\\d+[.)]", min: 3, max: 3}
+  reference: |
+    1. Review your summary notes, not everything.
+    2. Sleep at least seven hours.
+    3. Eat a light breakfast and arrive early.
+
+# --------------------------------------------------------------------------- translation
+- id: tr-01
+  category: translation
+  difficulty: 0.1
+  prompt: "Translate into Spanish: 'The library opens at nine in the morning.' Reply with only the translation."
+  checks:
+    - {type: contains_all, values: ["biblioteca", "nueve", "mañana"]}
+  reference: "La biblioteca abre a las nueve de la mañana."
+
+- id: tr-02
+  category: translation
+  difficulty: 0.1
+  prompt: "Traduce al inglés: 'Me gustaría reservar una mesa para dos personas esta noche.' Responde solo con la traducción."
+  checks:
+    - {type: contains_all, values: ["table", "two", "tonight"]}
+    - {type: contains_any, values: ["reserve", "book"]}
+  reference: "I would like to book a table for two people tonight."
+
+- id: tr-03
+  category: translation
+  difficulty: 0.2
+  prompt: "Translate into French: 'I have been living in this city for five years.' Reply with only the translation."
+  checks:
+    - {type: contains_all, values: ["depuis", "cinq ans", "ville"]}
+  reference: "J'habite dans cette ville depuis cinq ans."
+
+- id: tr-04
+  category: translation
+  difficulty: 0.45
+  prompt: "Translate the English idiom 'It's raining cats and dogs' into natural Spanish using an equivalent Spanish idiom, not a literal translation. Reply with only the Spanish phrase."
+  checks:
+    - {type: contains_any, values: ["cántaros", "a mares", "chuzos"]}
+    - {type: not_contains, values: ["gatos", "perros"]}
+  reference: "Está lloviendo a cántaros."
+
+- id: tr-05
+  category: translation
+  difficulty: 0.15
+  prompt: "Translate into German: 'Please close the window.' Reply with only the translation."
+  checks:
+    - {type: contains, value: "fenster"}
+    - {type: contains_any, values: ["schließen", "zumachen", "mach"]}
+  reference: "Bitte schließen Sie das Fenster."
+
+# --------------------------------------------------------------------------- summarization
+- id: sum-01
+  category: summarization
+  difficulty: 0.2
+  prompt: |
+    Summarize the following in ONE sentence of at most 35 words.
+
+    Northwind Traders reported third-quarter revenue of $4.2 million, up 12% from a year earlier,
+    driven mainly by its new online store. However, shipping costs rose 30%, cutting net profit to
+    $310,000. CEO Laura Méndez said the company will open a second warehouse in Valencia in 2027
+    to reduce delivery times and costs.
+  checks:
+    - {type: contains, value: "4.2"}
+    - {type: contains_any, values: ["warehouse", "Valencia"]}
+    - {type: word_count, max: 40}
+  reference: "Northwind's Q3 revenue rose 12% to $4.2 million, but 30% higher shipping costs cut profit to $310,000, so it will open a Valencia warehouse in 2027."
+
+- id: sum-02
+  category: summarization
+  difficulty: 0.25
+  prompt: |
+    Resume el siguiente texto en exactamente 3 viñetas que empiecen por "- ". No añadas nada más.
+
+    El ayuntamiento ha aprobado nuevas restricciones de agua debido a la sequía. A partir del
+    1 de julio queda prohibido regar jardines privados entre las 10:00 y las 20:00. Las piscinas
+    comunitarias podrán llenarse solo una vez por temporada. El objetivo es reducir el consumo
+    un 20% respecto al verano pasado. Las multas por incumplimiento oscilarán entre 300 y 3.000 euros.
+  checks:
+    - {type: count_regex, pattern: "(?m)^\\s*[-•*]\\s", min: 3, max: 3}
+    - {type: contains, value: "20%"}
+  reference: |
+    - Desde el 1 de julio se prohíbe regar jardines privados entre las 10:00 y las 20:00.
+    - Las piscinas comunitarias solo pueden llenarse una vez por temporada.
+    - Se busca reducir el consumo un 20%, con multas de 300 a 3.000 euros.
+
+- id: sum-03
+  category: summarization
+  difficulty: 0.3
+  prompt: |
+    Give a TL;DR (max 50 words) of these meeting notes. It must state the decision, its owner and the deadline.
+
+    - Discussed slow reporting queries; MySQL 5.7 is end-of-life.
+    - Priya suggested ClickHouse; team worried about operational overhead.
+    - Decision: migrate the main database to PostgreSQL 17.
+    - Owner: Ravi. Deadline: March 14.
+    - Priya to benchmark ClickHouse separately for analytics only; no deadline.
+  checks:
+    - {type: contains_all, values: ["postgres", "ravi"]}
+    - {type: regex, pattern: "(?i)(march\\s*14|14(th)?\\s*(of\\s*)?march|mar\\.?\\s*14|03/14|14/03)"}
+    - {type: word_count, max: 60}
+  reference: "Decision: migrate the main database to PostgreSQL 17, owned by Ravi, due March 14. Priya will benchmark ClickHouse for analytics separately."
+
+- id: sum-04
+  category: summarization
+  difficulty: 0.3
+  prompt: |
+    Summarize this for a non-technical reader in at most 50 words.
+
+    During a TLS handshake the client and server agree on a protocol version and cipher suite.
+    The server presents a certificate signed by a trusted certificate authority, which the client
+    verifies to confirm the server's identity. Both sides then perform a key exchange (typically
+    ECDHE) to derive shared symmetric session keys without ever sending those keys over the network.
+    All subsequent application data is encrypted with these session keys.
+  checks:
+    - {type: contains, value: "certificate"}
+    - {type: contains_any, values: ["key", "encrypt"]}
+    - {type: word_count, max: 60}
+  reference: "Your browser and the website agree on how to talk securely, the site proves who it is with a trusted certificate, and both secretly create shared keys so everything sent afterwards is encrypted."
+
+- id: sum-05
+  category: summarization
+  difficulty: 0.15
+  prompt: |
+    Summarize this fable in at most two sentences, then state its moral on a separate line starting with "Moral:".
+
+    A young goat named Pip always skipped ahead of the herd to eat the freshest grass. One evening,
+    chasing a patch of clover, Pip wandered so far that the herd crossed the river without him.
+    When the water rose overnight, Pip spent three cold days alone on the wrong bank until the old
+    shepherd finally came back for him. After that, Pip grazed beside the others.
+  checks:
+    - {type: contains, value: "Pip"}
+    - {type: regex, pattern: "(?im)^\\W*moral\\W*:"}
+  reference: |
+    Pip the goat kept running ahead of the herd and was left stranded across a rising river for three days until the shepherd rescued him. Afterwards he stayed with the others.
+    Moral: Staying with your group can keep you safe.
+
+# --------------------------------------------------------------------------- extraction
+- id: ext-01
+  category: extraction
+  difficulty: 0.15
+  prompt: |
+    Extract a JSON object with keys "name", "email" and "phone" from this message. Return only JSON.
+
+    "Hola, soy Marta Ruiz. Me puedes escribir a marta.ruiz@example.com o llamarme al +34 612 345 678."
+  checks:
+    - {type: json, equals: {name: "Marta Ruiz", email: "marta.ruiz@example.com"}}
+    - {type: regex, pattern: "612\\s?345\\s?678"}
+  reference: '{"name": "Marta Ruiz", "email": "marta.ruiz@example.com", "phone": "+34 612 345 678"}'
+
+- id: ext-02
+  category: extraction
+  difficulty: 0.5
+  prompt: |
+    List every date mentioned in the text in ISO format (YYYY-MM-DD), one per line, in order of appearance. Output only the dates.
+
+    "The contract was signed on March 3, 2025, amended on 17/06/2025 (European day/month format), and expires on the last day of February 2028."
+  checks:
+    - {type: contains_all, values: ["2025-03-03", "2025-06-17", "2028-02-29"]}
+    - {type: line_count, max: 3}
+  reference: |
+    2025-03-03
+    2025-06-17
+    2028-02-29
+
+- id: ext-03
+  category: extraction
+  difficulty: 0.3
+  prompt: |
+    Convert this order into JSON with the shape {"items": [{"name": str, "qty": int, "unit_price": number}], "total": number}.
+    Return only JSON.
+
+    Order: 3 x Widget A @ 12.50 each; 2 x Widget B @ 40.00 each; 1 x USB cable @ 7.50.
+  checks:
+    - {type: json, path: total, equals: 125.0}
+    - {type: json, path: items, length: 3}
+  reference: '{"items": [{"name": "Widget A", "qty": 3, "unit_price": 12.5}, {"name": "Widget B", "qty": 2, "unit_price": 40.0}, {"name": "USB cable", "qty": 1, "unit_price": 7.5}], "total": 125.0}'
+
+- id: ext-04
+  category: extraction
+  difficulty: 0.35
+  prompt: |
+    From this access log, return a JSON array (and nothing else) of the unique IP addresses that received a 500 status, sorted ascending as strings.
+
+    10.0.0.7 - GET /api/users 200
+    10.0.0.12 - POST /api/orders 500
+    192.168.1.4 - GET /health 200
+    10.0.0.7 - POST /api/orders 500
+    10.0.0.12 - GET /api/orders 500
+    172.16.0.3 - GET /api/items 404
+    10.0.0.2 - DELETE /api/items/9 500
+  checks:
+    - {type: json, equals: ["10.0.0.12", "10.0.0.2", "10.0.0.7"]}
+  reference: '["10.0.0.12", "10.0.0.2", "10.0.0.7"]'
+
+- id: ext-05
+  category: extraction
+  difficulty: 0.25
+  prompt: |
+    Extrae los productos y sus precios en euros como un objeto JSON {"producto": precio_numérico}. Devuelve solo el JSON.
+
+    "Esta semana el café molido está a 4,99 €, las galletas de avena a 2,35 € y el aceite de oliva virgen extra, que antes costaba 9,90 €, ahora está rebajado a 8,45 €."
+  checks:
+    - {type: regex, pattern: "4\\.99"}
+    - {type: regex, pattern: "2\\.35"}
+    - {type: regex, pattern: "8\\.45"}
+    - {type: not_contains, values: ["9.9"]}
+  reference: '{"café molido": 4.99, "galletas de avena": 2.35, "aceite de oliva virgen extra": 8.45}'
+
+- id: ext-06
+  category: extraction
+  difficulty: 0.2
+  prompt: |
+    List only the email addresses that belong to the acme.com domain, one per line, nothing else.
+
+    CC: john@acme.com, sara.lee@acme-corp.com, ops@acme.com.mx, li.wei@acme.com, maria@notacme.com
+  checks:
+    - {type: contains_all, values: ["john@acme.com", "li.wei@acme.com"]}
+    - {type: not_contains, values: ["sara.lee", "ops@", "maria@"]}
+  reference: |
+    john@acme.com
+    li.wei@acme.com
+
+# --------------------------------------------------------------------------- classification
+- id: cls-01
+  category: classification
+  difficulty: 0.1
+  prompt: "Classify the sentiment of this review as positive, negative or mixed. End with 'Answer: <label>'.\n\nReview: \"Food was cold, the waiter was rude and we waited an hour. Never again.\""
+  checks:
+    - {type: answer, value: "negative"}
+  reference: "Answer: negative"
+
+- id: cls-02
+  category: classification
+  difficulty: 0.2
+  prompt: "Classify the sentiment of this review as positive, negative or mixed. End with 'Answer: <label>'.\n\nReview: \"Great camera and a lovely design. The battery, on the other hand, barely lasts half a day.\""
+  checks:
+    - {type: answer, value: "mixed"}
+  reference: "Answer: mixed"
+
+- id: cls-03
+  category: classification
+  difficulty: 0.1
+  prompt: "Clasifica este ticket de soporte en una categoría: facturación, técnico, envío u otro. Termina con 'Respuesta: <categoría>'.\n\nTicket: \"Me han cobrado dos veces el mismo pedido este mes.\""
+  checks:
+    - {type: answer, value: "facturación"}
+  reference: "Respuesta: facturación"
+
+- id: cls-04
+  category: classification
+  difficulty: 0.4
+  prompt: |
+    Identify the language of each sentence. Answer with one line per sentence in the form "N: Language".
+
+    1. Obrigado pela ajuda, até amanhã.
+    2. Non vedo l'ora di vederti.
+    3. Bon dia, com estàs avui?
+    4. Mulțumesc frumos pentru tot.
+  checks:
+    - {type: regex, pattern: "(?i)1\\W+portug"}
+    - {type: regex, pattern: "(?i)2\\W+ital"}
+    - {type: regex, pattern: "(?i)3\\W+catal"}
+    - {type: regex, pattern: "(?i)4\\W+roman"}
+  reference: |
+    1: Portuguese
+    2: Italian
+    3: Catalan
+    4: Romanian
+
+- id: cls-05
+  category: classification
+  difficulty: 0.15
+  prompt: "Is the following message sarcastic? End with 'Answer: yes' or 'Answer: no'.\n\n\"Oh fantastic, my flight got delayed again. Just what I needed today.\""
+  checks:
+    - {type: answer, value: "yes"}
+  reference: "Answer: yes"
+
+# --------------------------------------------------------------------------- writing
+- id: wr-01
+  category: writing
+  difficulty: 0.15
+  prompt: "Write a haiku about autumn rain. Output only the three lines of the haiku."
+  checks:
+    - {type: line_count, min: 3, max: 3}
+    - {type: word_count, max: 25}
+  reference: |
+    Cold rain on red leaves
+    gutters hum a slow song
+    the year exhales
+
+- id: wr-02
+  category: writing
+  difficulty: 0.2
+  prompt: "Escribe un correo formal (máximo 120 palabras) para rechazar una reunión el jueves y proponer otra fecha. Empieza con un saludo formal."
+  checks:
+    - {type: contains_any, values: ["estimado", "estimada", "estimados"]}
+    - {type: contains_any, values: ["propongo", "proponer", "podríamos", "otra fecha", "alternativa", "disponible", "le parece"]}
+    - {type: word_count, max: 130}
+  reference: |
+    Estimado Sr. García:
+
+    Lamento comunicarle que no podré asistir a la reunión del jueves por un compromiso previo.
+    ¿Le parece bien que la traslademos al lunes a las 10:00? Estoy disponible también el martes por la tarde.
+
+    Un cordial saludo,
+    Lucía Martín
+
+- id: wr-03
+  category: writing
+  difficulty: 0.35
+  prompt: "Write a product description for a hiking backpack in exactly 2 paragraphs. Mention that it is waterproof. Do not use any exclamation marks."
+  checks:
+    - {type: paragraphs, min: 2, max: 2}
+    - {type: contains, value: "waterproof"}
+    - {type: not_contains, values: ["!"]}
+  reference: |
+    The Ridgeline 30 is a lightweight daypack built for long trails, with a padded back panel and adjustable hip belt that keep the load stable over rough ground.
+
+    Its waterproof shell and taped seams protect your gear in sudden storms, while side pockets keep bottles and maps within easy reach.
+
+- id: wr-04
+  category: writing
+  difficulty: 0.75
+  prompt: "Write one sentence of at least 12 words about the ocean without using the letter 'e' anywhere (uppercase or lowercase). Output only the sentence."
+  checks:
+    - {type: not_contains, values: ["e"]}
+    - {type: word_count, min: 12}
+  reference: "A vast dark world of salt and coral holds fish that swim past rocky walls all day long."
+
+- id: wr-05
+  category: writing
+  difficulty: 0.3
+  prompt: "Write a 5-line poem whose lines start with the letters R, I, V, E, R in that order (an acrostic spelling RIVER). Output only the poem."
+  checks:
+    - {type: regex, pattern: "(?is)^[\\W_]*r[^\\n]*\\n+[\\W_]*i[^\\n]*\\n+[\\W_]*v[^\\n]*\\n+[\\W_]*e[^\\n]*\\n+[\\W_]*r"}
+  reference: |
+    Rolling past the willows slow,
+    In the moonlight, silver glow,
+    Valleys hear its quiet song,
+    Every stone it hums along,
+    Rushing home where it belongs.
+
+# --------------------------------------------------------------------------- reasoning
+- id: rea-01
+  category: reasoning
+  difficulty: 0.3
+  prompt: "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost, in cents? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 5}
+  reference: "Answer: 5"
+
+- id: rea-02
+  category: reasoning
+  difficulty: 0.4
+  prompt: "On an island, knights always tell the truth and knaves always lie. A says: \"B is a knave.\" B says: \"A and I are both knights.\" What are A and B? End with 'Answer: A=<knight|knave>, B=<knight|knave>'."
+  checks:
+    - {type: answer, value: "", pattern: "a\\W*=\\W*knight\\W*,?\\W*b\\W*=\\W*knave"}
+  reference: "Answer: A=knight, B=knave"
+
+- id: rea-03
+  category: reasoning
+  difficulty: 0.6
+  prompt: |
+    Ana, Ben, Carla, Dev and Eva stand in a row in positions 1 (left) to 5 (right).
+    - Ben is immediately to the left of Eva.
+    - Ana is not at either end.
+    - Carla and Dev are not next to each other.
+    - Dev is somewhere to the left of Ana.
+    - Eva is not in position 5.
+    - Ana and Eva are not next to each other.
+    - Dev is not in position 3.
+    Give the order from left to right. End with 'Answer: name1, name2, name3, name4, name5'.
+  checks:
+    - {type: answer, value: "", pattern: "dev\\W+ana\\W+ben\\W+eva\\W+carla"}
+  reference: "Answer: Dev, Ana, Ben, Eva, Carla"
+
+- id: rea-04
+  category: reasoning
+  difficulty: 0.35
+  prompt: "What is the smaller angle, in degrees, between the hour and minute hands of a clock at 3:40? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 130}
+  reference: "Answer: 130"
+
+- id: rea-05
+  category: reasoning
+  difficulty: 0.2
+  prompt: "If 5 machines take 5 minutes to make 5 widgets, how many minutes would 100 machines take to make 100 widgets? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 5}
+  reference: "Answer: 5"
+
+- id: rea-06
+  category: reasoning
+  difficulty: 0.55
+  prompt: "How many times does the digit 1 appear when you write out every integer from 1 to 199? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 140}
+  reference: "Answer: 140"
+
+- id: rea-07
+  category: reasoning
+  difficulty: 0.4
+  prompt: "What day of the week was 1 January 2000? End with 'Answer: <weekday in English>'."
+  checks:
+    - {type: answer, value: "Saturday"}
+  reference: "Answer: Saturday"
+
+# --------------------------------------------------------------------------- math
+- id: math-01
+  category: math
+  difficulty: 0.05
+  prompt: "Compute 17 × 24. End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 408}
+  reference: "Answer: 408"
+
+- id: math-02
+  category: math
+  difficulty: 0.1
+  prompt: "Solve for x: 3x + 7 = 2x - 5. End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: -12}
+  reference: "Answer: -12"
+
+- id: math-03
+  category: math
+  difficulty: 0.3
+  prompt: "Two fair six-sided dice are rolled. What is the probability that the sum is 8? Give a decimal rounded to 4 places. End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 0.1389, tol: 0.0006}
+  reference: "Answer: 0.1389"
+
+- id: math-04
+  category: math
+  difficulty: 0.35
+  prompt: "How many positive divisors does 360 have? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 24}
+  reference: "Answer: 24"
+
+- id: math-05
+  category: math
+  difficulty: 0.6
+  prompt: "What is the remainder when 7^2026 is divided by 13? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 4}
+  reference: "Answer: 4"
+
+- id: math-06
+  category: math
+  difficulty: 0.55
+  prompt: "In how many distinct ways can 8 people sit around a round table (rotations considered the same) if Alice and Bob refuse to sit next to each other? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 3600}
+  reference: "Answer: 3600"
+
+- id: math-07
+  category: math
+  difficulty: 0.4
+  prompt: "Evaluate the definite integral of x·e^x from 0 to 1. End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 1, tol: 0.001}
+  reference: "Answer: 1"
+
+- id: math-08
+  category: math
+  difficulty: 0.6
+  prompt: "How many lattice paths go from (0,0) to (6,6) using unit steps right or up that never go above the line y = x? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 132}
+  reference: "Answer: 132"
+
+# --------------------------------------------------------------------------- coding
+- id: code-01
+  category: coding
+  difficulty: 0.15
+  prompt: "Write a Python function is_palindrome(s: str) -> bool that returns True if s reads the same backwards, ignoring case, spaces and punctuation. Return only the code in a ```python block."
+  checks:
+    - type: python
+      tests: |
+        assert is_palindrome("A man, a plan, a canal: Panama")
+        assert is_palindrome("")
+        assert not is_palindrome("hello")
+        assert is_palindrome("No 'x' in Nixon")
+  reference: |
+    ```python
+    def is_palindrome(s: str) -> bool:
+        t = [c.lower() for c in s if c.isalnum()]
+        return t == t[::-1]
+    ```
+
+- id: code-02
+  category: coding
+  difficulty: 0.25
+  prompt: "Write a Python function roman_to_int(s: str) -> int that converts a valid Roman numeral (1-3999) to an integer. Return only the code in a ```python block."
+  checks:
+    - type: python
+      tests: |
+        assert roman_to_int("III") == 3
+        assert roman_to_int("LVIII") == 58
+        assert roman_to_int("MCMXCIV") == 1994
+        assert roman_to_int("MMMCMXCIX") == 3999
+  reference: |
+    ```python
+    def roman_to_int(s: str) -> int:
+        v = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+        total = 0
+        for i, c in enumerate(s):
+            if i + 1 < len(s) and v[c] < v[s[i + 1]]:
+                total -= v[c]
+            else:
+                total += v[c]
+        return total
+    ```
+
+- id: code-03
+  category: coding
+  difficulty: 0.35
+  prompt: "Write a Python function merge_intervals(intervals: list[list[int]]) -> list[list[int]] that merges overlapping (or touching) closed intervals and returns them sorted by start. The input may be unsorted. Return only the code in a ```python block."
+  checks:
+    - type: python
+      tests: |
+        assert merge_intervals([[1,3],[2,6],[8,10],[15,18]]) == [[1,6],[8,10],[15,18]]
+        assert merge_intervals([[1,4],[4,5]]) == [[1,5]]
+        assert merge_intervals([[5,7],[1,2]]) == [[1,2],[5,7]]
+        assert merge_intervals([]) == []
+        assert merge_intervals([[1,10],[2,3]]) == [[1,10]]
+  reference: |
+    ```python
+    def merge_intervals(intervals):
+        out = []
+        for s, e in sorted(intervals):
+            if out and s <= out[-1][1]:
+                out[-1][1] = max(out[-1][1], e)
+            else:
+                out.append([s, e])
+        return out
+    ```
+
+- id: code-04
+  category: coding
+  difficulty: 0.45
+  prompt: "Implement a Python class LRUCache(capacity: int) with methods get(key) -> value or -1 if missing, and put(key, value), both O(1). When capacity is exceeded, evict the least recently used key; get() counts as a use. Return only the code in a ```python block."
+  checks:
+    - type: python
+      tests: |
+        c = LRUCache(2)
+        c.put(1, 1); c.put(2, 2)
+        assert c.get(1) == 1
+        c.put(3, 3)
+        assert c.get(2) == -1
+        c.put(4, 4)
+        assert c.get(1) == -1
+        assert c.get(3) == 3 and c.get(4) == 4
+        c.put(3, 30)
+        c.put(5, 5)
+        assert c.get(4) == -1 and c.get(3) == 30
+  reference: |
+    ```python
+    from collections import OrderedDict
+
+    class LRUCache:
+        def __init__(self, capacity):
+            self.cap = capacity
+            self.d = OrderedDict()
+
+        def get(self, key):
+            if key not in self.d:
+                return -1
+            self.d.move_to_end(key)
+            return self.d[key]
+
+        def put(self, key, value):
+            self.d[key] = value
+            self.d.move_to_end(key)
+            if len(self.d) > self.cap:
+                self.d.popitem(last=False)
+    ```
+
+- id: code-05
+  category: coding
+  difficulty: 0.65
+  prompt: "Write a Python function eval_expr(s: str) -> float that evaluates an arithmetic expression with integers, + - * /, parentheses, unary minus and arbitrary whitespace, respecting precedence. Do not use eval, exec or ast. Return only the code in a ```python block."
+  checks:
+    - type: python
+      tests: |
+        import math
+        src = open(__file__).read().split("# --- tests ---")[0]
+        assert "eval(" not in src.replace("eval_expr(", "") and "import ast" not in src
+        assert math.isclose(eval_expr("1 + 2 * 3"), 7)
+        assert math.isclose(eval_expr("(1 + 2) * 3"), 9)
+        assert math.isclose(eval_expr("-3 + 5"), 2)
+        assert math.isclose(eval_expr("2 * -(3 - 5)"), 4)
+        assert math.isclose(eval_expr(" 10 / 4 "), 2.5)
+        assert math.isclose(eval_expr("2 - 3 - 4"), -5)
+        assert math.isclose(eval_expr("--2"), 2)
+  reference: |
+    ```python
+    def eval_expr(s: str) -> float:
+        toks = [c for c in s if not c.isspace()]
+        pos = 0
+
+        def peek():
+            return toks[pos] if pos < len(toks) else None
+
+        def take():
+            nonlocal pos
+            pos += 1
+            return toks[pos - 1]
+
+        def expr():
+            v = term()
+            while peek() in ("+", "-"):
+                v = v + term() if take() == "+" else v - term()
+            return v
+
+        def term():
+            v = factor()
+            while peek() in ("*", "/"):
+                v = v * factor() if take() == "*" else v / factor()
+            return v
+
+        def factor():
+            if peek() == "-":
+                take()
+                return -factor()
+            if peek() == "(":
+                take()
+                v = expr()
+                take()
+                return v
+            start = pos
+            while peek() is not None and peek().isdigit():
+                take()
+            return float("".join(toks[start:pos]))
+
+        return expr()
+    ```
+
+- id: code-06
+  category: coding
+  difficulty: 0.45
+  prompt: |
+    SQLite schema:
+      customers(id INTEGER, name TEXT, country TEXT)
+      orders(id INTEGER, customer_id INTEGER, amount REAL, created_at TEXT)  -- created_at like '2025-03-14'
+    Write one SQL query returning each country's total order amount for the year 2025, only for countries whose 2025 total exceeds 100,
+    as columns (country, total), ordered by total descending. Return only the query in a ```sql block.
+  checks:
+    - type: sql
+      setup: |
+        CREATE TABLE customers(id INTEGER, name TEXT, country TEXT);
+        CREATE TABLE orders(id INTEGER, customer_id INTEGER, amount REAL, created_at TEXT);
+        INSERT INTO customers VALUES (1,'Ana','ES'),(2,'Bo','SE'),(3,'Cy','ES'),(4,'Di','FR'),(5,'Ed','DE');
+        INSERT INTO orders VALUES
+          (1,1,80,'2025-01-10'),(2,3,50,'2025-06-01'),(3,2,120,'2025-02-02'),
+          (4,4,60,'2025-03-03'),(5,4,30,'2024-12-31'),(6,2,500,'2026-01-01'),
+          (7,5,101,'2025-12-31'),(8,1,10,'2024-05-05');
+      expected: [["ES", 130.0], ["SE", 120.0], ["DE", 101.0]]
+  reference: |
+    ```sql
+    SELECT c.country, SUM(o.amount) AS total
+    FROM orders o JOIN customers c ON c.id = o.customer_id
+    WHERE o.created_at >= '2025-01-01' AND o.created_at < '2026-01-01'
+    GROUP BY c.country
+    HAVING SUM(o.amount) > 100
+    ORDER BY total DESC;
+    ```
+
+- id: code-07
+  category: coding
+  difficulty: 0.55
+  prompt: "Write a Python function longest_valid_parentheses(s: str) -> int returning the length of the longest well-formed (balanced, contiguous) parentheses substring of s, which contains only '(' and ')'. Must run in O(n). Return only the code in a ```python block."
+  checks:
+    - type: python
+      tests: |
+        assert longest_valid_parentheses("(()") == 2
+        assert longest_valid_parentheses(")()())") == 4
+        assert longest_valid_parentheses("") == 0
+        assert longest_valid_parentheses("()(())") == 6
+        assert longest_valid_parentheses("())(())") == 4
+        import time; t = time.time(); longest_valid_parentheses("()" * 200000 + ")"); assert time.time() - t < 2
+  reference: |
+    ```python
+    def longest_valid_parentheses(s: str) -> int:
+        stack, best = [-1], 0
+        for i, c in enumerate(s):
+            if c == "(":
+                stack.append(i)
+            else:
+                stack.pop()
+                if not stack:
+                    stack.append(i)
+                else:
+                    best = max(best, i - stack[-1])
+        return best
+    ```
+
+# --------------------------------------------------------------------------- debugging
+- id: dbg-01
+  category: debugging
+  difficulty: 0.35
+  prompt: |
+    This binary search sometimes loops forever or misses the target. Return the corrected function only, in a ```python block.
+
+    ```python
+    def binary_search(arr, target):
+        lo, hi = 0, len(arr)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if arr[mid] == target:
+                return mid
+            elif arr[mid] < target:
+                lo = mid
+            else:
+                hi = mid - 1
+        return -1
+    ```
+  checks:
+    - type: python
+      tests: |
+        a = [1, 3, 5, 7, 9, 11]
+        for i, x in enumerate(a):
+            assert binary_search(a, x) == i
+        assert binary_search(a, 4) == -1
+        assert binary_search(a, 12) == -1
+        assert binary_search([], 1) == -1
+        assert binary_search([2], 2) == 0
+  reference: |
+    ```python
+    def binary_search(arr, target):
+        lo, hi = 0, len(arr)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if arr[mid] == target:
+                return mid
+            elif arr[mid] < target:
+                lo = mid + 1
+            else:
+                hi = mid
+        return -1
+    ```
+
+- id: dbg-02
+  category: debugging
+  difficulty: 0.3
+  prompt: |
+    Calling add_tag("a") then add_tag("b") returns ['a', 'b'] the second time instead of ['b']. Fix it while keeping the same signature semantics (tags is optional). Return only the fixed function in a ```python block.
+
+    ```python
+    def add_tag(tag, tags=[]):
+        tags.append(tag)
+        return tags
+    ```
+  checks:
+    - type: python
+      tests: |
+        assert add_tag("a") == ["a"]
+        assert add_tag("b") == ["b"]
+        existing = ["x"]
+        assert add_tag("y", existing) == ["x", "y"]
+  reference: |
+    ```python
+    def add_tag(tag, tags=None):
+        if tags is None:
+            tags = []
+        tags.append(tag)
+        return tags
+    ```
+
+- id: dbg-03
+  category: debugging
+  difficulty: 0.4
+  prompt: |
+    This median function has two bugs: it is wrong for even-length lists and it modifies the caller's list. Return only the fixed function in a ```python block.
+
+    ```python
+    def median(xs):
+        xs.sort()
+        return xs[len(xs) // 2]
+    ```
+  checks:
+    - type: python
+      tests: |
+        data = [5, 1, 3]
+        assert median(data) == 3 and data == [5, 1, 3]
+        data = [4, 1, 3, 2]
+        assert median(data) == 2.5 and data == [4, 1, 3, 2]
+        assert median([7]) == 7
+  reference: |
+    ```python
+    def median(xs):
+        s = sorted(xs)
+        n = len(s)
+        mid = n // 2
+        return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2
+    ```
+
+- id: dbg-04
+  category: debugging
+  difficulty: 0.4
+  prompt: |
+    moving_average should return the average of each window of k consecutive values, e.g. moving_average([1,2,3,4], 2) == [1.5, 2.5, 3.5]. It returns the wrong number of values. Fix it and return only the function in a ```python block.
+
+    ```python
+    def moving_average(values, k):
+        out = []
+        for i in range(len(values) - k):
+            out.append(sum(values[i:i + k]) / k)
+        return out
+    ```
+  checks:
+    - type: python
+      tests: |
+        assert moving_average([1, 2, 3, 4], 2) == [1.5, 2.5, 3.5]
+        assert moving_average([5, 5, 5], 3) == [5.0]
+        assert moving_average([1, 2], 3) == []
+  reference: |
+    ```python
+    def moving_average(values, k):
+        return [sum(values[i:i + k]) / k for i in range(len(values) - k + 1)]
+    ```
+
+- id: dbg-05
+  category: debugging
+  difficulty: 0.5
+  prompt: |
+    parse_duration("1h30m") should return 5400 (seconds) and accept any combination of h, m and s in that order, e.g. "45s", "2h", "1m5s". It currently fails for several inputs. Return only the fixed function in a ```python block.
+
+    ```python
+    import re
+
+    def parse_duration(text):
+        m = re.match(r"(\d+)h(\d+)m(\d+)s", text)
+        h, mi, s = m.groups()
+        return int(h) * 3600 + int(mi) * 60 + int(s)
+    ```
+  checks:
+    - type: python
+      tests: |
+        assert parse_duration("1h30m") == 5400
+        assert parse_duration("45s") == 45
+        assert parse_duration("2h") == 7200
+        assert parse_duration("1m5s") == 65
+        assert parse_duration("1h2m3s") == 3723
+        try:
+            parse_duration("abc")
+            raise SystemExit(1)
+        except ValueError:
+            pass
+  reference: |
+    ```python
+    import re
+
+    def parse_duration(text):
+        m = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", text.strip())
+        if not m or not text.strip():
+            raise ValueError(f"invalid duration: {text!r}")
+        h, mi, s = (int(g) if g else 0 for g in m.groups())
+        return h * 3600 + mi * 60 + s
+    ```
+
+# --------------------------------------------------------------------------- document analysis
+- id: doc-01
+  category: document_analysis
+  difficulty: 0.5
+  prompt: |
+    Read this services agreement and identify the two clauses that contradict each other. End with 'Answer: <n>, <m>' (clause numbers).
+
+    1. Parties. This agreement is between Brightline S.L. ("Provider") and Ocampo Retail S.A. ("Client").
+    2. Services. Provider will maintain Client's e-commerce platform, including security updates.
+    3. Fees. Client pays EUR 4,000 per month, invoiced on the first business day of each month.
+    4. Termination for convenience. Either party may terminate this agreement at any time with 30 days' written notice.
+    5. Confidentiality. Each party keeps the other's non-public information confidential for 5 years after termination.
+    6. Service levels. Provider guarantees 99.5% monthly uptime, excluding scheduled maintenance announced 48 hours ahead.
+    7. Liability. Provider's total liability is capped at the fees paid in the previous 12 months.
+    8. Late payment. Invoices unpaid after 30 days accrue interest at 1% per month.
+    9. Term. This agreement runs until 31 December 2027 and may not be terminated before that date by either party except for material breach.
+    10. Governing law. This agreement is governed by Spanish law.
+  checks:
+    - {type: answer, value: "", pattern: "\\b4\\b\\D+\\b9\\b|\\b9\\b\\D+\\b4\\b"}
+  reference: "Clause 4 allows termination at any time while clause 9 forbids it before 2027. Answer: 4, 9"
+
+- id: doc-02
+  category: document_analysis
+  difficulty: 0.55
+  prompt: |
+    Using the travel policy below, compute the total reimbursable per-diem for this trip. End with 'Answer: <amount in EUR>'.
+
+    Trip: an employee travels to Madrid, arriving Friday morning and leaving Sunday evening (3 calendar days). Lunch on Friday was provided by the client.
+
+    TRAVEL POLICY
+    §1 Per-diem rates: Tier 1 cities (Madrid, Barcelona, Paris) EUR 80/day; Tier 2 cities EUR 60/day.
+    §2 Weekend days (Saturday, Sunday) are reimbursed at 50% of the daily rate unless the employee is working that day.
+    §3 When a meal is provided by a client or the company, deduct EUR 20 from that day's per-diem.
+    §4 Travel days are reimbursed at the full applicable rate (before §2 and §3 adjustments).
+  checks:
+    - {type: answer, value: 140, tol: 0.01}
+  reference: "Friday 80-20=60, Saturday 40, Sunday 40. Answer: 140"
+
+- id: doc-03
+  category: document_analysis
+  difficulty: 0.35
+  prompt: |
+    Extract the action items from this transcript as a JSON array of objects with keys "owner" and "task". Return only JSON.
+
+    Marta: Okay, the landing page copy is still not final.
+    Jon: I'll finish the copy by Wednesday.
+    Marta: Great. Someone needs to ask legal about the cookie banner.
+    Aisha: I can do that, I'll email them today.
+    Marta: And I'll book the photographer for the product shoot.
+    Jon: By the way, the coffee machine is broken again.
+  checks:
+    - {type: json, length: 3}
+    - {type: contains_all, values: ["jon", "aisha", "marta"]}
+    - {type: not_contains, values: ["coffee"]}
+  reference: '[{"owner": "Jon", "task": "Finish landing page copy by Wednesday"}, {"owner": "Aisha", "task": "Email legal about the cookie banner"}, {"owner": "Marta", "task": "Book the photographer for the product shoot"}]'
+
+- id: doc-04
+  category: document_analysis
+  difficulty: 0.45
+  prompt: |
+    According to this API documentation, what is the maximum request body size in MB for POST /v2/upload when the caller is authenticated with an enterprise API key? End with 'Answer: <number>'.
+
+    ## Limits
+    All endpoints accept request bodies up to 10 MB.
+    Authenticated requests may send bodies up to 25 MB.
+
+    ## POST /v2/upload
+    Uploads a file. This endpoint overrides the global limits: anonymous callers may send up to 5 MB and
+    authenticated callers up to 50 MB.
+
+    ## Enterprise keys
+    Enterprise API keys double the authenticated limit of any endpoint, up to a hard maximum of 80 MB.
+  checks:
+    - {type: answer, value: 80}
+  reference: "50 MB doubled is 100 MB, capped at 80 MB. Answer: 80"
+
+# --------------------------------------------------------------------------- planning
+- id: plan-01
+  category: planning
+  difficulty: 0.2
+  prompt: "Create a short 3-day itinerary for Lisbon with sections titled 'Day 1', 'Day 2' and 'Day 3'. Keep it under 200 words."
+  checks:
+    - {type: contains_all, values: ["day 1", "day 2", "day 3"]}
+    - {type: word_count, max: 220}
+  reference: |
+    Day 1: Alfama, São Jorge Castle and a fado dinner.
+    Day 2: Belém Tower, Jerónimos Monastery and pastéis de Belém.
+    Day 3: Day trip to Sintra's Pena Palace.
+
+- id: plan-02
+  category: planning
+  difficulty: 0.35
+  prompt: "Propose a plan to migrate a monolith to microservices in exactly 5 numbered steps (1. to 5.), one line each, nothing else."
+  checks:
+    - {type: count_regex, pattern: "(?m)^\\s*\\**\\d+[.)]", min: 5, max: 5}
+    - {type: line_count, max: 5}
+  reference: |
+    1. Map domains and dependencies of the monolith.
+    2. Add an API gateway in front of the monolith.
+    3. Extract the least-coupled domain as the first service.
+    4. Split data ownership per service with migrations.
+    5. Repeat incrementally and retire monolith modules.
+
+- id: plan-03
+  category: planning
+  difficulty: 0.45
+  prompt: |
+    Schedule four meetings in a single room between 09:00 and 12:00 with no overlaps:
+    A lasts 60 min, B 30 min, C 60 min, D 30 min.
+    Constraints: C must end before A starts; B cannot start before 10:00; D must be the last meeting.
+    Output one line per meeting in the form "X: HH:MM-HH:MM" and nothing else.
+  checks:
+    - type: validator
+      code: |
+        def validate(text):
+            dur = {"A": 60, "B": 30, "C": 60, "D": 30}
+            slots = {}
+            for m in re.finditer(r"\b([ABCD])\W+(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})", text):
+                k, h1, m1, h2, m2 = m.groups()
+                slots[k] = (int(h1) * 60 + int(m1), int(h2) * 60 + int(m2))
+            if set(slots) != set(dur):
+                return False
+            for k, (s, e) in slots.items():
+                if e - s != dur[k] or s < 540 or e > 720:
+                    return False
+            ordered = sorted(slots.values())
+            if any(ordered[i][1] > ordered[i + 1][0] for i in range(3)):
+                return False
+            return (slots["C"][1] <= slots["A"][0] and slots["B"][0] >= 600
+                    and slots["D"][0] == max(s for s, _ in slots.values()))
+  reference: |
+    C: 09:00-10:00
+    B: 10:00-10:30
+    A: 10:30-11:30
+    D: 11:30-12:00
+
+# --------------------------------------------------------------------------- analysis
+- id: ana-01
+  category: analysis
+  difficulty: 0.35
+  prompt: |
+    Monthly sales: Jan 120, Feb 150, Mar 135, Apr 180, May 171, Jun 200.
+    Which month had the largest percentage increase over the previous month? End with 'Answer: <month abbreviation>'.
+  checks:
+    - {type: answer, value: "", pattern: "^apr"}
+  reference: "Apr rose 33.3% over Mar. Answer: Apr"
+
+- id: ana-02
+  category: analysis
+  difficulty: 0.3
+  prompt: |
+    Un usuario consume 12 GB al mes. Plan A: 15 €/mes con 10 GB incluidos y 2 € por cada GB extra. Plan B: 20 €/mes con 20 GB incluidos.
+    ¿Qué plan le sale más barato? Termina con 'Respuesta: A' o 'Respuesta: B'.
+  checks:
+    - {type: answer, value: "A"}
+  reference: "Plan A cuesta 19 € y el B 20 €. Respuesta: A"
+
+- id: ana-03
+  category: analysis
+  difficulty: 0.3
+  prompt: "An A/B test had 500 conversions from 10,000 visitors in control and 560 from 10,000 in the variant. What is the relative lift of the variant's conversion rate, in percent, to one decimal place? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 12.0, tol: 0.05}
+  reference: "Answer: 12.0"
