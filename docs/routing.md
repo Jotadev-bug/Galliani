@@ -3,8 +3,8 @@
 ## 1. Task profile
 
 A router produces a `TaskProfile`: `task_type`, five requirements in [0, 1] (`reasoning`, `coding`,
-`writing`, `knowledge`, `precision`) and `expected_output_tokens`. JEB produces it from the prompt
-(`app/router/jeb.py`); the prompt tells the selector not to solve the task, wraps the task in `<task>`
+`writing`, `knowledge`, `precision`) and `expected_output_tokens`. Jev produces it from the prompt
+(`app/router/jev.py`); the prompt tells the selector not to solve the task, wraps the task in `<task>`
 tags and truncates it to 6,000 characters.
 
 ## 2. Success estimate
@@ -28,9 +28,9 @@ Cost and latency penalties are log-scaled to [0, 1] across the current candidate
 `P ≥ min_success` are ranked by utility, and the rest by P. The first one is selected and the rest
 form the fallback order. Each mode (`auto`, `cheapest`, `fastest`, `best`) is its own set of weights.
 
-## 4. Confidence policy (JEB only)
+## 4. Confidence policy (Jev only)
 
-| JEB confidence | Action |
+| Jev confidence | Action |
 |---|---|
 | ≥ `execute_threshold` (0.90) | use the routed model |
 | ≥ `safer_threshold` (0.70) | move up one tier |

@@ -4,7 +4,7 @@
 RouteRequest ──► ModelRegistry.candidates()      hard constraints: status, vendor allow/block,
                        │                         vision/tools, context window
                        ▼
-                 Router.route()                  JEBRouter | RulesRouter | RandomRouter | FixedRouter
+                 Router.route()                  JevRouter | RulesRouter | RandomRouter | FixedRouter
                        │                         -> RouteDecision (model, fallbacks, confidence, profile)
                        ▼
                  Executor.execute()              model, then fallbacks; skips models over the cost cap
@@ -21,16 +21,16 @@ RouteRequest ──► ModelRegistry.candidates()      hard constraints: status,
 - **Registry is data.** Models, prices, limits and capability priors live in `config/models.yaml`.
   Adding a model is a YAML edit; adding a provider is one adapter class plus one branch in
   `providers/factory.py`. Prices are synced from OpenRouter (`scripts/sync_pricing.py`), never typed in code.
-- **JEB is one `Router` among several.** The product depends on the `Router` interface, so JEB
+- **Jev is one `Router` among several.** The product depends on the `Router` interface, so Jev
   can be swapped for a learned or rules router without touching the executor, providers or telemetry.
-- **JEB classifies, scoring decides (by default).** In `profile` mode JEB returns a structured task
+- **Jev classifies, scoring decides (by default).** In `profile` mode Jev returns a structured task
   profile and the utility function picks the model, which keeps prices and capabilities out of the
-  LLM's hands and makes the choice auditable. `direct` mode (JEB names the model) exists so the two
+  LLM's hands and makes the choice auditable. `direct` mode (Jev names the model) exists so the two
   can be compared in the benchmark.
 - **Failures are typed.** Providers raise `ProviderError` subclasses (timeout, rate limit, outage,
   context overflow, model unavailable, auth, invalid request). The executor uses `try_other_model`
   to decide whether a fallback can help.
-- **A JEB failure never blocks a request.** If the selector errors or returns unparseable output,
+- **A Jev failure never blocks a request.** If the selector errors or returns unparseable output,
   the rules router decides and the confidence is set to 0, which sends the request to the most
   capable model. The error is recorded in `router_error`.
 - **Minimal dependencies:** pydantic, httpx, pyyaml. FastAPI and PostgreSQL are deferred to Phase 4,

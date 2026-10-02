@@ -11,7 +11,7 @@ User
   ↓
 AI Router
   ↓
-JEB (fast selector)
+Jev (fast selector)
   ↓
 Optimal model selection
   ↓
@@ -77,9 +77,9 @@ It will be:
 
 # 4. Principio de diseño
 
-We do not want JEB to answer the task.
+We do not want Jev to answer the task.
 
-JEB should be a **router**.
+Jev should be a **router**.
 
 Example:
 
@@ -88,7 +88,7 @@ Prompt:
 "Analiza este contrato de 80 páginas y encuentra cláusulas
 potencialmente contradictorias."
 
-JEB:
+Jev:
 - task_type: document_analysis
 - reasoning: high
 - context_requirement: high
@@ -291,13 +291,13 @@ Specific model identifiers should be configured through environment/configuratio
 
 ---
 
-# 7. JEB como router
+# 7. Jev como router
 
-JEB will initially be used as the decision component.
+Jev will initially be used as the decision component.
 
 IMPORTANT:
 
-No acoplar toda la architecture a JEB.
+No acoplar toda la architecture a Jev.
 
 Crear una interfaz:
 
@@ -310,21 +310,21 @@ class Router:
 Initial implementation:
 
 ```python
-class JEBRouter(Router):
+class JevRouter(Router):
     ...
 ```
 
 In the future:
 
 ```text
-JEBRouter
+JevRouter
 LearnedRouter
 RulesRouter
 EnsembleRouter
 LocalRouter
 ```
 
-This allows JEB to be replaced without rebuilding the product.
+This allows Jev to be replaced without rebuilding the product.
 
 ---
 
@@ -433,7 +433,7 @@ Frontier model:  96%
 
 # 11. Confidence threshold
 
-JEB confidence will be an important signal.
+Jev confidence will be an important signal.
 
 Example:
 
@@ -450,7 +450,7 @@ confidence < 0.70
 
 These thresholds must be configurable and later calibrated using data.
 
-Do not initially assume that a probability emitted by JEB directly corresponds to the true probability of success.
+Do not initially assume that a probability emitted by Jev directly corresponds to the true probability of success.
 
 We must measure calibration.
 
@@ -463,7 +463,7 @@ In a later phase:
 ```text
 Prompt
  ↓
-JEB
+Jev
  ↓
 Modelo seleccionado
  ↓
@@ -636,7 +636,7 @@ vs.
 
 ### Router
 
-JEB chooses the model.
+Jev chooses the model.
 
 Measure:
 
@@ -663,13 +663,13 @@ A 50% cost reduction that destroys quality is not useful.
 
 Compare routing against random selection.
 
-This demonstrates whether JEB actually adds value.
+This demonstrates whether Jev actually adds value.
 
 ---
 
 # 19. Experimento crítico #3
 
-Compare JEB against simple rules.
+Compare Jev against simple rules.
 
 Example:
 
@@ -684,7 +684,7 @@ else:
     use cheap
 ```
 
-Si JEB no supera claramente reglas sencillas, hay que reconsiderar la architecture.
+Si Jev no supera claramente reglas sencillas, hay que reconsiderar la architecture.
 
 ---
 
@@ -853,7 +853,7 @@ This would allow developers to integrate the router into their own applications.
                  │                             │
                  ▼                             ▼
         ┌────────────────┐            ┌─────────────────┐
-        │   JEB Router   │            │ Model Registry  │
+        │   Jev Router   │            │ Model Registry  │
         └───────┬────────┘            └─────────────────┘
                 │
                 ▼
@@ -1011,7 +1011,7 @@ Mitigation:
 - enterprise policies
 - open-source/local models
 
-## Risk 2 — JEB routes poorly
+## Risk 2 — Jev routes poorly
 
 Mitigation:
 
@@ -1069,14 +1069,14 @@ Do not:
 
 The first goal is extremely concrete:
 
-> Demonstrate that JEB can significantly reduce average inference cost while maintaining quality close to sending every task to a frontier model.
+> Demonstrate that Jev can significantly reduce average inference cost while maintaining quality close to sending every task to a frontier model.
 
 MVP:
 
 ```text
 Python
 FastAPI
-JEB
+Jev
 3-5 modelos
 2-3 proveedores
 PostgreSQL
@@ -1091,7 +1091,7 @@ basic web UI
 
 ## Fase 0 — Investigación
 
-1. Verificar documentación y disponibilidad actuales de JEB.
+1. Verificar documentación y disponibilidad actuales de Jev.
 2. Verificar APIs y precios actuales de los modelos candidatos.
 3. Definir 3-5 modelos iniciales.
 4. Definir benchmark.
@@ -1104,7 +1104,7 @@ Construir:
 ```text
 benchmark
  ↓
-JEB
+Jev
  ↓
 selection
 ```
@@ -1156,7 +1156,7 @@ Compare:
 ```text
 frontier-only
 vs
-JEB-router
+Jev-router
 vs
 rules-router
 ```
@@ -1191,7 +1191,7 @@ Baseline:
   Quality:    XX.X%
   Latency:    XXXX ms
 
-JEB Router:
+Jev Router:
   Cost:       $X.XX
   Quality:    XX.X%
   Latency:    XXXX ms
@@ -1241,7 +1241,7 @@ Then:
 1. Crear estructura del proyecto.
 2. Implement Model Registry.
 3. Implementar interfaces de Provider.
-4. Implementar JEB Router.
+4. Implementar Jev Router.
 5. Crear benchmark.
 6. Añadir primer provider.
 7. Añadir modelos candidatos.
@@ -1269,7 +1269,7 @@ ai-model-router/
 │   │
 │   ├── router/
 │   │   ├── base.py
-│   │   ├── jeb.py
+│   │   ├── jev.py
 │   │   ├── policies.py
 │   │   └── scoring.py
 │   │
@@ -1410,7 +1410,7 @@ Policies, security, and observability.
 
 La vision no es:
 
-> "Una app que usa JEB."
+> "Una app que usa Jev."
 
 La vision es:
 
@@ -1459,7 +1459,7 @@ When starting development, Claude must do exactly this:
 5. Design the minimum benchmark.
 6. Implement Model Registry.
 7. Implement the `Router` interface.
-8. Implement the initial JEB integration.
+8. Implement the initial Jev integration.
 9. Implement at least three candidate models.
 10. Run an initial benchmark.
 11. Report:
@@ -1501,7 +1501,7 @@ Construir:
                        │
                        ▼
                  ┌──────────┐
-                 │    JEB   │
+                 │    Jev   │
                  │  ROUTER  │
                  └────┬─────┘
                       │
@@ -1516,6 +1516,6 @@ Construir:
 
 La primera pregunta que debemos responder con code y datos es:
 
-> **¿Puede JEB seleccionar sistemáticamente un modelo más barato sin producir una caída significativa de quality?**
+> **¿Puede Jev seleccionar sistemáticamente un modelo más barato sin producir una caída significativa de quality?**
 
 If the answer is yes, build the product around that advantage.

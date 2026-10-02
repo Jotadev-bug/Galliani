@@ -1,4 +1,4 @@
-"""Router interface. JEB is one implementation; the product must not depend on it."""
+"""Router interface. Jev is one implementation; the product must not depend on it."""
 
 from __future__ import annotations
 

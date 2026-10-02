@@ -31,7 +31,7 @@ class ConfidencePolicy(BaseModel):
     safer_threshold: float = Field(ge=0, le=1)
 
 
-class JEBConfig(BaseModel):
+class JevConfig(BaseModel):
     decision: str = Field(pattern="^(profile|direct)$")
     selector_model: str
     timeout_s: float = 20
@@ -54,7 +54,7 @@ class RoutingConfig(BaseModel):
     modes: dict[str, ModeWeights]
     success_model: SuccessModel
     confidence: ConfidencePolicy
-    jeb: JEBConfig
+    jev: JevConfig
     rules: RulesConfig
     fallback: FallbackConfig
 

@@ -12,7 +12,7 @@
 3. **Oracle.** The cheapest model that actually passed each task. This is the upper bound on what
    any router could save on this task set.
 
-Routers compared: `frontier` (baseline, experiment #1), `jeb`, `random` (experiment #2), `rules`
+Routers compared: `frontier` (baseline, experiment #1), `jev`, `random` (experiment #2), `rules`
 (experiment #3) and `cheapest`. Routing overhead (experiment #4) is reported as the selector's
 cost and latency, and as a share of gross savings.
 
@@ -36,7 +36,7 @@ and 67 tasks is below the 100–300 that PROJECT.md §16 targets.
 - **Quality** is the mean fraction of checks passed. **Success** means every check passed.
 - **Savings** is `1 − cost_router / cost_frontier`, with routing cost included.
 - **d.qual** is the quality difference from the frontier baseline, in percentage points.
-- **Calibration** compares JEB's stated confidence with actual success, by band.
+- **Calibration** compares Jev's stated confidence with actual success, by band.
 - The full JSON report (`benchmarks/results/report-*.json`) contains the whole matrix, per-model
   scores, per-category results and every routing decision.
 

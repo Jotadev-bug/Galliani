@@ -1,4 +1,4 @@
-"""JEB: a cheap, fast LLM used as a task classifier/selector. It never answers the task itself."""
+"""Jev: a cheap, fast LLM used as a task classifier/selector. It never answers the task itself."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ PROFILE_SCHEMA = (
 DIRECT_SCHEMA = PROFILE_SCHEMA[:-1] + ', "recommended_model": str}'
 
 
-class JEBOutput(BaseModel):
+class JevOutput(BaseModel):
     task_type: TaskType
     reasoning: float = Field(ge=0, le=1)
     coding: float = Field(ge=0, le=1)
@@ -77,18 +77,18 @@ class JEBOutput(BaseModel):
         )
 
 
-class JEBParseError(Exception):
+class JevParseError(Exception):
     pass
 
 
-def parse_output(text: str) -> JEBOutput:
+def parse_output(text: str) -> JevOutput:
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
-        raise JEBParseError(f"No JSON object in selector output: {text[:200]!r}")
+        raise JevParseError(f"No JSON object in selector output: {text[:200]!r}")
     try:
-        return JEBOutput.model_validate(json.loads(match.group(0)))
+        return JevOutput.model_validate(json.loads(match.group(0)))
     except (json.JSONDecodeError, ValidationError) as e:
-        raise JEBParseError(f"Invalid selector output: {e}") from e
+        raise JevParseError(f"Invalid selector output: {e}") from e
 
 
 def _catalog(candidates: Sequence[ModelSpec]) -> str:
@@ -121,8 +121,8 @@ def build_messages(request: RouteRequest, candidates: Sequence[ModelSpec], direc
     ]
 
 
-class JEBRouter(Router):
-    name = "jeb"
+class JevRouter(Router):
+    name = "jev"
 
     def __init__(
         self,
@@ -137,7 +137,7 @@ class JEBRouter(Router):
         self.fallback_router = fallback_router
 
     async def route(self, request: RouteRequest, candidates: Sequence[ModelSpec]) -> RouteDecision:
-        cfg = self.config.jeb
+        cfg = self.config.jev
         direct = cfg.decision == "direct"
         messages = build_messages(request, candidates, direct)
         start = time.perf_counter()
@@ -153,7 +153,7 @@ class JEBRouter(Router):
             )
             usage = gen.usage
             out = parse_output(gen.text)
-        except (ProviderError, JEBParseError) as e:
+        except (ProviderError, JevParseError) as e:
             # Selector failed: use the fallback router, then treat the decision as zero-confidence
             # so the confidence policy sends it to the safest model.
             decision = await self.fallback_router.route(request, candidates)
@@ -169,7 +169,7 @@ class JEBRouter(Router):
                 decision.model_id = out.recommended_model
                 decision.fallbacks = [i for i in ids if i != out.recommended_model]
             else:
-                decision.reason += f" (JEB suggested unknown model {out.recommended_model!r}; used scoring)"
+                decision.reason += f" (Jev suggested unknown model {out.recommended_model!r}; used scoring)"
         return self._finish(decision, candidates, out.confidence, start, usage)
 
     def _finish(

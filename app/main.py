@@ -48,7 +48,7 @@ async def _main(args: argparse.Namespace) -> int:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("prompt")
-    p.add_argument("--router", default="jeb", choices=ROUTER_NAMES)
+    p.add_argument("--router", default="jev", choices=ROUTER_NAMES)
     p.add_argument("--mode", default="auto", choices=["auto", "cheapest", "fastest", "best"])
     p.add_argument("--route-only", action="store_true")
     sys.exit(asyncio.run(_main(p.parse_args())))

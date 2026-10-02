@@ -139,7 +139,7 @@ class RouteRequest(BaseModel):
 
 
 class TaskProfile(BaseModel):
-    """What the task demands. Produced by a router (JEB, rules...), consumed by scoring."""
+    """What the task demands. Produced by a router (Jev, rules...), consumed by scoring."""
 
     task_type: TaskType
     reasoning: Score = Field(ge=0, le=1)

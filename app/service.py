@@ -15,41 +15,41 @@ from app.providers.factory import ProviderPool
 from app.providers.openai_compatible import OpenAICompatibleProvider
 from app.router.base import Router
 from app.router.baselines import FixedRouter, RandomRouter, RulesRouter, cheapest
-from app.router.jeb import JEBRouter
+from app.router.jev import JevRouter
 from app.router.policies import most_capable
 from app.telemetry.costs import JsonlSink, build_record
 
-ROUTER_NAMES = ("jeb", "rules", "random", "frontier", "cheapest")
+ROUTER_NAMES = ("jev", "rules", "random", "frontier", "cheapest")
 
 
-def jeb_selector(registry: ModelRegistry, config: RoutingConfig, pool: ProviderPool) -> tuple[ModelSpec, ModelProvider]:
-    """Resolve the JEB selector model and its provider, honouring JEB_* env overrides."""
-    selector = registry.get(config.jeb.selector_model)
-    override_model = os.environ.get("JEB_MODEL")
+def jev_selector(registry: ModelRegistry, config: RoutingConfig, pool: ProviderPool) -> tuple[ModelSpec, ModelProvider]:
+    """Resolve the Jev selector model and its provider, honouring JEV_* env overrides."""
+    selector = registry.get(config.jev.selector_model)
+    override_model = os.environ.get("JEV_MODEL")
     if override_model:
         if override_model in registry:
             selector = registry.get(override_model)
         else:
             print(
-                f"warning: JEB_MODEL={override_model!r} is not in the registry; its cost is recorded as $0",
+                f"warning: JEV_MODEL={override_model!r} is not in the registry; its cost is recorded as $0",
                 file=sys.stderr,
             )
             selector = selector.model_copy(update={
                 "id": override_model, "provider_model": override_model,
                 "pricing": Pricing(input_per_million=0, output_per_million=0),
             })
-    base_url = os.environ.get("JEB_BASE_URL")
+    base_url = os.environ.get("JEV_BASE_URL")
     if base_url:
-        return selector, pool.wrap(OpenAICompatibleProvider("jeb", base_url, os.environ.get("JEB_API_KEY")))
+        return selector, pool.wrap(OpenAICompatibleProvider("jev", base_url, os.environ.get("JEV_API_KEY")))
     return selector, pool.for_model(selector)
 
 
-def jeb_unavailable_reason(registry: ModelRegistry, config: RoutingConfig, pool: ProviderPool) -> str | None:
-    """Why JEB cannot run with the current environment, or None if it can."""
-    if os.environ.get("JEB_BASE_URL"):
+def jev_unavailable_reason(registry: ModelRegistry, config: RoutingConfig, pool: ProviderPool) -> str | None:
+    """Why Jev cannot run with the current environment, or None if it can."""
+    if os.environ.get("JEV_BASE_URL"):
         return None
-    override = os.environ.get("JEB_MODEL")
-    selector = registry.get(override if override in registry else config.jeb.selector_model)
+    override = os.environ.get("JEV_MODEL")
+    selector = registry.get(override if override in registry else config.jev.selector_model)
     missing = pool.missing_keys([selector])
     return f"missing {', '.join(missing)} for selector {selector.id}" if missing else None
 
@@ -64,9 +64,9 @@ def build_router(name: str, registry: ModelRegistry, config: RoutingConfig, pool
         return FixedRouter(most_capable(candidates).id, name="frontier")
     if name == "cheapest":
         return FixedRouter(cheapest(candidates).id, name="cheapest")
-    if name == "jeb":
-        selector, provider = jeb_selector(registry, config, pool)
-        return JEBRouter(provider, selector, config, fallback_router=RulesRouter(config.rules))
+    if name == "jev":
+        selector, provider = jev_selector(registry, config, pool)
+        return JevRouter(provider, selector, config, fallback_router=RulesRouter(config.rules))
     raise ValueError(f"Unknown router {name!r}; choose from {ROUTER_NAMES}")
 
 
@@ -80,7 +80,7 @@ class RouterService:
     store_prompts: bool = False
 
     @classmethod
-    def from_config(cls, router_name: str = "jeb") -> RouterService:
+    def from_config(cls, router_name: str = "jev") -> RouterService:
         load_dotenv()
         registry = ModelRegistry.from_yaml(CONFIG_DIR / "models.yaml")
         config = load_routing_config()

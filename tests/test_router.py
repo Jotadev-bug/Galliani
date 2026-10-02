@@ -6,7 +6,7 @@ from app.providers.mock import MockProvider
 from app.router import scoring
 from app.router.baselines import FixedRouter, RandomRouter, RulesRouter, classify
 from app.router.base import decide_from_profile
-from app.router.jeb import JEBRouter, parse_output
+from app.router.jev import JevRouter, parse_output
 from app.router.policies import apply_confidence
 
 
@@ -18,7 +18,7 @@ def profile(level: float, task_type=TaskType.reasoning, out_tokens=300) -> TaskP
     )
 
 
-def jeb_reply(level: float, confidence: float, **extra) -> str:
+def jev_reply(level: float, confidence: float, **extra) -> str:
     return json.dumps({
         "task_type": "reasoning", "reasoning": level, "coding": level, "writing": level, "knowledge": level,
         "precision": level, "expected_output_tokens": 300, "confidence": confidence, "rationale": "test", **extra,
@@ -82,64 +82,64 @@ def test_confidence_bands(registry, config):
     assert apply_confidence("frontier", 0.80, ranked, cands, pol) == ("frontier", None)
 
 
-# --------------------------------------------------------------------------- JEB
+# --------------------------------------------------------------------------- Jev
 
 
-def make_jeb(registry, config, reply, failures=None):
+def make_jev(registry, config, reply, failures=None):
     selector = MockProvider(responder=lambda msgs, model: reply, failures=failures)
-    return JEBRouter(selector, registry.get("selector"), config, RulesRouter(config.rules)), selector
+    return JevRouter(selector, registry.get("selector"), config, RulesRouter(config.rules)), selector
 
 
-async def test_jeb_profile_mode_easy_task(registry, config):
-    jeb, selector = make_jeb(registry, config, jeb_reply(0.1, 0.95))
-    d = await jeb.route(RouteRequest.from_prompt("translate hola"), registry.candidates())
+async def test_jev_profile_mode_easy_task(registry, config):
+    jev, selector = make_jev(registry, config, jev_reply(0.1, 0.95))
+    d = await jev.route(RouteRequest.from_prompt("translate hola"), registry.candidates())
     assert d.model_id == "cheap" and not d.escalated
-    assert d.router == "jeb" and d.router_model == "selector"
+    assert d.router == "jev" and d.router_model == "selector"
     assert d.router_usage.total_cost > 0
     assert selector.calls == ["selector"]
 
 
-async def test_jeb_low_confidence_escalates(registry, config):
-    jeb, _ = make_jeb(registry, config, jeb_reply(0.1, 0.5))
-    d = await jeb.route(RouteRequest.from_prompt("x"), registry.candidates())
+async def test_jev_low_confidence_escalates(registry, config):
+    jev, _ = make_jev(registry, config, jev_reply(0.1, 0.5))
+    d = await jev.route(RouteRequest.from_prompt("x"), registry.candidates())
     assert d.model_id == "frontier" and d.escalated
     assert d.fallbacks[0] == "cheap"
 
 
-async def test_jeb_direct_mode_uses_recommendation(registry, config):
-    config.jeb.decision = "direct"
-    jeb, _ = make_jeb(registry, config, jeb_reply(0.1, 0.95, recommended_model="mid"))
-    d = await jeb.route(RouteRequest.from_prompt("x"), registry.candidates())
+async def test_jev_direct_mode_uses_recommendation(registry, config):
+    config.jev.decision = "direct"
+    jev, _ = make_jev(registry, config, jev_reply(0.1, 0.95, recommended_model="mid"))
+    d = await jev.route(RouteRequest.from_prompt("x"), registry.candidates())
     assert d.model_id == "mid"
 
 
-async def test_jeb_direct_mode_ignores_unknown_model(registry, config):
-    config.jeb.decision = "direct"
-    jeb, _ = make_jeb(registry, config, jeb_reply(0.1, 0.95, recommended_model="gpt-99"))
-    d = await jeb.route(RouteRequest.from_prompt("x"), registry.candidates())
+async def test_jev_direct_mode_ignores_unknown_model(registry, config):
+    config.jev.decision = "direct"
+    jev, _ = make_jev(registry, config, jev_reply(0.1, 0.95, recommended_model="gpt-99"))
+    d = await jev.route(RouteRequest.from_prompt("x"), registry.candidates())
     assert d.model_id == "cheap" and "unknown model" in d.reason
 
 
-async def test_jeb_garbage_output_falls_back_safely(registry, config):
-    jeb, _ = make_jeb(registry, config, "Sure! I think you should use a big model.")
-    d = await jeb.route(RouteRequest.from_prompt("hello"), registry.candidates())
-    assert d.router_error and "JEBParseError" in d.router_error
+async def test_jev_garbage_output_falls_back_safely(registry, config):
+    jev, _ = make_jev(registry, config, "Sure! I think you should use a big model.")
+    d = await jev.route(RouteRequest.from_prompt("hello"), registry.candidates())
+    assert d.router_error and "JevParseError" in d.router_error
     assert d.confidence == 0.0 and d.model_id == "frontier"
 
 
-async def test_jeb_provider_failure_falls_back_safely(registry, config):
-    jeb, _ = make_jeb(registry, config, "", failures={"selector": RateLimited("slow down")})
-    d = await jeb.route(RouteRequest.from_prompt("hello"), registry.candidates())
+async def test_jev_provider_failure_falls_back_safely(registry, config):
+    jev, _ = make_jev(registry, config, "", failures={"selector": RateLimited("slow down")})
+    d = await jev.route(RouteRequest.from_prompt("hello"), registry.candidates())
     assert "RateLimited" in d.router_error and d.model_id == "frontier"
 
 
 def test_parse_output_accepts_fenced_json():
-    out = parse_output("```json\n" + jeb_reply(0.3, 0.8) + "\n```")
+    out = parse_output("```json\n" + jev_reply(0.3, 0.8) + "\n```")
     assert out.confidence == 0.8 and out.profile().reasoning == 0.3
 
 
-def test_jeb_prompt_wraps_and_truncates_task(registry):
-    from app.router.jeb import MAX_TASK_CHARS, build_messages
+def test_jev_prompt_wraps_and_truncates_task(registry):
+    from app.router.jev import MAX_TASK_CHARS, build_messages
     msgs = build_messages(RouteRequest.from_prompt("a" * (MAX_TASK_CHARS + 100)), registry.candidates(), False)
     assert msgs[0].role == "system" and "NOT to solve" in msgs[0].content
     assert msgs[1].content.startswith("<task>") and "truncated" in msgs[1].content

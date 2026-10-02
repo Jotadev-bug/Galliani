@@ -5,11 +5,11 @@ Phase 2 - routing: each router picks a model per task; its outcome is looked up 
             Routers therefore compete on identical responses, and a new router or new routing
             weights can be evaluated without re-running generation.
 
-Responses and JEB calls are cached in benchmarks/results/cache, so re-runs are free.
+Responses and Jev calls are cached in benchmarks/results/cache, so re-runs are free.
 
     python benchmark.py                       # real run (needs provider API keys)
     python benchmark.py --simulate            # offline pipeline check, SIMULATED numbers
-    python benchmark.py --routers jeb,rules --limit 20 --no-exec
+    python benchmark.py --routers jev,rules --limit 20 --no-exec
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from app.providers.factory import ProviderPool
 from app.providers.mock import MockProvider
 from app.router.base import Router
 from app.router.policies import most_capable
-from app.service import build_router, jeb_unavailable_reason
+from app.service import build_router, jev_unavailable_reason
 from benchmarks.evaluate import evaluate, needs_exec
 
 BENCH_DIR = Path(__file__).resolve().parent
@@ -329,18 +329,18 @@ async def main(args: argparse.Namespace) -> int:
     if "frontier" not in router_names:
         router_names.insert(0, "frontier")
     outcomes: dict[str, list[Outcome]] = {}
-    # JEB always calls a real selector (cached), even when generation is simulated.
-    jeb_pool = ProviderPool(registry, wrapper=cache_wrapper)
+    # Jev always calls a real selector (cached), even when generation is simulated.
+    jev_pool = ProviderPool(registry, wrapper=cache_wrapper)
     for name in router_names:
-        if name == "jeb" and (reason := jeb_unavailable_reason(registry, config, jeb_pool)):
-            print(f"Skipping JEB: {reason}", file=sys.stderr)
+        if name == "jev" and (reason := jev_unavailable_reason(registry, config, jev_pool)):
+            print(f"Skipping Jev: {reason}", file=sys.stderr)
             continue
-        router = build_router(name, registry, config, jeb_pool, seed=args.seed)
+        router = build_router(name, registry, config, jev_pool, seed=args.seed)
         print(f"Routing with {name}...", file=sys.stderr)
         outcomes[name] = await run_router(router, tasks, registry, matrix, args.concurrency)
     outcomes["oracle"] = oracle(tasks, models, matrix, frontier_id)
     await pool.aclose()
-    await jeb_pool.aclose()
+    await jev_pool.aclose()
 
     base = summarize(outcomes["frontier"])
     report = {
@@ -368,11 +368,11 @@ async def main(args: argparse.Namespace) -> int:
             "summary": summary,
             "vs_baseline": compare(summary, base),
             "by_category": by_category(outs),
-            "calibration": calibration(outs) if name == "jeb" else None,
+            "calibration": calibration(outs) if name == "jev" else None,
             "outcomes": [asdict(o) for o in outs],
         }
 
-    print_report(report, focus="jeb")
+    print_report(report, focus="jev")
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out = RESULTS_DIR / f"report-{stamp}{'-simulated' if args.simulate else ''}.json"
@@ -383,7 +383,7 @@ async def main(args: argparse.Namespace) -> int:
 
 def cli() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--routers", default="frontier,jeb,rules,random,cheapest")
+    p.add_argument("--routers", default="frontier,jev,rules,random,cheapest")
     p.add_argument("--simulate", action="store_true", help="offline mock models; numbers are NOT real")
     p.add_argument("--no-exec", action="store_true", help="skip tasks that execute model-generated code")
     p.add_argument("--categories", help="comma-separated category filter")

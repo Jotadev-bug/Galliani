@@ -89,7 +89,7 @@ models:
     limits: {context_window: 1000000, max_output_tokens: 64000}
     status: active
 
-  # Default JEB selector: cheap and fast. Override with JEB_MODEL / JEB_BASE_URL.
+  # Default Jev selector: cheap and fast. Override with JEV_MODEL / JEV_BASE_URL.
   - id: openai/gpt-5.4-nano
     provider: openrouter
     vendor: openai
