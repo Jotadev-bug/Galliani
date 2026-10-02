@@ -38,6 +38,12 @@ class ContextOverflow(ProviderError):
     kind = "context_overflow"
 
 
+class InsufficientCredits(ProviderError):
+    """The account cannot pay for this request (HTTP 402). A different provider account might."""
+
+    kind = "insufficient_credits"
+
+
 class InvalidRequest(ProviderError):
     """The request itself is malformed; another model will not fix it."""
 
@@ -56,6 +62,8 @@ def classify_http_error(status: int, body: str) -> ProviderError:
     lowered = text.lower()
     if status == 429:
         return RateLimited(text, status=status)
+    if status == 402:
+        return InsufficientCredits(text, status=status)
     if status in (401, 403):
         return AuthError(text, status=status)
     if status == 404:

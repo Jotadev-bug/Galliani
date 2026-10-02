@@ -112,6 +112,25 @@ async def build_matrix(
     return dict(await asyncio.gather(*(one(t, m) for t in tasks for m in models)))
 
 
+def matrix_problem(matrix: dict[tuple[str, str], Cell], models: list[ModelSpec], max_error_rate: float) -> str | None:
+    """Explain why the matrix is unusable, or None. Router comparisons are meaningless when models
+    are missing: fallbacks silently serve a cheaper model and every router looks the same."""
+    lines = []
+    for m in models:
+        cells = [c for (_, mid), c in matrix.items() if mid == m.id]
+        errors = [c.error or "" for c in cells if not c.ok]
+        if len(errors) / len(cells) > max_error_rate:
+            kinds = Counter(e.split(":", 1)[0] for e in errors).most_common(2)
+            lines.append(f"  {m.id:<32} {len(errors)}/{len(cells)} failed  ({', '.join(f'{k} x{n}' for k, n in kinds)})")
+    if not lines:
+        return None
+    hint = ""
+    if any("insufficient_credits" in ln for ln in lines):
+        hint = "\nThe provider account is out of credits. Add credits and re-run; successful responses are cached."
+    return ("\nBENCHMARK ABORTED: too many failed generations, results would be meaningless.\n"
+            + "\n".join(lines) + hint + "\n(--allow-errors to report anyway)")
+
+
 # --------------------------------------------------------------------------- routing
 
 
@@ -326,6 +345,10 @@ async def main(args: argparse.Namespace) -> int:
 
     print(f"Matrix: {len(tasks)} tasks x {len(models)} models", file=sys.stderr)
     matrix = await build_matrix(tasks, models, pool, args.concurrency)
+    if (problem := matrix_problem(matrix, models, args.max_error_rate)) and not args.allow_errors:
+        print(problem, file=sys.stderr)
+        await pool.aclose()
+        return 3
 
     router_names = args.routers.split(",")
     if "frontier" not in router_names:
@@ -392,6 +415,9 @@ def cli() -> None:
     p.add_argument("--limit", type=int)
     p.add_argument("--concurrency", type=int, default=6)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--max-error-rate", type=float, default=0.05,
+                   help="abort if any model fails more than this share of tasks")
+    p.add_argument("--allow-errors", action="store_true", help="report even when the matrix has failures")
     sys.exit(asyncio.run(main(p.parse_args())))
 
 

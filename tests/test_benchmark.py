@@ -52,3 +52,19 @@ def test_sql_check_blocks_attach():
 def test_think_tags_ignored():
     task = {"checks": [{"type": "word_count", "max": 3}]}
     assert evaluate(task, "<think>" + "word " * 100 + "</think>Canberra").success
+
+
+def test_matrix_problem_flags_out_of_credit_models(registry):
+    from benchmarks.run import Cell, matrix_problem
+    models = registry.candidates()
+    matrix = {(f"t{i}", m.id): Cell(m.id, True) for i in range(10) for m in models}
+    assert matrix_problem(matrix, models, 0.05) is None
+    for i in range(10):
+        matrix[(f"t{i}", "frontier")] = Cell("frontier", False, error="insufficient_credits: 402")
+    problem = matrix_problem(matrix, models, 0.05)
+    assert "frontier" in problem and "out of credits" in problem
+
+
+def test_402_is_insufficient_credits():
+    from app.providers.base import InsufficientCredits, classify_http_error
+    assert isinstance(classify_http_error(402, "requires more credits"), InsufficientCredits)
