@@ -6,3 +6,6 @@ __pycache__/
 .venv/
 data/
 benchmarks/results/
+build/
+dist/
+*.spec

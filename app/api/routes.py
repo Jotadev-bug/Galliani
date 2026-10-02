@@ -5,6 +5,10 @@
 Bring-your-own-key: a caller may send `X-OpenRouter-Key`; it is used for that request only (Jev
 and generation) and is never stored or logged. Without it, the server's OPENROUTER_API_KEY is used.
 
+Desktop mode (ROUTER_DESKTOP=1, set by app/desktop.py): the user's key lives in the OS credential
+store (/api/key), and every /api/* call must carry the per-launch ROUTER_APP_TOKEN so other local
+programs cannot use the saved key.
+
 Not production-hardened yet: no authentication or rate limiting. It binds to localhost by default;
 add both before exposing it to the internet (PROJECT.md section 27).
 """
@@ -12,13 +16,15 @@ add both before exposing it to the internet (PROJECT.md section 27).
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from app import keys as keystore
 from app.config import CONFIG_DIR, load_dotenv, load_routing_config, settings
 from app.executor import Executor
 from app.models.registry import ModelRegistry
@@ -39,6 +45,19 @@ CONFIG = load_routing_config()
 SINK = JsonlSink(settings()["log_path"])
 
 app = FastAPI(title="AI Model Router", version="0.1.0")
+
+
+def desktop_mode() -> bool:
+    return os.environ.get("ROUTER_DESKTOP") == "1"
+
+
+@app.middleware("http")
+async def require_app_token(request: Request, call_next):
+    token = os.environ.get("ROUTER_APP_TOKEN")
+    if token and request.url.path.startswith("/api/"):
+        if not secrets.compare_digest(request.headers.get("x-app-token", ""), token):
+            return JSONResponse({"detail": "Invalid app token."}, status_code=403)
+    return await call_next(request)
 
 
 # --------------------------------------------------------------------------- schemas
@@ -108,7 +127,8 @@ class ChatView(BaseModel):
 
 
 def caller_keys(request: Request) -> dict[str, str]:
-    key = request.headers.get(KEY_HEADER, "").strip()
+    """Header key (web testers) > key saved in the OS credential store (desktop) > server environment."""
+    key = request.headers.get(KEY_HEADER, "").strip() or (keystore.get() if desktop_mode() else None)
     return {"OPENROUTER_API_KEY": key} if key else {}
 
 
@@ -171,6 +191,8 @@ def get_config() -> dict:
     return {
         "modes": list(CONFIG.modes),
         "server_key": bool(os.environ.get("OPENROUTER_API_KEY")),
+        "desktop": desktop_mode(),
+        "saved_key": desktop_mode() and keystore.get() is not None,
         "router_model": CONFIG.jev.selector_model,
         "frontier_model": most_capable(REGISTRY.candidates()).id,
         "models": [
@@ -222,6 +244,30 @@ async def post_chat(body: ChatBody, request: Request) -> ChatView:
         frontier_model=frontier.id,
         frontier_cost=sum(frontier.pricing.cost(r.usage.input_tokens, r.usage.output_tokens)),
     )
+
+
+class KeyBody(BaseModel):
+    key: str = Field(min_length=8, max_length=500)
+
+
+def _desktop_only() -> None:
+    if not desktop_mode():
+        raise HTTPException(404, "Key storage is only available in the desktop app.")
+
+
+@app.put("/api/key")
+def put_key(body: KeyBody) -> dict:
+    """Save the user's OpenRouter key in the OS credential store (desktop only)."""
+    _desktop_only()
+    keystore.save(body.key.strip())
+    return {"saved": True}
+
+
+@app.delete("/api/key")
+def delete_key() -> dict:
+    _desktop_only()
+    keystore.delete()
+    return {"saved": False}
 
 
 @app.get("/")

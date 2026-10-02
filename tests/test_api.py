@@ -129,3 +129,46 @@ def test_conversation_history_is_passed_through(api):
 def test_validation(api):
     assert api.post("/api/chat", json={"messages": []}).status_code == 422
     assert api.post("/api/chat", json=body(mode="free")).status_code == 422
+
+
+# --------------------------------------------------------------------------- desktop mode
+
+
+@pytest.fixture
+def desktop(api, monkeypatch):
+    saved = {}
+    import app.keys as keys
+    monkeypatch.setattr(keys, "get", lambda name=keys.OPENROUTER: saved.get(name))
+    monkeypatch.setattr(keys, "save", lambda value, name=keys.OPENROUTER: saved.__setitem__(name, value))
+    monkeypatch.setattr(keys, "delete", lambda name=keys.OPENROUTER: saved.pop(name, None))
+    monkeypatch.setenv("ROUTER_DESKTOP", "1")
+    monkeypatch.setenv("ROUTER_APP_TOKEN", "launch-token")
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+    api.headers["X-App-Token"] = "launch-token"
+    api.saved = saved
+    return api
+
+
+def test_desktop_requires_app_token(desktop):
+    assert desktop.get("/api/config").status_code == 200
+    r = desktop.get("/api/config", headers={"X-App-Token": "wrong"})
+    assert r.status_code == 403
+    assert desktop.get("/").status_code == 200  # the page itself needs no token
+
+
+def test_desktop_key_lifecycle(desktop):
+    cfg = desktop.get("/api/config").json()
+    assert cfg["desktop"] is True and cfg["saved_key"] is False
+    assert desktop.post("/api/route", json=body()).status_code == 401
+
+    assert desktop.put("/api/key", json={"key": "sk-or-desktop-123"}).json() == {"saved": True}
+    assert desktop.get("/api/config").json()["saved_key"] is True
+    desktop.post("/api/chat", json=body())
+    assert desktop.keys_seen[-1] == {"OPENROUTER_API_KEY": "sk-or-desktop-123"}
+
+    desktop.delete("/api/key")
+    assert desktop.saved == {} and desktop.get("/api/config").json()["saved_key"] is False
+
+
+def test_key_endpoints_disabled_outside_desktop(api):
+    assert api.put("/api/key", json={"key": "sk-or-xxxxxxxx"}).status_code == 404

@@ -46,3 +46,20 @@ logged by the server). "Preview route" shows Jev's pick and reasoning without ge
 
 Before hosting it for others: add authentication, rate limiting and HTTPS (PROJECT.md §27).
 The server binds to 127.0.0.1 by default for that reason.
+
+## Desktop app
+
+The same UI in a native window (pywebview on Edge WebView2 / WebKit), packaged as one file.
+
+```bash
+pip install -e ".[desktop,build]"
+python -m app.desktop                 # run from source
+python -m scripts.build_desktop       # -> dist/Router.exe, then runs its --smoke-test
+```
+
+- The OpenRouter key is saved in the OS credential store (Windows Credential Manager / macOS
+  Keychain), not in a file or browser storage.
+- Each launch serves the UI on a random localhost port with a random token; `/api` calls without
+  the token are rejected, so other local programs can't spend the saved key.
+- Logs (no prompts, no keys) go to `%LOCALAPPDATA%\AI Model Router\` (Windows).
+- Build on each target OS: a Windows build makes `Router.exe`; build on a Mac for macOS.

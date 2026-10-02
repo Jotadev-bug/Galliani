@@ -265,7 +265,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 <dialog id="settings">
   <form method="dialog" class="dlg">
     <h2>Settings</h2>
-    <p>Requests run on your own OpenRouter account. Your key is stored only in this browser and sent only with your own requests; the server never saves it.</p>
+    <p id="keyIntro">Requests run on your own OpenRouter account. Your key is stored only in this browser and sent only with your own requests; the server never saves it.</p>
     <div class="field">
       <label for="keyInput">OpenRouter API key</label>
       <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-...">
@@ -276,6 +276,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div id="modelList"></div>
     </div>
     <div class="dlg-actions">
+      <button class="btn" type="button" id="forgetKey" hidden style="margin-right:auto">Remove saved key</button>
       <button class="btn" value="cancel">Close</button>
       <button class="btn primary" id="saveKey" value="save">Save</button>
     </div>
@@ -490,11 +491,16 @@ function updateSavings() {
 }
 
 // ---------------------------------------------------------------- API
-async function api(path, body) {
+// The desktop app passes a per-launch token in the URL; the local server rejects /api calls without it.
+const APP_TOKEN = new URLSearchParams(location.search).get("token");
+
+async function api(path, body, method) {
   const headers = { "Content-Type": "application/json" };
   const key = store.get("openrouter_key");
-  if (key) headers["X-OpenRouter-Key"] = key;
-  const res = await fetch(path, { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined });
+  if (key && !state.config?.desktop) headers["X-OpenRouter-Key"] = key;
+  if (APP_TOKEN) headers["X-App-Token"] = APP_TOKEN;
+  const res = await fetch(path, { method: method || (body ? "POST" : "GET"), headers,
+                                  body: body ? JSON.stringify(body) : undefined });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status, detail: data.detail });
   return data;
@@ -538,20 +544,47 @@ async function send(text, plannedRoute) {
 }
 
 // ---------------------------------------------------------------- settings
+function hasKey() {
+  const c = state.config || {};
+  return c.desktop ? !!(c.saved_key || c.server_key) : !!(store.get("openrouter_key") || c.server_key);
+}
 function refreshKeyState() {
-  const has = !!store.get("openrouter_key") || !!state.config?.server_key;
-  $("keyDot").classList.toggle("ok", has);
-  $("keyNote").textContent = store.get("openrouter_key") ? "Using your key." :
-    state.config?.server_key ? "No key saved here: using the server's key." : "Required. Get one at openrouter.ai/settings/keys.";
+  const c = state.config || {};
+  $("keyDot").classList.toggle("ok", hasKey());
+  if (c.desktop) {
+    $("keyIntro").textContent = "Requests run on your own OpenRouter account. Your key is kept in your system's "
+      + "credential store (Windows Credential Manager or macOS Keychain), never in a plain file.";
+    $("keyInput").placeholder = c.saved_key ? "Saved. Paste a new key to replace it." : "sk-or-...";
+    $("keyNote").textContent = c.saved_key ? "A key is saved. Leave empty to keep it." :
+      c.server_key ? "Using the key from the environment." : "Required. Get one at openrouter.ai/settings/keys.";
+    $("forgetKey").hidden = !c.saved_key;
+  } else {
+    $("keyNote").textContent = store.get("openrouter_key") ? "Using your key." :
+      c.server_key ? "No key saved here: using the server's key." : "Required. Get one at openrouter.ai/settings/keys.";
+    $("forgetKey").hidden = true;
+  }
 }
 function openSettings() {
-  $("keyInput").value = store.get("openrouter_key") || "";
+  $("keyInput").value = state.config?.desktop ? "" : store.get("openrouter_key") || "";
   refreshKeyState();
   $("settings").showModal();
 }
+async function saveKey(value) {
+  if (!state.config?.desktop) { store.set("openrouter_key", value); refreshKeyState(); return; }
+  if (!value) return;  // desktop: empty means "keep the saved key"
+  try {
+    await api("/api/key", { key: value }, "PUT");
+    state.config.saved_key = true;
+  } catch (e) { renderError(e); }
+  refreshKeyState();
+}
 $("settingsBtn").addEventListener("click", openSettings);
 $("settings").addEventListener("close", () => {
-  if ($("settings").returnValue === "save") { store.set("openrouter_key", $("keyInput").value.trim()); refreshKeyState(); }
+  if ($("settings").returnValue === "save") saveKey($("keyInput").value.trim());
+});
+$("forgetKey").addEventListener("click", async () => {
+  try { await api("/api/key", null, "DELETE"); state.config.saved_key = false; } catch (e) { renderError(e); }
+  refreshKeyState();
 });
 
 // ---------------------------------------------------------------- composer
@@ -584,7 +617,7 @@ api("/api/config").then((cfg) => {
     <div class="model-row"><span class="n"><span class="vendor v-${esc(m.vendor)}"></span>${esc(modelName(m.id))}</span>
     <span class="p">$${m.input_per_million} / $${m.output_per_million} per M tokens</span></div>`).join("");
   refreshKeyState();
-  if (!store.get("openrouter_key") && !cfg.server_key) openSettings();
+  if (!hasKey()) openSettings();
 }).catch(() => {});
 $("prompt").focus();
 </script>
