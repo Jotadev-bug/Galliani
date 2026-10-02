@@ -248,8 +248,8 @@ async def test_production_router_uses_config_escalation(config):
     from app.service import build_router
     shipped = ModelRegistry.from_yaml(CONFIG_DIR / "models.yaml")
     r = build_router("jev", shipped, config)
-    assert r.decision == "choice" and r.escalate is False and r.name == "jev-choice-raw"
-    config.jev.escalate = True
+    assert r.decision == "choice" and r.escalate is True and r.name == "jev-choice"
+    config.jev.escalate = False
     r2 = build_router("jev", shipped, config)
-    assert r2.escalate is True
+    assert r2.escalate is False and r2.name == "jev-choice-raw"
     await r.aclose(); await r2.aclose()

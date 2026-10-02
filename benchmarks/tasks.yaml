@@ -1134,3 +1134,365 @@
   checks:
     - {type: answer, value: 12.0, tol: 0.05}
   reference: "Answer: 12.0"
+
+# =========================================================================== hard tasks
+# Added 2026-10-02 to test that Jev routes up when a cheap model would genuinely fail
+# (Flash-Lite passed 53/54 of the tasks above). Answers computed or brute-force verified.
+
+- id: hard-math-01
+  category: math
+  difficulty: 0.85
+  min_tier: frontier
+  prompt: "How many squarefree integers are there between 1 and 1,000,000 inclusive? (A squarefree integer is not divisible by any perfect square greater than 1.) Give the exact count. End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 607926}
+  reference: "Answer: 607926"
+
+- id: hard-math-02
+  category: math
+  difficulty: 0.75
+  min_tier: strong
+  prompt: "What are the last three digits of 7^(7^7)? End with 'Answer: <three digits>'."
+  checks:
+    - {type: answer, value: 343}
+  reference: "Answer: 343"
+
+- id: hard-math-03
+  category: math
+  difficulty: 0.75
+  min_tier: strong
+  prompt: "How many ordered pairs (a, b) of integers with 1 ≤ a ≤ 100 and 1 ≤ b ≤ 100 make a² + b² a perfect square? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 126}
+  reference: "Answer: 126"
+
+- id: hard-math-04
+  category: math
+  difficulty: 0.7
+  min_tier: strong
+  prompt: "How many trailing zeros does 1000! have when written in base 12? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 497}
+  reference: "Answer: 497"
+
+- id: hard-math-05
+  category: math
+  difficulty: 0.85
+  min_tier: frontier
+  prompt: "How many permutations p of {0, 1, ..., 7} satisfy p(i) ≠ i and |p(i) − i| ≠ 1 for every i? End with 'Answer: <number>'."
+  checks:
+    - {type: answer, value: 1708}
+  reference: "Answer: 1708"
+
+- id: hard-rea-01
+  category: reasoning
+  difficulty: 0.75
+  min_tier: strong
+  prompt: |
+    Five friends (Ana, Ben, Cai, Dee, Eli) sit in seats 1 to 5 from left to right. Each owns a different pet (cat, dog, fish, bird, snake) and drinks a different drink (tea, coffee, juice, water, milk).
+    1. Ana sits at one end.
+    2. Ben sits next to Dee.
+    3. Cai owns neither the cat nor the dog.
+    4. The fish owner sits in seat 3.
+    5. The cat owner and the dog owner sit next to each other.
+    6. Eli owns the bird or the snake.
+    7. The person in seat 1 drinks water.
+    8. The snake owner drinks milk.
+    9. Ben drinks coffee.
+    10. The dog owner does not drink tea.
+    11. Cai sits in seat 4 or 5.
+    12. The bird owner drinks juice.
+    13. Ana does not own the cat.
+    14. Eli sits somewhere to the right of Cai.
+    15. The snake owner does not sit at either end.
+    16. Ben sits in seat 2.
+    Who drinks tea, and which pet does Cai own? End with 'Answer: <name>, <pet>'.
+  checks:
+    - {type: answer, value: "", pattern: "^\\W*dee\\W+snake"}
+  reference: "Answer: Dee, snake"
+
+- id: hard-rea-02
+  category: reasoning
+  difficulty: 0.65
+  min_tier: strong
+  prompt: "Knights always tell the truth and knaves always lie. A says: \"B and C are both knaves.\" B says: \"A and C are the same type.\" C says: \"At least one of A and B is a knave.\" Determine each person's type. End with 'Answer: A=<knight|knave>, B=<knight|knave>, C=<knight|knave>'."
+  checks:
+    - {type: answer, value: "", pattern: "a\\W*=\\W*knave\\W*,?\\W*b\\W*=\\W*knave\\W*,?\\W*c\\W*=\\W*knight"}
+  reference: "Answer: A=knave, B=knave, C=knight"
+
+- id: hard-code-01
+  category: coding
+  difficulty: 0.8
+  min_tier: strong
+  prompt: "Write a Python function count_palindromic_subsequences(s: str) -> int that returns the number of DISTINCT non-empty palindromic subsequences of s (s contains only the letters a, b, c, d; length up to 1000), modulo 1_000_000_007. It must run in O(n²). Return only the code in a ```python block."
+  checks:
+    - type: python
+      tests: |
+        import itertools, random, time
+        def brute(s):
+            seen = set()
+            for r in range(1, len(s) + 1):
+                for idx in itertools.combinations(range(len(s)), r):
+                    t = "".join(s[i] for i in idx)
+                    if t == t[::-1]:
+                        seen.add(t)
+            return len(seen)
+        assert count_palindromic_subsequences("bccb") == 6
+        rng = random.Random(7)
+        for _ in range(60):
+            s = "".join(rng.choice("abcd") for _ in range(rng.randint(1, 11)))
+            assert count_palindromic_subsequences(s) == brute(s), s
+        t = time.time(); count_palindromic_subsequences("abcd" * 250); assert time.time() - t < 5
+  reference: |
+    ```python
+    def count_palindromic_subsequences(s: str) -> int:
+        MOD = 1_000_000_007
+        n = len(s)
+        if n == 0:
+            return 0
+        nxt = [[n] * 4 for _ in range(n + 1)]
+        prv = [[-1] * 4 for _ in range(n + 1)]
+        for i in range(n - 1, -1, -1):
+            nxt[i] = nxt[i + 1][:]
+            nxt[i][ord(s[i]) - 97] = i
+        last = [-1] * 4
+        for i in range(n):
+            last[ord(s[i]) - 97] = i
+            prv[i] = last[:]
+        dp = [[0] * n for _ in range(n)]
+        for length in range(1, n + 1):
+            for i in range(0, n - length + 1):
+                j = i + length - 1
+                total = 0
+                for c in range(4):
+                    lo, hi = nxt[i][c], prv[j][c]
+                    if lo > j:
+                        continue
+                    if lo == hi:
+                        total += 1
+                    else:
+                        total += 2 + (dp[lo + 1][hi - 1] if lo + 1 <= hi - 1 else 0)
+                dp[i][j] = total % MOD
+        return dp[0][n - 1]
+    ```
+
+- id: hard-code-02
+  category: coding
+  difficulty: 0.7
+  min_tier: strong
+  prompt: "Write a Python function is_match(s: str, p: str) -> bool implementing full-string regular expression matching where '.' matches any single character and '*' matches zero or more of the preceding element. Do not use the re module. Return only the code in a ```python block."
+  checks:
+    - type: python
+      tests: |
+        import random, re as _re
+        src = open(__file__).read().split("# --- tests ---")[0]
+        assert "import re" not in src
+        cases = [("aa","a",False),("aa","a*",True),("ab",".*",True),("aab","c*a*b",True),
+                 ("mississippi","mis*is*p*.",False),("","a*b*",True),("ab",".*c",False),("aaa","a*a",True)]
+        for s, p, want in cases:
+            assert is_match(s, p) == want, (s, p)
+        rng = random.Random(3)
+        for _ in range(400):
+            s = "".join(rng.choice("ab") for _ in range(rng.randint(0, 7)))
+            toks = [rng.choice(["a", "b", ".", "a*", "b*", ".*"]) for _ in range(rng.randint(0, 5))]
+            p = "".join(toks)
+            assert is_match(s, p) == bool(_re.fullmatch(p, s)), (s, p)
+  reference: |
+    ```python
+    from functools import lru_cache
+
+    def is_match(s: str, p: str) -> bool:
+        @lru_cache(maxsize=None)
+        def m(i, j):
+            if j == len(p):
+                return i == len(s)
+            first = i < len(s) and p[j] in (s[i], ".")
+            if j + 1 < len(p) and p[j + 1] == "*":
+                return m(i, j + 2) or (first and m(i + 1, j))
+            return first and m(i + 1, j + 1)
+        return m(0, 0)
+    ```
+
+- id: hard-code-03
+  category: coding
+  difficulty: 0.8
+  min_tier: strong
+  prompt: "Write a Python function get_skyline(buildings: list[list[int]]) -> list[list[int]] solving the skyline problem: each building is [left, right, height]; return the key points [x, height] of the outer contour, sorted by x, with no two consecutive points of equal height, ending with a point of height 0. Must run in O(n log n). Return only the code in a ```python block."
+  checks:
+    - type: python
+      tests: |
+        import random
+        def brute(bs):
+            if not bs:
+                return []
+            xs = sorted({x for l, r, _ in bs for x in (l, r)})
+            out, prev = [], 0
+            for x in xs:
+                h = max([hh for l, r, hh in bs if l <= x < r], default=0)
+                if h != prev:
+                    out.append([x, h]); prev = h
+            return out
+        assert get_skyline([[2,9,10],[3,7,15],[5,12,12],[15,20,10],[19,24,8]]) == [[2,10],[3,15],[7,12],[12,0],[15,10],[20,8],[24,0]]
+        assert get_skyline([[0,2,3],[2,5,3]]) == [[0,3],[5,0]]
+        rng = random.Random(11)
+        for _ in range(300):
+            bs = []
+            for _ in range(rng.randint(1, 7)):
+                l = rng.randint(0, 15); bs.append([l, l + rng.randint(1, 8), rng.randint(1, 9)])
+            assert [list(p) for p in get_skyline(bs)] == brute(bs), bs
+  reference: |
+    ```python
+    import heapq
+
+    def get_skyline(buildings):
+        events = sorted({x for l, r, _ in buildings for x in (l, r)})
+        bs = sorted(buildings)
+        heap, out, i = [], [], 0
+        for x in events:
+            while i < len(bs) and bs[i][0] <= x:
+                heapq.heappush(heap, (-bs[i][2], bs[i][1]))
+                i += 1
+            while heap and heap[0][1] <= x:
+                heapq.heappop(heap)
+            h = -heap[0][0] if heap else 0
+            if not out or out[-1][1] != h:
+                out.append([x, h])
+        return out
+    ```
+
+- id: hard-dbg-01
+  category: debugging
+  difficulty: 0.7
+  min_tier: strong
+  prompt: |
+    This Dijkstra implementation returns wrong distances on some graphs. Find the bug and return only the corrected function in a ```python block. `graph` maps each node to a list of (neighbor, weight) pairs with non-negative weights; unreachable nodes must be absent from the result.
+
+    ```python
+    import heapq
+
+    def shortest_paths(graph, source):
+        dist = {source: 0}
+        visited = {source}
+        heap = [(0, source)]
+        while heap:
+            d, u = heapq.heappop(heap)
+            for v, w in graph.get(u, []):
+                if v not in visited:
+                    visited.add(v)
+                    dist[v] = d + w
+                    heapq.heappush(heap, (d + w, v))
+        return dist
+    ```
+  checks:
+    - type: python
+      tests: |
+        import random
+        g = {"a": [("b", 5), ("c", 1)], "c": [("b", 1)], "b": [("d", 1)]}
+        assert shortest_paths(g, "a") == {"a": 0, "c": 1, "b": 2, "d": 3}
+        rng = random.Random(5)
+        for _ in range(200):
+            n = rng.randint(1, 7)
+            g = {i: [(rng.randrange(n), rng.randint(0, 9)) for _ in range(rng.randint(0, 3))] for i in range(n)}
+            ref = {0: 0}
+            for _ in range(n):
+                for u in list(ref):
+                    for v, w in g.get(u, []):
+                        if v not in ref or ref[u] + w < ref[v]:
+                            ref[v] = ref[u] + w
+            assert shortest_paths(g, 0) == ref, g
+  reference: |
+    ```python
+    import heapq
+
+    def shortest_paths(graph, source):
+        dist = {source: 0}
+        heap = [(0, source)]
+        done = set()
+        while heap:
+            d, u = heapq.heappop(heap)
+            if u in done:
+                continue
+            done.add(u)
+            for v, w in graph.get(u, []):
+                if v not in dist or d + w < dist[v]:
+                    dist[v] = d + w
+                    heapq.heappush(heap, (d + w, v))
+        return dist
+    ```
+
+- id: hard-dbg-02
+  category: debugging
+  difficulty: 0.7
+  min_tier: strong
+  prompt: |
+    window_max should return the maximum of every window of k consecutive values in O(n), but it returns the wrong number of windows and sometimes includes values that already left the window. Fix it and return only the function in a ```python block.
+
+    ```python
+    from collections import deque
+
+    def window_max(nums, k):
+        q, out = deque(), []
+        for i, x in enumerate(nums):
+            while q and nums[q[-1]] <= x:
+                q.pop()
+            q.append(i)
+            if q[0] < i - k:
+                q.popleft()
+            if i >= k:
+                out.append(nums[q[0]])
+        return out
+    ```
+  checks:
+    - type: python
+      tests: |
+        import random
+        assert window_max([1,3,-1,-3,5,3,6,7], 3) == [3,3,5,5,6,7]
+        assert window_max([4,4,4], 2) == [4,4]
+        rng = random.Random(9)
+        for _ in range(300):
+            nums = [rng.randint(-3, 3) for _ in range(rng.randint(1, 12))]
+            k = rng.randint(1, len(nums))
+            assert window_max(nums, k) == [max(nums[i:i + k]) for i in range(len(nums) - k + 1)], (nums, k)
+  reference: |
+    ```python
+    from collections import deque
+
+    def window_max(nums, k):
+        q, out = deque(), []
+        for i, x in enumerate(nums):
+            while q and nums[q[-1]] <= x:
+                q.pop()
+            q.append(i)
+            if q[0] <= i - k:
+                q.popleft()
+            if i >= k - 1:
+                out.append(nums[q[0]])
+        return out
+    ```
+
+- id: hard-wr-01
+  category: writing
+  difficulty: 0.8
+  min_tier: strong
+  prompt: "Write a 6-line poem about the sea. Every line must contain exactly 7 words, the lines must start with the letters P, R, I, M, E, S in that order, and no word may appear twice anywhere in the poem (ignoring case and punctuation). Output only the six lines."
+  checks:
+    - type: validator
+      code: |
+        def validate(text):
+            lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+            if len(lines) != 6:
+                return False
+            words = []
+            for line, letter in zip(lines, "PRIMES"):
+                ws = re.findall(r"[A-Za-z']+", line)
+                if len(ws) != 7 or not ws[0].upper().startswith(letter):
+                    return False
+                words += [w.lower().strip("'") for w in ws]
+            return len(words) == len(set(words))
+  reference: |
+    Pale tides whisper secrets under silver moonlight,
+    Rolling waves carry ancient stories toward shore,
+    In deep blue silence, coral gardens bloom,
+    Mighty currents shape distant islands each year,
+    Endless horizons call restless sailors far away,
+    Salt winds sing softly through quiet harbors.
