@@ -71,10 +71,12 @@ def build_router(
         return FixedRouter(cheapest(candidates).id, name="cheapest")
     if name == "jev" or name.startswith("jev-"):
         selector, client = jev_client(registry, config, cache_dir)
-        raw = name.endswith("-raw")
-        style = name.removeprefix("jev-").removesuffix("-raw") if name.startswith("jev-") else None
+        if name == "jev":  # production router: style and escalation from config
+            style, escalate = None, config.jev.escalate
+        else:  # explicit variants for experiments: jev-<style> escalates, jev-<style>-raw does not
+            style, escalate = name.removeprefix("jev-").removesuffix("-raw"), not name.endswith("-raw")
         return JevRouter(client, selector, config, fallback_router=RulesRouter(config.rules),
-                         decision=style or None, escalate=not raw)
+                         decision=style, escalate=escalate)
     raise ValueError(f"Unknown router {name!r}; choose from {ROUTER_NAMES}")
 
 

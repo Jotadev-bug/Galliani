@@ -36,6 +36,8 @@ class ConfidencePolicy(BaseModel):
 
 class JevConfig(BaseModel):
     decision: str = Field(pattern="^(choice|profile|sufficiency)$")
+    # Apply the confidence policy to Jev's pick. If Jev itself fails, the safe fallback applies regardless.
+    escalate: bool = False
     # Instruction for Jev's model-choice question, per user mode (auto, cheapest, fastest, best).
     choice_instructions: dict[str, str]
     # Output length assumed when telling Jev how prices compare (before Jev has judged the length).

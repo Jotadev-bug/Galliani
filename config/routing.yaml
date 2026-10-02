@@ -40,6 +40,10 @@ jev:
   # sufficiency: Jev answers "would a <tier> model get this right?" per tier; cheapest sufficient tier wins.
   # All three come from the same Jev call; the benchmark compares them.
   decision: choice
+  # Escalate low-confidence picks with the confidence policy above. Off: the 2026-10-02 routing
+  # evaluation found Jev's own pick right on 47/48 real Flash-Lite answers, while escalation
+  # roughly doubled estimated cost (benchmarks/routing_eval.py; jev-choice vs jev-choice-raw).
+  escalate: false
   choice_instructions:
     auto: "Which model should answer `user_request`? Pick the cheapest model that will answer it completely and correctly. Choose a more expensive model only when the task clearly needs its extra capability."
     cheapest: "Which model should answer `user_request`? Pick the lowest-priced model that can still give an acceptable answer."
