@@ -1,0 +1,59 @@
+# Routing policy. Every number here is an experiment knob, not a truth.
+# Calibrate from benchmark data before trusting any of them.
+
+# Utility = quality_weight * P(success)
+#         - cost_weight    * cost_penalty     (0-1, log-scaled across candidates)
+#         - latency_weight * latency_penalty  (0-1, log-scaled across candidates)
+#         - risk_weight    * (1 - P(success)) * precision_required
+#
+# min_success: the "sufficiently capable" bar. Among candidates whose estimated
+# P(success) >= min_success the highest-utility one wins; if none clears the bar
+# the candidate with the highest P(success) wins.
+modes:
+  auto:     {quality_weight: 1.0, cost_weight: 0.5, latency_weight: 0.3, risk_weight: 0.8, min_success: 0.85}
+  cheapest: {quality_weight: 1.0, cost_weight: 2.0, latency_weight: 0.1, risk_weight: 0.3, min_success: 0.70}
+  fastest:  {quality_weight: 1.0, cost_weight: 0.3, latency_weight: 2.0, risk_weight: 0.3, min_success: 0.70}
+  best:     {quality_weight: 1.0, cost_weight: 0.0, latency_weight: 0.0, risk_weight: 1.0, min_success: 0.99}
+
+# Success-probability model: P = prod over dimensions of
+#   sigmoid(steepness * (skill - requirement) + bias)
+# bias > 0 means a model whose skill equals the requirement usually succeeds.
+success_model:
+  steepness: 12.0
+  bias: 1.5
+
+# JEB confidence policy (section 11 of PROJECT.md).
+confidence:
+  execute_threshold: 0.90   # >= : execute the routed model
+  safer_threshold: 0.70     # [safer, execute) : escalate one capability step
+                            # <  safer : fall back to the most capable candidate
+
+# JEB settings.
+jeb:
+  # profile: JEB classifies the task, the scoring function picks the model.
+  # direct:  JEB also picks the model; scoring only validates it.
+  decision: profile
+  selector_model: openai/gpt-5.4-nano
+  timeout_s: 20
+  max_output_tokens: 300
+  temperature: 0.0
+
+# Baseline rules router (experiment #3): task_type -> tier.
+rules:
+  default_tier: cheap
+  task_type_tiers:
+    coding: strong
+    debugging: strong
+    reasoning: frontier
+    math: frontier
+    planning: strong
+    document_analysis: strong
+    writing: mid
+    analysis: mid
+
+# Fallback execution.
+fallback:
+  max_attempts: 3
+  request_timeout_s: 120
+  # Upper bound on the estimated cost of any single fallback attempt (USD).
+  max_cost_per_request: 1.0

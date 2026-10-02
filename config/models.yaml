@@ -1,0 +1,104 @@
+# Model Registry.
+#
+# The router never hardcodes model facts; everything it knows lives here.
+#
+# - pricing: USD per million tokens. Refresh from the live source with
+#     python -m scripts.sync_pricing
+#   (pulls https://openrouter.ai/api/v1/models). `pricing_checked` records when.
+# - skills: 0-1 PRIOR estimates of capability per dimension. They are a starting
+#   point only and must be recalibrated from benchmark results
+#   (see docs/routing.md, "Calibration").
+# - latency: PRIOR estimates; replace with measured p50 from telemetry.
+# - candidate: false means the model is in the registry (e.g. to price it) but
+#   is never offered to the router as an execution target.
+
+providers:
+  openrouter:
+    adapter: openai_compatible
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+  anthropic:
+    adapter: anthropic
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+  openai:
+    adapter: openai_compatible
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+  mock:
+    adapter: mock
+
+models:
+  - id: google/gemini-3.1-flash-lite
+    provider: openrouter
+    vendor: google
+    tier: cheap
+    skills: {reasoning: 0.55, coding: 0.55, writing: 0.65, knowledge: 0.65, instruction_following: 0.75}
+    features: {vision: true, tools: true}
+    pricing: {input_per_million: 0.25, output_per_million: 1.5}
+    pricing_checked: 2026-10-02
+    latency: {ttft_ms: 400, tokens_per_second: 200}
+    limits: {context_window: 1048576, max_output_tokens: 65536}
+    status: active
+
+  - id: openai/gpt-5.4-mini
+    provider: openrouter
+    vendor: openai
+    tier: mid
+    skills: {reasoning: 0.72, coding: 0.75, writing: 0.75, knowledge: 0.75, instruction_following: 0.85}
+    features: {vision: true, tools: true}
+    pricing: {input_per_million: 0.75, output_per_million: 4.5}
+    pricing_checked: 2026-10-02
+    latency: {ttft_ms: 700, tokens_per_second: 120}
+    limits: {context_window: 400000, max_output_tokens: 128000}
+    status: active
+
+  - id: google/gemini-3.8-flash
+    provider: openrouter
+    vendor: google
+    tier: mid
+    skills: {reasoning: 0.75, coding: 0.75, writing: 0.75, knowledge: 0.8, instruction_following: 0.85}
+    features: {vision: true, tools: true}
+    pricing: {input_per_million: 0.75, output_per_million: 3.75}
+    pricing_checked: 2026-10-02
+    latency: {ttft_ms: 600, tokens_per_second: 180}
+    limits: {context_window: 1048576, max_output_tokens: 65536}
+    status: active
+
+  - id: anthropic/claude-sonnet-5.5
+    provider: openrouter
+    vendor: anthropic
+    tier: strong
+    skills: {reasoning: 0.88, coding: 0.92, writing: 0.9, knowledge: 0.88, instruction_following: 0.92}
+    features: {vision: true, tools: true}
+    pricing: {input_per_million: 2.0, output_per_million: 10.0}
+    pricing_checked: 2026-10-02
+    latency: {ttft_ms: 1000, tokens_per_second: 80}
+    limits: {context_window: 1000000, max_output_tokens: 64000}
+    status: active
+
+  - id: anthropic/claude-opus-5.5
+    provider: openrouter
+    vendor: anthropic
+    tier: frontier
+    skills: {reasoning: 0.95, coding: 0.95, writing: 0.93, knowledge: 0.92, instruction_following: 0.95}
+    features: {vision: true, tools: true}
+    pricing: {input_per_million: 4.0, output_per_million: 20.0}
+    pricing_checked: 2026-10-02
+    latency: {ttft_ms: 1500, tokens_per_second: 60}
+    limits: {context_window: 1000000, max_output_tokens: 64000}
+    status: active
+
+  # Default JEB selector: cheap and fast. Override with JEB_MODEL / JEB_BASE_URL.
+  - id: openai/gpt-5.4-nano
+    provider: openrouter
+    vendor: openai
+    tier: cheap
+    skills: {reasoning: 0.45, coding: 0.45, writing: 0.55, knowledge: 0.55, instruction_following: 0.75}
+    features: {vision: true, tools: true}
+    pricing: {input_per_million: 0.2, output_per_million: 1.25}
+    pricing_checked: 2026-10-02
+    latency: {ttft_ms: 350, tokens_per_second: 200}
+    limits: {context_window: 400000, max_output_tokens: 128000}
+    status: active
+    candidate: false
