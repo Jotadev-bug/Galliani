@@ -131,6 +131,11 @@ class Supervisor:
     # ------------------------------------------------------------------ public API
 
     async def start(self, request: StartTaskRequest) -> TaskResult:
+        """Create the task and run the loop until it finishes or pauses."""
+        return await self.run(self.create(request).task_id)
+
+    def create(self, request: StartTaskRequest) -> TaskResult:
+        """Create the task without running it, so a UI can show it in `created` status (012 AC Start Task)."""
         objective = request.objective.model_copy(update={
             "constraints": {**request.objective.constraints, **request.constraints},
             "context": request.objective.context or request.context,
@@ -143,6 +148,12 @@ class Supervisor:
             state = self._transition(state, S.waiting_for_user, "objective is empty; clarification requested",
                                      [StatePatch(operation="set", path="clarification",
                                                  value="Please describe the objective you want completed.")])
+        return self._result(state)
+
+    async def run(self, task_id: str) -> TaskResult:
+        """Run a created task. A task that is paused or finished is returned as it is."""
+        state = self.store.get(task_id)
+        if state.status is not S.created:
             return self._result(state)
         return await self._run(state)
 

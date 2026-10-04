@@ -209,6 +209,6 @@ class Verifier:
         return VerificationResult(
             status=VerificationStatus.pass_,
             satisfied_criteria=satisfied,
-            reason_summary=f"All {total} criteria satisfied.",
+            reason_summary="The criterion is satisfied." if total == 1 else f"All {total} criteria satisfied.",
             recommendation=VerificationRecommendation.continue_,
         )

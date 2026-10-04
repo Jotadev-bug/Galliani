@@ -204,7 +204,8 @@ class Workspace:
                            handler=self.read_files, resource_field="path", idempotent=True),
             ToolDefinition(name="write_file", description="Create or overwrite a UTF-8 text file in the workspace.",
                            input_schema=WriteIn, output_schema=WriteOut, permission_level=PermissionLevel.write,
-                           side_effects=[SideEffect.write], handler=self.write_file, resource_field="path"),
+                           side_effects=[SideEffect.write], handler=self.write_file, resource_field="path",
+                           artifact_field="path"),
         ]
 
     def registry(self) -> ToolRegistry:

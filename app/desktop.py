@@ -34,6 +34,21 @@ def user_data_dir() -> Path:
     return path
 
 
+class DesktopBridge:
+    """Methods the page may call as window.pywebview.api.* (only in the desktop app)."""
+
+    def __init__(self):
+        self.window = None
+
+    def pick_folder(self) -> str | None:
+        """Native folder chooser for the agent's workspace (spec 012). Returns a path or None."""
+        import webview
+
+        dialog = getattr(getattr(webview, "FileDialog", None), "FOLDER", None) or webview.FOLDER_DIALOG
+        chosen = self.window.create_file_dialog(dialog) if self.window else None
+        return chosen[0] if chosen else None
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -62,10 +77,14 @@ def smoke_test(base: str, token: str) -> int:
     ok = httpx.get(f"{base}/api/config", headers={"X-App-Token": token}, timeout=10)
     blocked = httpx.get(f"{base}/api/config", timeout=10)
     page = httpx.get(f"{base}/", timeout=10)
+    agent = httpx.get(f"{base}/api/agent/config", headers={"X-App-Token": token}, timeout=10)
+    agent_blocked = httpx.get(f"{base}/api/agent/config", timeout=10)
     checks = {
         "config with token": ok.status_code == 200 and ok.json().get("desktop") is True,
         "config without token rejected": blocked.status_code == 403,
         "UI served": page.status_code == 200 and "Welcome to Galliani" in page.text,
+        "agent API enabled": agent.status_code == 200 and agent.json().get("enabled") is True,
+        "agent API without token rejected": agent_blocked.status_code == 403,
     }
     for name, passed in checks.items():
         print(f"{'PASS' if passed else 'FAIL'}  {name}")
@@ -95,8 +114,9 @@ def main() -> int:
             return smoke_test(base, token)
         import webview
 
-        webview.create_window(
-            APP_NAME, f"{base}/?token={token}", width=1120, height=840, min_size=(420, 560),
+        bridge = DesktopBridge()
+        bridge.window = webview.create_window(
+            APP_NAME, f"{base}/?token={token}", width=1120, height=840, min_size=(420, 560), js_api=bridge,
         )
         webview.start(private_mode=False, storage_path=str(data / "webview"), debug=args.debug)
         return 0

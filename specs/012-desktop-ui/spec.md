@@ -2,7 +2,7 @@
 
         ## Status
 
-        Draft for v0.1.
+        Approved for v0.1 implementation (2026-10-04, see `docs/decisions.md` Decision 0018).
 
         ## Goal
 
@@ -88,10 +88,10 @@ Then the UI shows final result, verification summary, and artifacts.
 
         ## Implementation Tasks
 
-        - [ ] Define task view model.
-- [ ] Define approval prompt model.
-- [ ] Map lifecycle events to UI feed items.
-- [ ] Design final result and verification display.
+        - [x] Define task view model.
+- [x] Define approval prompt model.
+- [x] Map lifecycle events to UI feed items.
+- [x] Design final result and verification display.
 
         ## Dependencies
 

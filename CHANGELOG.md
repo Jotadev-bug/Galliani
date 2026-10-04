@@ -24,6 +24,7 @@ This project follows spec-driven development. Changelog entries should reference
 - CLI `--events FILE` (redacted JSON Lines event log), plan outline and per-run usage/cost summary.
 - Per-task spending cap: `LoopLimits.max_cost_usd` / CLI `--budget`; extending it needs approval (spec 009 R3).
 - Agentic eval fixtures `evals/cases/v0_1_agentic.yaml` (model planner, untrusted plans, spending cap, user answers) and `docs/release-checklist.md` (spec 013).
+- Desktop UI for the agent (spec 012, Decision 0018): Agent page with objective form and folder picker, live plan and activity, approval and question cards, verified result with files written, memory indicator, reconnect banner; `/api/agent/*` with long polling; `galliani/viewmodel.py` view models built only from redacted state.
 
 ### Fixed
 

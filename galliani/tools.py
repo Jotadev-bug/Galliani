@@ -55,6 +55,7 @@ class ToolDefinition(BaseModel):
     retryable_on_timeout: bool = True
     idempotent: bool = False
     resource_field: str | None = None  # argument naming the resource; it also becomes the permission scope
+    artifact_field: str | None = None  # output field naming a file the call produced (reported as an artifact)
     sensitivity: Sensitivity = Sensitivity.internal
     handler: ToolHandler = Field(exclude=True)
 
@@ -174,10 +175,13 @@ class ToolSystem:
         except ValidationError:
             return _fail(call, "invalid_output", "tool returned output that does not match its schema",
                          permission=decision)
+        artifacts = ([{"kind": "file", "uri": str(data[tool.artifact_field])}]
+                     if tool.artifact_field and data.get(tool.artifact_field) else [])
         return ToolResult(
             call_id=call.call_id,
             status=ToolStatus.succeeded,
             data=data,
+            artifacts=artifacts,
             observation_summary=f"{tool.name} succeeded",
             metadata={"side_effects": [s.value for s in tool.side_effects], "resource": resource},
             permission=decision,

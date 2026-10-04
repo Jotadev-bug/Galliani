@@ -15,7 +15,7 @@ import asyncio
 import json
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from app.config import CONFIG_DIR
@@ -26,7 +26,7 @@ from galliani.contracts import Objective
 from galliani.limits import LoopLimits
 from galliani.model_planner import ModelPlanner
 from galliani.model_verifier import ModelSemanticVerifier
-from galliani.observability import EventType, JsonlEventSink, LifecycleEvent, Observability
+from galliani.observability import EventSink, EventType, JsonlEventSink, LifecycleEvent, Observability
 from galliani.providers.app_bridge import AppProviderAdapter, worker_profiles
 from galliani.router import ModelRouter
 from galliani.state import TaskStatus
@@ -107,9 +107,10 @@ class Runtime:
 
 def build_runtime(workspace: Path | str, *, registry: ModelRegistry | None = None, pool: ProviderPool | None = None,
                   out: Out = print, capability: str = "reasoning", events_path: Path | str | None = None,
-                  budget_usd: float | None = DEFAULT_BUDGET_USD) -> Runtime:
+                  budget_usd: float | None = DEFAULT_BUDGET_USD, keys: dict[str, str] | None = None,
+                  sinks: Sequence[EventSink] = ()) -> Runtime:
     registry = registry or ModelRegistry.from_yaml(CONFIG_DIR / "models.yaml")
-    pool = pool or ProviderPool(registry, keys=load_keys())
+    pool = pool or ProviderPool(registry, keys=load_keys() if keys is None else keys)
     profiles = worker_profiles(registry, pool)
     available = [p for p in profiles if p.availability != "unavailable"]
     if not any(capability in p.capabilities for p in available):
@@ -117,7 +118,7 @@ def build_runtime(workspace: Path | str, *, registry: ModelRegistry | None = Non
     router = ModelRouter(profiles)
     adapter = AppProviderAdapter(registry, pool)
     console = ConsoleSink(out)
-    obs = Observability([console, *([JsonlEventSink(events_path)] if events_path else [])])
+    obs = Observability([console, *sinks, *([JsonlEventSink(events_path)] if events_path else [])])
     workers = WorkerClient(router, [adapter], obs)
     tools = Workspace(workspace).registry()
     limits = LoopLimits(max_cost_usd=budget_usd)

@@ -38,6 +38,7 @@ from app.providers.factory import ProviderPool, resolve_key
 from app.router.policies import most_capable
 from app.service import build_router
 from app.telemetry.costs import JsonlSink, build_record
+from galliani.web.agent_api import agent_router
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 KEY_HEADERS = {  # env-var name -> request header
@@ -303,6 +304,10 @@ def delete_key(provider: Literal["openrouter", "openai", "anthropic"]) -> dict:
     _desktop_only()
     keystore.delete(keystore.PROVIDERS[provider])
     return {"provider": provider, "saved": False}
+
+
+# The supervisor's agent API (spec 012, Decision 0018). Same app token, same caller keys.
+app.include_router(agent_router(keys_for=caller_keys))
 
 
 @app.get("/")

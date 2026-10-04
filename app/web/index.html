@@ -242,6 +242,71 @@ tr.picked .fill { background: linear-gradient(90deg, var(--accent), var(--accent
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 .foot-note { color: var(--faint); font-size: 12.5px; margin-top: 10px; }
 
+/* ------------------------------------------------------------- agent (spec 012) */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.page.wide { max-width: 1040px; }
+.agent-form { padding: 18px; display: grid; gap: 14px; }
+.field { display: grid; gap: 6px; }
+.field > span { font-weight: 550; font-size: 13.5px; }
+.field small { color: var(--muted); font-size: 12.5px; }
+.field textarea, .field input { border: 1px solid var(--border-strong); border-radius: 9px; background: var(--bg); padding: 9px 12px; width: 100%; min-width: 0; resize: vertical; }
+.field input { height: 38px; padding: 0 12px; }
+.inline { display: flex; gap: 8px; }
+details.field summary { cursor: pointer; color: var(--muted); font-size: 13.5px; width: fit-content; }
+details.field[open] { gap: 12px; }
+.form-foot { display: flex; align-items: center; gap: 12px; }
+.form-error { color: var(--bad); font-size: 13px; flex: 1; }
+.section-title { color: var(--faint); font-size: 12.5px; margin: 22px 0 8px; }
+.task-row { width: 100%; text-align: left; }
+.task-row:hover { background: var(--hover); }
+.agent-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.agent-head h2 { flex: 1; font-size: 20px; margin: 4px 0 0; overflow-wrap: anywhere; }
+.pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); background: var(--bad-soft); }
+.pill.run { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent-2) 35%, transparent); display: inline-flex; gap: 6px; align-items: center; }
+.pill .spin { width: 10px; height: 10px; border-width: 1.5px; }
+.status-pill { font-size: 12.5px; padding: 4px 10px; margin-top: 6px; white-space: nowrap; }
+.callout { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); background: color-mix(in srgb, var(--warn) 7%, var(--surface)); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
+.callout.question { border-color: color-mix(in srgb, var(--accent-2) 45%, var(--border)); background: color-mix(in srgb, var(--accent-2) 7%, var(--surface)); }
+.callout h3 { margin: 0 0 6px; font-size: 16px; display: flex; gap: 8px; align-items: center; }
+.callout h3:focus { outline: none; }
+.callout h3:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.callout .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.callout textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--bg); padding: 9px 12px; margin-top: 8px; resize: vertical; }
+.callout .q { display: block; font-size: 14.5px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 8px 0; font-size: 13.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+.agent-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.panel-head { padding: 12px 18px; border-bottom: 1px solid var(--border); font-weight: 550; display: flex; gap: 8px; align-items: center; }
+.panel-head .sub { font-weight: 400; }
+.steps, .feed { list-style: none; margin: 0; padding: 6px 0; }
+.step { display: flex; gap: 12px; padding: 9px 18px; align-items: flex-start; }
+.step[aria-current="step"] { background: var(--surface-2); }
+.step .st { width: 20px; height: 20px; flex: none; display: grid; place-items: center; font-size: 13px; margin-top: 1px; }
+.step.verified .st { color: var(--good); } .step.failed .st { color: var(--bad); } .step.waiting .st { color: var(--warn); }
+.step.pending .st, .step.canceled .st { color: var(--faint); }
+.step .title { font-size: 14px; }
+.step .sub, .revision { color: var(--muted); font-size: 12.5px; }
+.revision { padding: 0 18px 12px; margin: 0; }
+.feed { max-height: 420px; overflow-y: auto; font-size: 13px; }
+.feed li { display: grid; grid-template-columns: 64px 104px 1fr; gap: 8px; padding: 5px 18px; }
+.feed time { color: var(--faint); font-variant-numeric: tabular-nums; }
+.feed .ev { color: var(--muted); }
+.feed .sum { overflow-wrap: anywhere; }
+.result { margin-bottom: 14px; }
+.result .out { padding: 0 18px 14px; overflow-wrap: anywhere; }
+.result pre { white-space: pre-wrap; font-size: 12.5px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 0; }
+.verif { display: flex; gap: 8px; align-items: flex-start; padding: 0 18px 12px; font-size: 13.5px; }
+.verif.pass { color: var(--good); } .verif.fail { color: var(--bad); } .verif.none { color: var(--muted); }
+.files { padding: 0 18px 14px; font-size: 13.5px; }
+.files ul { margin: 4px 0 0; padding-left: 18px; }
+.next { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 18px 16px; }
+.memory-note { display: flex; gap: 10px; align-items: flex-start; color: var(--muted); font-size: 13px; border: 1px dashed var(--border-strong); border-radius: 12px; padding: 10px 14px; margin-top: 14px; }
+.stale { display: flex; align-items: center; gap: 12px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; color: var(--warn); }
+.stale span { flex: 1; }
+.usage-line { color: var(--faint); font-size: 12.5px; margin-top: 10px; }
+@media (max-width: 1000px) { .agent-grid { grid-template-columns: 1fr; } }
+
 @media (max-width: 1150px) {
   .routebar { grid-template-columns: minmax(200px, 1fr) auto auto 44px; }
   .rb-reason { display: none; }
@@ -263,6 +328,9 @@ tr.picked .fill { background: linear-gradient(90deg, var(--accent), var(--accent
   .welcome p { margin-bottom: 24px; }
   .stats { grid-template-columns: 1fr; }
   .details { margin: 10px 14px 0; }
+  .feed li { grid-template-columns: 56px 1fr; }
+  .feed .ev { display: none; }
+  .inline { flex-wrap: wrap; }
 }
 </style>
 </head>
@@ -291,6 +359,11 @@ tr.picked .fill { background: linear-gradient(90deg, var(--accent), var(--accent
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></symbol>
+  <symbol id="i-agent" viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="12" rx="3"/><path d="M12 3v4M9.5 12h.01M14.5 12h.01M9.5 15.5h5M2.5 13v2M21.5 13v2"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z"/><path d="M12 9v4M12 16h.01"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3h0a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-3 3 2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></symbol>
   <symbol id="v-anthropic" viewBox="0 0 24 24"><g stroke="#e07a52" stroke-width="2.4" stroke-linecap="round"><path d="M12 2.5v19M2.5 12h19M5.3 5.3l13.4 13.4M18.7 5.3 5.3 18.7"/></g></symbol>
   <symbol id="v-google" viewBox="0 0 24 24"><path d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10z" fill="#5b8def"/></symbol>
   <symbol id="v-openai" viewBox="0 0 24 24"><g fill="none" stroke="#10a37f" stroke-width="2"><path d="M12 3 19.8 7.5v9L12 21l-7.8-4.5v-9z"/><circle cx="12" cy="12" r="3"/></g></symbol>
@@ -307,6 +380,7 @@ tr.picked .fill { background: linear-gradient(90deg, var(--accent), var(--accent
     <div class="section-label">Chats</div>
     <nav class="chats" id="chatList" aria-label="Chats"></nav>
     <div class="nav">
+      <button data-view="agent"><svg class="i"><use href="#i-agent"/></svg>Agent</button>
       <button data-view="models"><svg class="i"><use href="#i-box"/></svg>Models</button>
       <button data-view="settings"><svg class="i"><use href="#i-gear"/></svg>Settings</button>
       <button data-view="usage"><svg class="i"><use href="#i-chart"/></svg>Usage</button>
@@ -597,8 +671,10 @@ function show(view) {
   state.view = view;
   document.querySelectorAll(".nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   $("composer").hidden = view !== "chat";
+  document.querySelector(".routebar").hidden = view === "agent";  // chat routing does not apply to agent tasks
+  $("details").hidden ||= view === "agent";
   renderChatList();
-  ({ chat: renderChat, models: renderModels, settings: renderSettings, usage: renderUsage, keys: renderKeys })[view]();
+  ({ chat: renderChat, agent: renderAgent, models: renderModels, settings: renderSettings, usage: renderUsage, keys: renderKeys })[view]();
   $("scroll").scrollTop = view === "chat" ? $("scroll").scrollHeight : 0;
 }
 document.querySelectorAll(".nav button").forEach((b) => b.addEventListener("click", () => { show(b.dataset.view); closeMobileSidebar(); }));
@@ -842,6 +918,289 @@ function renderKeys() {
   });
 }
 function afterKeysChange() { renderKeys(); $("keysWarn").hidden = hasRouterKey(); refreshCredit(); }
+
+// ------------------------------------------------------------------ agent (spec 012)
+// Everything shown comes from the server's view models: public summaries only, never hidden reasoning.
+const agent = { config: null, taskId: null, view: null, events: [], seq: 0, stale: false, poll: 0, bodies: {}, draft: null, tasks: [] };
+const STEP_LABEL = { pending: "Pending", running: "Running", waiting: "Waiting for you", verified: "Verified", failed: "Failed", canceled: "Canceled" };
+const EVENT_LABEL = {
+  status_changed: "Status", plan_created: "Plan ready", plan_revised: "Plan revised", plan_rejected: "Plan rejected",
+  route_selected: "Model chosen", route_fallback: "Fallback", route_failed: "No model", permission_decided: "Permission",
+  tool_called: "Tool", verification_completed: "Checked", retry_scheduled: "Retry", replan_started: "Replanning",
+  approval_recorded: "Approved", task_finished: "Finished", diagnostic: "Note",
+};
+const QUIET_EVENTS = new Set(["task_created", "step_executed", "worker_completed"]);
+const RUNNING = new Set(["created", "planning", "executing", "verifying", "replanning"]);
+const statusClass = (s) => s === "done" ? "ok" : s === "failed" || s === "blocked" ? "bad" : s === "waiting_for_user" ? "req" : RUNNING.has(s) ? "run" : "";
+const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const errText = (e, fallback) => typeof e.detail === "string" ? e.detail : fallback;
+
+function statusPill(status, label) {
+  return `<span class="pill status-pill ${statusClass(status)}">${RUNNING.has(status) ? '<span class="spin" aria-hidden="true"></span>' : ""}${esc(label)}</span>`;
+}
+
+async function renderAgent() {
+  setRoute(null);
+  if (!agent.config) {
+    $("view").innerHTML = `<div class="page"><div class="thinking"><span class="spin"></span>Loading…</div></div>`;
+    try { agent.config = await api("/api/agent/config"); }
+    catch { agent.config = { enabled: false, reason: "Could not reach the local server." }; }
+    if (state.view !== "agent") return;
+  }
+  if (!agent.config.enabled) {
+    $("view").innerHTML = `<div class="page"><h2>Agent</h2><div class="error" role="alert">${esc(agent.config.reason)}</div></div>`;
+    return;
+  }
+  if (agent.taskId) return openTask(agent.taskId, agent.view);
+  renderStartForm();
+}
+
+function renderStartForm() {
+  const d = agent.draft || {};
+  const cfg = agent.config;
+  const ws = d.workspace ?? store.get("galliani.agent.workspace", cfg.workspace_root || "");
+  const budget = d.budget_usd ?? store.get("galliani.agent.budget", String(cfg.default_budget_usd));
+  $("view").innerHTML = `<div class="page">
+    <h2>Agent</h2>
+    <p class="lead">Galliani plans the work, uses tools only inside the folder you choose, checks the result, and asks before writing files or spending past your budget.</p>
+    <form class="panel agent-form" id="agForm" novalidate>
+      <label class="field"><span>What should be done?</span>
+        <textarea id="agObjective" rows="3" required placeholder="Summarize the notes in this folder into summary.md">${esc(d.objective || "")}</textarea></label>
+      <div class="field"><label for="agWorkspace"><span style="font-weight:550;font-size:13.5px">Folder</span></label>
+        <span class="inline"><input id="agWorkspace" required value="${esc(ws)}" spellcheck="false" autocomplete="off"
+          placeholder="${esc(cfg.workspace_root || "C:\\Users\\you\\Documents\\project")}" aria-describedby="agWsHelp">
+          <button type="button" class="btn" id="agBrowse" hidden>Browse…</button></span>
+        <small id="agWsHelp">The agent can only read and write inside this folder${cfg.workspace_root ? ` (must be inside ${esc(cfg.workspace_root)})` : ""}.</small></div>
+      <details class="field"${d.context ? " open" : ""}><summary>More options</summary>
+        <label class="field"><span>Budget (USD, estimated)</span>
+          <input id="agBudget" type="number" min="0.01" step="0.05" value="${esc(budget)}" aria-describedby="agBudgetHelp">
+          <small id="agBudgetHelp">Past this, the task pauses and asks before spending more.</small></label>
+        <label class="field"><span>Background for the planner (optional)</span>
+          <textarea id="agContext" rows="2" placeholder="Audience, tone, constraints…">${esc(d.context || "")}</textarea></label>
+      </details>
+      <div class="form-foot"><span class="form-error" id="agError" role="alert"></span>
+        <button class="btn primary" type="submit" id="agStart">Start task</button></div>
+    </form>
+    <div class="section-title">Tasks this session</div>
+    <div class="panel" id="agTasks"><div class="row sub">Loading…</div></div>
+  </div>`;
+  agent.draft = null;
+  wireBrowse();
+  $("agForm").addEventListener("submit", (e) => { e.preventDefault(); startTask(); });
+  $("agObjective").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) startTask(); });
+  $("agObjective").focus();
+  loadTaskList();
+}
+
+function wireBrowse() {
+  const b = $("agBrowse"); if (!b) return;
+  const ready = () => { if (window.pywebview?.api?.pick_folder) b.hidden = false; };
+  ready(); window.addEventListener("pywebviewready", ready, { once: true });
+  b.addEventListener("click", async () => {
+    try { const p = await window.pywebview.api.pick_folder(); if (p) $("agWorkspace").value = p; } catch {}
+  });
+}
+
+async function loadTaskList() {
+  try { agent.tasks = await api("/api/agent/tasks"); } catch { agent.tasks = []; }
+  const el = $("agTasks"); if (!el) return;
+  el.innerHTML = agent.tasks.length ? agent.tasks.map((t) => `
+    <button class="row task-row" data-open="${esc(t.task_id)}">
+      <div class="grow"><div class="title">${esc(t.objective)}</div><div class="sub mono">${esc(t.workspace)}</div></div>
+      ${statusPill(t.status, t.status_label)}
+    </button>`).join("") : `<div class="row sub">No tasks yet. Tasks are kept until the app closes.</div>`;
+}
+
+async function startTask(body) {
+  body = body || {
+    objective: $("agObjective").value.trim(), workspace: $("agWorkspace").value.trim(),
+    context: $("agContext").value.trim(), budget_usd: parseFloat($("agBudget").value) || null,
+  };
+  const err = $("agError");
+  if (!body.objective) { if (err) err.textContent = "Describe what should be done."; return $("agObjective")?.focus(); }
+  if (!body.workspace) { if (err) err.textContent = "Choose a folder."; return $("agWorkspace")?.focus(); }
+  const btn = $("agStart"); if (btn) btn.disabled = true;
+  try {
+    const view = await api("/api/agent/tasks", body);
+    store.set("galliani.agent.workspace", body.workspace);
+    if (body.budget_usd) store.set("galliani.agent.budget", String(body.budget_usd));
+    agent.bodies[view.task_id] = body;
+    openTask(view.task_id, view, true);
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    const msg = errText(e, "Could not start the task.");
+    if (err) err.textContent = msg; else alert(msg);
+  }
+}
+
+function openTask(id, view, fresh) {
+  if (agent.taskId !== id || fresh) { agent.events = []; agent.seq = 0; }
+  agent.taskId = id; agent.view = view || null; agent.stale = false;
+  renderTask(); pollTask();
+}
+
+async function pollTask() {
+  const token = ++agent.poll, id = agent.taskId;
+  while (agent.poll === token && agent.taskId === id && state.view === "agent") {
+    try {
+      const page = await api(`/api/agent/tasks/${encodeURIComponent(id)}/events?after=${agent.seq}&wait=20`);
+      if (agent.poll !== token || agent.taskId !== id) return;
+      const before = agent.view;
+      agent.events.push(...page.events); agent.seq = page.seq; agent.view = page.view; agent.stale = false;
+      if (page.events.length || !before || before.status !== page.view.status || before.updated_at !== page.view.updated_at) renderTask();
+      if (page.view.terminal) return;
+    } catch {
+      if (agent.poll !== token) return;
+      agent.stale = true; renderTask(); return;  // 012: show the last known state and a retry option
+    }
+  }
+}
+
+function renderTask() {
+  if (state.view !== "agent" || !agent.taskId) return;
+  const v = agent.view;
+  if (!v) { $("view").innerHTML = `<div class="page"><div class="thinking"><span class="spin"></span>Loading task…</div></div>`; return; }
+  const draft = $("agAnswer")?.value, typing = document.activeElement?.id === "agAnswer";
+  const prevPrompt = $("apCard")?.dataset.prompt, prevQuestion = $("qCard")?.dataset.q;
+  const visible = agent.events.filter((e) => !QUIET_EVENTS.has(e.type));
+  const latest = visible[visible.length - 1];
+
+  $("view").innerHTML = `<div class="page wide">
+    <div class="agent-head">
+      <button class="icon-btn boxed" data-ag="back" title="All tasks" aria-label="Back to all tasks">${icon("i-back")}</button>
+      <h2>${esc(v.objective_summary)}</h2>
+      ${statusPill(v.status, v.status_label)}
+    </div>
+    <div class="sr-only" aria-live="polite">${latest ? esc(`${EVENT_LABEL[latest.type] || latest.type}: ${latest.public_summary}`) : ""}</div>
+    ${agent.stale ? `<div class="stale" role="status">${icon("i-shield")}<span>Lost the connection to this task. Showing the last known state.</span>
+      <button class="btn" data-ag="reconnect">Retry</button></div>` : ""}
+    ${approvalHtml(v)}${questionHtml(v)}${resultHtml(v)}
+    <div class="agent-grid">
+      ${planHtml(v)}
+      <section class="panel" aria-labelledby="actTitle"><div class="panel-head" id="actTitle">Activity</div>
+        <ol class="feed" id="agFeed">${visible.slice(-80).map((e) => `
+          <li><time datetime="${esc(e.timestamp)}">${clock(e.timestamp)}</time><span class="ev">${esc(EVENT_LABEL[e.type] || e.type)}</span>
+          <span class="sum">${e.refs.step_id ? `<span class="mono">${esc(e.refs.step_id)}</span> · ` : ""}${esc(e.public_summary)}</span></li>`).join("")
+          || `<li><span></span><span></span><span class="sum sub">Waiting for the first event…</span></li>`}</ol>
+      </section>
+    </div>
+    <div class="memory-note">${icon("i-brain")}<span><strong>Memory:</strong> ${v.memory.records.length
+      ? v.memory.records.map((m) => esc(m.summary)).join("; ") : esc(v.memory.note)}</span></div>
+    ${usageLine(v)}
+  </div>`;
+
+  const feed = $("agFeed"); if (feed) feed.scrollTop = feed.scrollHeight;
+  if (draft && $("agAnswer")) $("agAnswer").value = draft;
+  if (typing) $("agAnswer")?.focus();
+  else if (v.approval_prompt && prevPrompt !== v.approval_prompt.prompt_id) $("apTitle")?.focus();
+  else if (v.clarification && prevQuestion !== v.clarification) $("agAnswer")?.focus();
+}
+
+function approvalHtml(v) {
+  const p = v.approval_prompt; if (!p) return "";
+  const action = (p.action_summary.match(/'([^']+)'/) || [])[1] || "this action";
+  return `<section class="callout" id="apCard" data-prompt="${esc(p.prompt_id)}" role="alertdialog" aria-labelledby="apTitle" aria-describedby="apDesc">
+    <h3 id="apTitle" tabindex="-1">${icon("i-shield")}Approval needed</h3>
+    <p id="apDesc" style="margin:0">${esc(p.action_summary)}</p>
+    <dl class="kv"><dt>Risk</dt><dd>${esc(p.risk_summary)}</dd><dt>Scope</dt><dd class="mono">${esc(p.scope)}</dd></dl>
+    <div class="sub">The task is paused. Nothing happens until you choose.</div>
+    <div class="actions">
+      <button class="btn primary" data-ag="approve" aria-label="Approve ${esc(action)} for ${esc(p.scope)}">Approve</button>
+      <button class="btn" data-ag="deny" aria-label="Deny ${esc(action)}">Deny</button>
+      <button class="btn danger" data-ag="cancel">Cancel task</button>
+    </div></section>`;
+}
+
+function questionHtml(v) {
+  if (!v.clarification) return "";
+  return `<section class="callout question" id="qCard" data-q="${esc(v.clarification)}" role="group" aria-labelledby="qTitle">
+    <h3 id="qTitle">${icon("i-help")}Galliani needs an answer</h3>
+    <label for="agAnswer" class="q">${esc(v.clarification)}</label>
+    <textarea id="agAnswer" rows="2" placeholder="Your answer"></textarea>
+    <div class="actions"><button class="btn primary" data-ag="clarify">Send answer</button>
+      <button class="btn danger" data-ag="cancel">Cancel task</button></div></section>`;
+}
+
+function resultHtml(v) {
+  const r = v.result; if (!r) return "";
+  const ver = r.verification;
+  const verif = ver ? `<div class="verif ${ver.status === "pass" ? "pass" : "fail"}">${icon(ver.status === "pass" ? "i-check" : "i-x")}
+      <span>${ver.status === "pass" ? "Verified" : "Not verified"}: ${esc(ver.reason_summary)}</span></div>`
+    : `<div class="verif none">${icon("i-x")}<span>Not verified, so the task was not marked done.</span></div>`;
+  const json = r.output == null ? "" : `<pre class="mono">${esc(JSON.stringify(r.output, null, 2))}</pre>`;
+  const out = r.output == null ? "" : r.output_kind === "text" ? `<div class="out body">${markdown(r.output)}</div>`
+    : r.preview ? `<div class="out"><div class="body">${markdown(r.preview)}</div>
+        <details style="margin-top:10px"><summary class="sub" style="cursor:pointer">Tool result</summary>${json}</details></div>`
+    : `<div class="out">${json}</div>`;
+  const files = r.artifacts.length ? `<div class="files"><strong>Files written</strong><ul>${r.artifacts.map((a) => `<li class="mono">${esc(a.uri)}</li>`).join("")}</ul></div>` : "";
+  const next = v.status === "done"
+    ? `<button class="btn" data-ag="new">New task</button>`
+    : `<button class="btn primary" data-ag="retry">Try again</button><button class="btn" data-ag="edit">Edit and retry</button><button class="btn" data-ag="new">New task</button>`;
+  const title = { done: "Result", blocked: "Blocked", failed: "Failed", canceled: "Canceled" }[r.status] || "Result";
+  return `<section class="panel result" aria-labelledby="resTitle">
+    <div class="row"><div class="grow"><div class="title" id="resTitle">${esc(title)}</div><div class="sub">${esc(r.summary)}</div></div></div>
+    ${verif}${out}${files}<div class="next">${next}</div></section>`;
+}
+
+function planHtml(v) {
+  const p = v.plan;
+  if (!p) return `<section class="panel" aria-labelledby="planTitle"><div class="panel-head" id="planTitle">Plan</div>
+    <div class="row sub">${RUNNING.has(v.status) ? '<span class="spin" aria-hidden="true"></span>Planning…' : "No plan was made."}</div></section>`;
+  return `<section class="panel" aria-labelledby="planTitle">
+    <div class="panel-head" id="planTitle">Plan <span class="sub">v${p.version} · ${p.steps.length} step${p.steps.length === 1 ? "" : "s"}</span></div>
+    <ol class="steps">${p.steps.map((s) => `
+      <li class="step ${s.state}"${s.step_id === v.current_step ? ' aria-current="step"' : ""}>
+        <span class="st" role="img" aria-label="${STEP_LABEL[s.state]}">${s.state === "running" ? '<span class="spin"></span>'
+          : { verified: "✓", failed: "✕", waiting: "❚❚", pending: "○", canceled: "–" }[s.state]}</span>
+        <div><div class="title">${esc(s.purpose)}</div>
+          <div class="sub">${s.kind === "tool" ? "Tool" : "Model"} · <span class="mono">${esc(s.capability)}</span>${s.attempts > 1 ? ` · ${s.attempts} attempts` : ""}</div></div>
+      </li>`).join("")}</ol>
+    ${p.revision_reason ? `<p class="revision">Revised: ${esc(p.revision_reason)}</p>` : ""}</section>`;
+}
+
+function usageLine(v) {
+  const u = v.usage || {}; if (!u.calls) return "";
+  const tokens = (u.input_tokens || 0) + (u.output_tokens || 0);
+  return `<div class="usage-line">${u.calls} model call${u.calls === 1 ? "" : "s"} · ${tokens.toLocaleString()} tokens · est. ${money((u.cost_micro_usd || 0) / 1e6)}</div>`;
+}
+
+async function agentAct(action) {
+  const id = agent.taskId;
+  let body = {};
+  if (action === "clarify") {
+    const answer = $("agAnswer")?.value.trim();
+    if (!answer) return $("agAnswer")?.focus();
+    body = { answer };
+  }
+  document.querySelectorAll("[data-ag]").forEach((b) => (b.disabled = true));
+  try {
+    agent.view = await api(`/api/agent/tasks/${encodeURIComponent(id)}/${action}`, body);
+    renderTask(); pollTask();
+  } catch (e) {
+    alert(errText(e, "That did not work. The task view will refresh."));
+    renderTask(); pollTask();
+  }
+}
+
+function retryBody(edit) {
+  const known = agent.bodies[agent.taskId] || {};
+  const listed = agent.tasks.find((t) => t.task_id === agent.taskId) || {};
+  return { objective: known.objective || agent.view?.objective_summary || "", workspace: known.workspace || listed.workspace || "",
+           context: known.context || "", budget_usd: known.budget_usd ?? null, edit };
+}
+
+$("view").addEventListener("click", (e) => {
+  if (state.view !== "agent") return;
+  const open = e.target.closest("[data-open]");
+  if (open) return openTask(open.dataset.open, null, true);
+  const b = e.target.closest("[data-ag]"); if (!b) return;
+  const act = b.dataset.ag;
+  if (act === "back" || act === "new") { agent.poll++; agent.taskId = null; agent.view = null; return renderAgent(); }
+  if (act === "reconnect") { agent.stale = false; renderTask(); return pollTask(); }
+  if (act === "retry") { const { edit, ...body } = retryBody(false); return startTask(body); }
+  if (act === "edit") { agent.draft = retryBody(true); agent.poll++; agent.taskId = null; agent.view = null; return renderAgent(); }
+  agentAct(act);
+});
 
 // ------------------------------------------------------------------ misc
 function applyTheme(t) {
