@@ -165,3 +165,15 @@ def test_missing_workspace_folder_gives_a_clear_message(tmp_path, capsys):
     assert main(["do something", "--workspace", str(tmp_path / "does-not-exist")]) == 2
     err = capsys.readouterr().err
     assert "Workspace folder not found" in err and "Traceback" not in err
+
+
+async def test_cli_budget_pauses_for_approval_when_exceeded(workspace):
+    lines: list[str] = []
+    registry = ModelRegistry([spec("fast", "cheap", 0.5, 0.1, 0.4), spec("smart", "strong", 0.9, 3, 15)],
+                             {"mock": ProviderConfig(adapter="mock")})
+    pool = ProviderPool(registry, overrides={"mock": MockProvider("mock", responder=responder(PLAN))})
+    rt = build_runtime(workspace, registry=registry, pool=pool, out=lines.append, budget_usd=0.000001)
+    code = await run("Summarize", workspace, runtime=rt, ask=lambda _: "n", out=lines.append)
+    text = "\n".join(lines)
+    assert code == 1 and "extend_budget:1" in text and "Status: blocked" in text
+    assert not (workspace / "summary.md").exists()

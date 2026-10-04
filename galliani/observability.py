@@ -70,6 +70,24 @@ class EventSink(Protocol):
     def write(self, event: LifecycleEvent) -> None: ...
 
 
+class UsageLedger:
+    """Per-task totals of worker usage, tallied from `worker_completed` events."""
+
+    def __init__(self) -> None:
+        self._totals: dict[str, dict[str, int]] = {}
+
+    def write(self, event: LifecycleEvent) -> None:
+        if event.type is EventType.worker_completed:
+            totals = self._totals.setdefault(event.task_id, {"calls": 0})
+            totals["calls"] += 1
+            for key, value in (event.metadata.get("usage") or {}).items():
+                if isinstance(value, int) and not isinstance(value, bool):
+                    totals[key] = totals.get(key, 0) + value
+
+    def totals(self, task_id: str) -> dict[str, int]:
+        return dict(self._totals.get(task_id, {"calls": 0}))
+
+
 class InMemoryEventSink:
     def __init__(self) -> None:
         self.events: list[LifecycleEvent] = []

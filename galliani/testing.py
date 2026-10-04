@@ -47,7 +47,8 @@ class ScriptedAdapter(_Scripted):
             "text": entry.get("output", ""),
             "json": entry.get("structured"),
             "reasoning": entry.get("reasoning", "simulated private reasoning"),
-            "usage": {"input_tokens": len(request.instruction) // 4, "output_tokens": 8},
+            "usage": {"input_tokens": len(request.instruction) // 4, "output_tokens": 8,
+                      "cost_micro_usd": int(entry.get("cost_micro_usd", 0))},
         }
 
     def normalize(self, raw: dict[str, Any]) -> WorkerResponse:

@@ -335,3 +335,39 @@ async def test_question_during_replanning_pauses_and_resumes_without_charging_bu
     assert result.status is S.done
     state = h.supervisor.store.get(result.task_id)
     assert state.replan_count == 1 and state.plan.version == 2
+
+
+# 009 R3: costly actions need explicit approval -> per-task spending cap
+def three_model_steps() -> dict:
+    return {"steps": [summarize_step(step_id=f"s{i}", refs=()) for i in range(3)]}
+
+
+PRICEY = {**GOOD, "cost_micro_usd": 6_000}  # $0.006 per call
+
+
+async def test_spending_cap_pauses_and_approval_extends_it():
+    h = Harness([three_model_steps()], script={"w1": [PRICEY] * 3}, limits=LoopLimits(max_cost_usd=0.01))
+    paused = await h.supervisor.start(start())
+    assert paused.status is S.waiting_for_user
+    assert paused.approval_prompt.scope == "budget/1" and "$0.0120" in paused.approval_prompt.action_summary
+    assert paused.usage["calls"] == 2 and paused.usage["cost_micro_usd"] == 12_000
+    result = await h.supervisor.approve(paused.task_id)
+    assert result.status is S.done and result.usage["calls"] == 3
+    state = h.supervisor.store.get(result.task_id)
+    assert [a.action for a in state.approvals] == ["extend_budget:1"] and state.retry_counts == {}
+
+
+async def test_denied_budget_extension_blocks():
+    h = Harness([three_model_steps()], script={"w1": [PRICEY] * 3}, limits=LoopLimits(max_cost_usd=0.01))
+    paused = await h.supervisor.start(start())
+    result = await h.supervisor.deny(paused.task_id)
+    assert result.status is S.blocked and len(h.adapter.calls) == 2
+
+
+async def test_policy_may_preallow_costly_actions_and_no_cap_means_no_check():
+    policy = PermissionPolicy(rules={**PermissionPolicy().rules, PermissionLevel.costly: PermissionStatus.allowed})
+    h = Harness([three_model_steps()], script={"w1": [PRICEY] * 3}, limits=LoopLimits(max_cost_usd=0.01), policy=policy)
+    assert (await h.supervisor.start(start())).status is S.done
+    h = Harness([three_model_steps()], script={"w1": [PRICEY] * 3})
+    result = await h.supervisor.start(start())
+    assert result.status is S.done and result.usage["cost_micro_usd"] == 18_000

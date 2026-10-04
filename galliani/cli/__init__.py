@@ -23,6 +23,7 @@ from app.keys import PROVIDERS
 from app.models.registry import ModelRegistry
 from app.providers.factory import ProviderPool
 from galliani.contracts import Objective
+from galliani.limits import LoopLimits
 from galliani.model_planner import ModelPlanner
 from galliani.model_verifier import ModelSemanticVerifier
 from galliani.observability import EventType, JsonlEventSink, LifecycleEvent, Observability
@@ -35,6 +36,7 @@ from galliani.verification import Verifier
 from galliani.workers import WorkerClient
 from galliani.workspace import ListIn, Workspace
 
+DEFAULT_BUDGET_USD = 0.50
 Ask = Callable[[str], str]
 Out = Callable[[str], None]
 
@@ -104,7 +106,8 @@ class Runtime:
 
 
 def build_runtime(workspace: Path | str, *, registry: ModelRegistry | None = None, pool: ProviderPool | None = None,
-                  out: Out = print, capability: str = "reasoning", events_path: Path | str | None = None) -> Runtime:
+                  out: Out = print, capability: str = "reasoning", events_path: Path | str | None = None,
+                  budget_usd: float | None = DEFAULT_BUDGET_USD) -> Runtime:
     registry = registry or ModelRegistry.from_yaml(CONFIG_DIR / "models.yaml")
     pool = pool or ProviderPool(registry, keys=load_keys())
     profiles = worker_profiles(registry, pool)
@@ -117,8 +120,10 @@ def build_runtime(workspace: Path | str, *, registry: ModelRegistry | None = Non
     obs = Observability([console, *([JsonlEventSink(events_path)] if events_path else [])])
     workers = WorkerClient(router, [adapter], obs)
     tools = Workspace(workspace).registry()
+    limits = LoopLimits(max_cost_usd=budget_usd)
     supervisor = Supervisor(
-        planner=ModelPlanner(workers, tools, capability=capability),
+        planner=ModelPlanner(workers, tools, capability=capability, limits=limits),
+        limits=limits,
         router=router,
         adapters=[adapter],
         tools=ToolSystem(tools),
@@ -171,8 +176,8 @@ def format_result(result: TaskResult) -> str:
 
 async def run(objective: str, workspace: Path | str, *, context: str = "", interactive: bool = True,
               ask: Ask = input, out: Out = print, runtime: Runtime | None = None,
-              events_path: Path | str | None = None) -> int:
-    runtime = runtime or build_runtime(workspace, out=out, events_path=events_path)
+              events_path: Path | str | None = None, budget_usd: float | None = DEFAULT_BUDGET_USD) -> int:
+    runtime = runtime or build_runtime(workspace, out=out, events_path=events_path, budget_usd=budget_usd)
     try:
         if not runtime.available_workers:
             out("No model provider key found. Set one of: " + ", ".join(sorted(PROVIDERS.values())))
@@ -196,6 +201,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--context", default="", help="reference text for the planner (treated as data)")
     parser.add_argument("--non-interactive", action="store_true", help="stop instead of asking for approvals or answers")
     parser.add_argument("--events", default=None, help="append the redacted event log to this JSON Lines file")
+    parser.add_argument("--budget", type=float, default=DEFAULT_BUDGET_USD,
+                        help=f"estimated USD per task before asking to spend more (default {DEFAULT_BUDGET_USD})")
     args = parser.parse_args(argv)
     workspace = Path(args.workspace)
     if not workspace.is_dir():
@@ -204,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
     return asyncio.run(run(args.objective, args.workspace, context=args.context, interactive=not args.non_interactive,
-                           events_path=args.events))
+                           events_path=args.events, budget_usd=args.budget if args.budget > 0 else None))
 
 
 if __name__ == "__main__":

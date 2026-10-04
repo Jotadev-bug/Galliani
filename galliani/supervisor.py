@@ -21,8 +21,14 @@ from galliani.contracts import Objective
 from galliani.errors import ContractError
 from galliani.execution import ArtifactRef, ExecutionEngine, ExecutionLimits, ExecutionRequest, ExecutionStatus
 from galliani.limits import LoopLimits
-from galliani.observability import EventType, Observability
-from galliani.permissions import ApprovalPrompt, PermissionPolicy, PermissionStatus
+from galliani.observability import EventType, Observability, UsageLedger
+from galliani.permissions import (
+    ApprovalPrompt,
+    PermissionLevel,
+    PermissionPolicy,
+    PermissionRequest,
+    PermissionStatus,
+)
 from galliani.planner import Planner, PlannerError, PlannerStatus, PlanRequest, PlanStep, validate_plan
 from galliani.replanning import Budgets, FailureSignal, Replanner, ReplanRequest, ReplanStatus, RetryPolicy
 from galliani.router import ModelRouter, RoutingPolicy
@@ -49,6 +55,7 @@ from galliani.verification import (
 
 S = TaskStatus
 MAX_CONTEXT_CHARS = 4_000  # reference data passed to planners
+SPEND_ACTION = "extend_budget:"
 
 
 class UserPolicy(BaseModel):
@@ -86,6 +93,7 @@ class TaskResult(BaseModel):
     observations: list[ObservationRecord] = Field(default_factory=list)
     approval_prompt: ApprovalPrompt | None = None
     clarification: str | None = None
+    usage: dict[str, int] = Field(default_factory=dict)  # worker calls, tokens, cost_micro_usd (estimate)
 
 
 class Supervisor:
@@ -110,6 +118,8 @@ class Supervisor:
         self.limits = limits or LoopLimits()
         self.store = store or TaskStateStore()
         self.obs = observability or Observability()
+        self.ledger = UsageLedger()  # every worker call on this bus (planner, steps, verifier) is counted
+        self.obs.sinks.append(self.ledger)
         self.engine = ExecutionEngine(router, adapters, tools, self.obs)
         self.replanner = Replanner(planner, self.retry_policy, self.limits)
         self.actor = "supervisor"
@@ -280,6 +290,9 @@ class Supervisor:
         assert state.plan is not None and step is not None
         if state.action_count >= self.limits.max_total_actions:
             return self._finish(state, S.failed, f"action budget of {self.limits.max_total_actions} exhausted")
+        state, stop = self._check_spend(state, step)
+        if stop:
+            return state
 
         result = await self.engine.execute(
             ExecutionRequest(
@@ -444,6 +457,41 @@ class Supervisor:
 
     # ------------------------------------------------------------------ helpers
 
+    def _check_spend(self, state: TaskState, step: PlanStep) -> tuple[TaskState, bool]:
+        """Costly-action gate (009 R3): past the spending limit, continuing needs explicit approval.
+
+        Each approval is a distinct `extend_budget:<n>` action, so an earlier approval never covers a
+        later extension. Returns the (possibly updated) state and whether the loop must stop.
+        """
+        cap = self.limits.max_cost_usd
+        if cap is None:
+            return state, False
+        spent = self.ledger.totals(state.task_id).get("cost_micro_usd", 0) / 1_000_000
+        grants = sum(1 for a in state.approvals if a.action.startswith(SPEND_ACTION))
+        limit = cap * (1 + grants)
+        if spent < limit:
+            return state, False
+        request = PermissionRequest(
+            task_id=state.task_id, action=f"{SPEND_ACTION}{grants + 1}", resource="model usage",
+            scope=f"budget/{grants + 1}", risk_level=PermissionLevel.costly,
+            reason_summary=(f"estimated spend ${spent:.4f} reached the ${limit:.2f} limit; "
+                            f"approving allows up to ${limit + cap:.2f}"),
+        )
+        decision = self.tools.policy.evaluate(request, state.approvals)
+        state = self._apply(state, [StatePatch(operation="append", path="permission_decisions", value=decision)])
+        self.obs.emit(EventType.permission_decided, state.task_id, decision.audit_summary, step_id=step.step_id,
+                      metadata={"status": decision.status.value, "scope": request.scope, "spent_usd": round(spent, 4)})
+        if decision.status is PermissionStatus.allowed:
+            return state, False
+        if decision.status is PermissionStatus.needs_user:
+            pending = PendingPermission(step_id=step.step_id, request=request,
+                                        prompt=PermissionPolicy.prompt_for(request, decision))
+            return self._transition(state, S.waiting_for_user, f"spending limit reached: {request.reason_summary}", [
+                StatePatch(operation="set", path="pending_permission", value=pending),
+            ]), True
+        return self._finish(state, S.blocked,
+                            f"spending limit reached and extension denied: {request.reason_summary}"), True
+
     @staticmethod
     def _outline(plan) -> list[dict[str, str]]:
         """Public plan outline for events: what each step does, never how a model reasoned about it."""
@@ -514,4 +562,5 @@ class Supervisor:
             observations=state.observations,
             approval_prompt=state.pending_permission.prompt if state.pending_permission else None,
             clarification=state.clarification if state.status is S.waiting_for_user else None,
+            usage=self.ledger.totals(state.task_id),
         )
