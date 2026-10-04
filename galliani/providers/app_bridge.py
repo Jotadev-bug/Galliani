@@ -16,7 +16,7 @@ from app.models.registry import ModelRegistry
 from app.models.schemas import GenerationResult, Message, ModelSpec
 from app.providers.base import ProviderError
 from app.providers.factory import ProviderPool, resolve_key
-from galliani.adapters import AdapterError, ProviderAdapter, WorkerRequest, WorkerResponse
+from galliani.adapters import RETRYABLE_CODES, AdapterError, ProviderAdapter, WorkerRequest, WorkerResponse
 from galliani.router import WorkerProfile
 
 ADAPTER_ID = "app"
@@ -34,15 +34,14 @@ _ERROR_CODES = {
     "rate_limit": "rate_limited",
     "provider_outage": "provider_unavailable",
     "model_unavailable": "provider_unavailable",
-    "insufficient_credits": "provider_unavailable",
+    "insufficient_credits": "insufficient_credits",
     "auth_error": "auth_error",
     "context_overflow": "context_overflow",
     "invalid_request": "invalid_request",
     "refused": "refused",
 }
-_RETRYABLE = {"timeout", "rate_limited", "provider_unavailable"}
 
-_COST_CLASS = {"cheap": "low", "mid": "medium", "strong": "high", "frontier": "high"}
+_COST_CLASS = {"cheap": "low", "mid": "medium", "strong": "high", "frontier": "premium"}
 
 
 def capabilities_for(model: ModelSpec) -> set[str]:
@@ -139,7 +138,7 @@ class AppProviderAdapter(ProviderAdapter):
             return error
         if isinstance(error, ProviderError):
             code = _ERROR_CODES.get(error.kind, "provider_error")
-            return AdapterError(f"model provider failed ({code})", code=code, retryable=code in _RETRYABLE,
+            return AdapterError(f"model provider failed ({code})", code=code, retryable=code in RETRYABLE_CODES,
                                 fallback_eligible=error.try_other_model)
         return AdapterError(f"model provider failed ({type(error).__name__})", code="provider_error")
 

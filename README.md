@@ -64,7 +64,15 @@ python -m pytest tests/core
 python -m galliani.evaluation evals/cases
 ```
 
-v0.1 runs deterministically, with a fixture-driven planner and scripted worker adapters. Real provider adapters implement `galliani.adapters.ProviderAdapter`.
+The tests and evals are deterministic: they use fixture-driven planners and scripted worker adapters.
+
+To run a real objective against your configured providers (keys from `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or the desktop app's OS credential store):
+
+```bash
+python -m galliani.cli "Summarize the notes in docs/ into summary.md" --workspace ./my-project
+```
+
+A model plans the work, the supervisor validates the plan, cheap workers run the bounded steps, and verification gates completion. File writes pause for a y/N approval scoped to the exact path. The agent can only touch files inside `--workspace`.
 
 ## Development Workflow
 

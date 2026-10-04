@@ -22,7 +22,7 @@ class RetryPolicy(BaseModel):
     max_retries_per_step: int = Field(default=1, ge=0)
     max_replans: int = Field(default=1, ge=0)
     retryable_errors: set[str] = Field(default_factory=lambda: {
-        "timeout", "provider_unavailable", "rate_limited", "malformed_response", "auth_error",
+        "timeout", "provider_unavailable", "rate_limited", "malformed_response",
     })
 
 

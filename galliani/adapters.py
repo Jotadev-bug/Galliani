@@ -35,7 +35,12 @@ class WorkerResponse(BaseModel):
     finish_reason: str | None = None
 
 
-FALLBACK_ELIGIBLE_CODES = frozenset({"provider_unavailable", "timeout", "rate_limited", "auth_error", "malformed_response"})
+FALLBACK_ELIGIBLE_CODES = frozenset({
+    "provider_unavailable", "timeout", "rate_limited", "auth_error", "insufficient_credits", "malformed_response",
+    "context_overflow",
+})
+# Worth retrying later on the same worker; credit, auth and size problems are not.
+RETRYABLE_CODES = frozenset({"provider_unavailable", "timeout", "rate_limited", "malformed_response"})
 
 
 class AdapterError(GallianiError):
@@ -44,7 +49,7 @@ class AdapterError(GallianiError):
     def __init__(self, safe_summary: str, *, code: str = "provider_error", retryable: bool | None = None,
                  fallback_eligible: bool | None = None):
         super().__init__(safe_summary, code=code,
-                         retryable=code in FALLBACK_ELIGIBLE_CODES if retryable is None else retryable)
+                         retryable=code in RETRYABLE_CODES if retryable is None else retryable)
         self.fallback_eligible = code in FALLBACK_ELIGIBLE_CODES if fallback_eligible is None else fallback_eligible
 
 

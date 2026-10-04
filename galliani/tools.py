@@ -29,6 +29,10 @@ from galliani.permissions import (
 ToolHandler = Callable[[BaseModel], Any | Awaitable[Any]]
 
 
+class ToolInputRejected(Exception):
+    """Raised by a handler to refuse a request; the message must be safe to show (no internals)."""
+
+
 class SideEffect(str, Enum):
     none = "none"
     read = "read"
@@ -158,6 +162,8 @@ class ToolSystem:
         except asyncio.TimeoutError:
             return _fail(call, "timeout", f"timed out after {tool.timeout_ms} ms",
                          retryable=tool.retryable_on_timeout, status=ToolStatus.timed_out, permission=decision)
+        except ToolInputRejected as e:
+            return _fail(call, "rejected_input", str(e)[:200], permission=decision)
         except Exception as e:  # noqa: BLE001 - crashes are normalized without internals
             return _fail(call, "tool_crashed", f"tool crashed ({type(e).__name__})", permission=decision)
 

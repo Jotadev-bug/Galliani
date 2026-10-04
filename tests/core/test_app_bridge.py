@@ -6,7 +6,7 @@ import pytest
 
 from app.models.registry import ModelRegistry
 from app.models.schemas import ProviderConfig
-from app.providers.base import RateLimited, Refused
+from app.providers.base import InsufficientCredits, RateLimited, Refused
 from app.providers.factory import ProviderPool
 from app.providers.mock import MockProvider
 from galliani.adapters import AdapterError, WorkerRequest
@@ -41,7 +41,7 @@ def test_profiles_map_registry_facts_to_neutral_metadata():
     assert set(profiles) == {"small", "big"}  # non-candidates are not workers
     assert profiles["small"].capabilities == {"text", "tool_use"} and profiles["small"].cost_class == "low"
     assert {"long_context", "reasoning", "coding"} <= profiles["big"].capabilities
-    assert profiles["big"].cost_class == "high" and profiles["big"].provider_id == "app"
+    assert profiles["big"].cost_class == "premium" and profiles["big"].provider_id == "app"
     assert "local" in profiles["small"].policy_tags
 
 
@@ -73,6 +73,7 @@ async def test_invoke_normalizes_generation_result():
 @pytest.mark.parametrize("error,code,fallback", [
     (RateLimited("429 from upstream req_abc123"), "rate_limited", True),
     (Refused("declined"), "refused", False),
+    (InsufficientCredits("402 payment required"), "insufficient_credits", True),
 ])
 async def test_provider_errors_are_normalized_without_raw_text(error, code, fallback):
     registry = registry_with(spec("m", "cheap", 0.5, 0.1, 0.4))

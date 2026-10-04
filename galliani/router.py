@@ -16,9 +16,9 @@ from galliani.errors import GallianiError
 
 log = logging.getLogger(__name__)
 
-CostClass = Literal["low", "medium", "high"]
+CostClass = Literal["low", "medium", "high", "premium"]
 LatencyClass = Literal["fast", "medium", "slow"]
-_COST_RANK = {"low": 0, "medium": 1, "high": 2}
+_COST_RANK = {"low": 0, "medium": 1, "high": 2, "premium": 3}
 _LATENCY_RANK = {"fast": 0, "medium": 1, "slow": 2}
 
 

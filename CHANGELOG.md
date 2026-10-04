@@ -17,6 +17,10 @@ This project follows spec-driven development. Changelog entries should reference
 - `tests/core/`: unit and integration tests mapped to spec acceptance criteria.
 - `evals/cases/v0_1_loop.yaml` and `python -m galliani.evaluation`: v0.1 fixtures and blocking quality gates (013).
 - Decisions 0006-0011 in `docs/decisions.md`.
+- Provider bridge `galliani/providers/app_bridge.py`: `config/models.yaml` models become Agent Workers (Decision 0012).
+- `ModelPlanner` and `ModelSemanticVerifier` (specs 004, 007; Decision 0014).
+- `Supervisor.clarify` to resume after a clarification question (Decision 0013).
+- Workspace toolkit and `python -m galliani.cli` with interactive approvals (Decision 0015).
 
 ### Changed
 
