@@ -26,7 +26,19 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from galliani.contracts import Objective, utcnow
+from galliani.contracts import Sensitivity
 from galliani.errors import ContractError
+from galliani.memory import (
+    USER_SCOPE,
+    JsonMemoryStore,
+    MemoryDecisionStatus,
+    MemoryPolicy,
+    MemoryRecord,
+    MemoryStore,
+    MemoryUnavailable,
+    MemoryWriteRequest,
+    project_scope,
+)
 from galliani.observability import LifecycleEvent
 from galliani.state import TERMINAL_STATUSES, TaskStatus
 from galliani.supervisor import StartTaskRequest
@@ -74,14 +86,27 @@ class AgentTask:
         return self.job is not None and not self.job.done()
 
 
-# (workspace, caller keys, budget in USD or None, extra event sinks) -> runtime with .supervisor, .aclose()
-RuntimeFactory = Callable[[Path, dict[str, str], float | None, list], Any]
+# (workspace, caller keys, budget in USD or None, extra event sinks, memory store) -> runtime
+RuntimeFactory = Callable[[Path, dict[str, str], float | None, list, Any], Any]
 
 
-def default_runtime_factory(workspace: Path, keys: dict[str, str], budget: float | None, sinks: list) -> Any:
+def default_runtime_factory(workspace: Path, keys: dict[str, str], budget: float | None, sinks: list,
+                            memory: MemoryStore | None) -> Any:
     from galliani.cli import build_runtime
 
-    return build_runtime(workspace, keys=keys, out=lambda _line: None, budget_usd=budget, sinks=sinks)
+    return build_runtime(workspace, keys=keys, out=lambda _line: None, budget_usd=budget, sinks=sinks, memory=memory)
+
+
+def default_memory_store() -> MemoryStore | None:
+    path = os.environ.get("GALLIANI_MEMORY_PATH")
+    if path:
+        try:
+            return JsonMemoryStore(path)
+        except MemoryUnavailable:
+            return None
+    from galliani.cli import open_memory
+
+    return open_memory(out=lambda _line: None)
 
 
 class StartBody(BaseModel):
@@ -110,10 +135,45 @@ class EventsPage(BaseModel):
     view: TaskViewModel
 
 
+class MemoryBody(BaseModel):
+    content: str = Field(min_length=1, max_length=1_000)
+    type: str = "preference"
+    scope: str = "user"  # "user" or "project"
+    workspace: str | None = None  # required for project scope
+    sensitivity: Sensitivity = Sensitivity.internal
+
+
+class MemoryItem(BaseModel):
+    id: str
+    content: str  # redacted for sensitive records (010 security)
+    type: str
+    scope: str
+    provenance: str
+    sensitivity: Sensitivity
+    updated_at: datetime
+
+
+def memory_item(record: MemoryRecord) -> MemoryItem:
+    return MemoryItem(id=record.id, content=record.display_content(), type=record.type, scope=record.scope,
+                      provenance=record.provenance, sensitivity=record.sensitivity, updated_at=record.updated_at)
+
+
+_UNOPENED = object()
+
+
 class AgentService:
-    def __init__(self, runtime_factory: RuntimeFactory = default_runtime_factory):
+    def __init__(self, runtime_factory: RuntimeFactory = default_runtime_factory,
+                 memory: Any = _UNOPENED, memory_factory: Callable[[], MemoryStore | None] = default_memory_store):
         self.runtime_factory = runtime_factory
         self.tasks: dict[str, AgentTask] = {}
+        self._memory = memory
+        self._memory_factory = memory_factory
+
+    @property
+    def memory(self) -> MemoryStore | None:
+        if self._memory is _UNOPENED:
+            self._memory = self._memory_factory()  # opened on first use
+        return self._memory
 
     # ------------------------------------------------------------------ availability
 
@@ -154,19 +214,22 @@ class AgentService:
         supervisor = task.runtime.supervisor
         result = supervisor.get(task.task_id)
         artifacts = [{"kind": a.kind, "uri": a.uri} for a in result.artifacts]
-        return build_task_view(supervisor.store.get(task.task_id), artifacts=artifacts, usage=result.usage)
+        return build_task_view(supervisor.store.get(task.task_id), artifacts=artifacts, usage=result.usage,
+                               memory_used=supervisor.memory_used(task.task_id))
 
     async def start(self, body: StartBody, keys: dict[str, str]) -> TaskViewModel:
         from galliani.cli import workspace_overview
 
         workspace = self.check_workspace(body.workspace)
         sink = TaskEventSink()
-        runtime = self.runtime_factory(workspace, keys, body.budget_usd, [sink])
+        runtime = self.runtime_factory(workspace, keys, body.budget_usd, [sink], self.memory)
         if not getattr(runtime, "available_workers", ["?"]):
             await runtime.aclose()
             raise HTTPException(400, "No model provider key found. Add one under API Keys.")
         context = workspace_overview(workspace) + (f"\n\nUser context:\n{body.context}" if body.context else "")
-        created = runtime.supervisor.create(StartTaskRequest(objective=Objective(goal=body.objective, context=context)))
+        created = runtime.supervisor.create(StartTaskRequest(
+            objective=Objective(goal=body.objective, context=context),
+            memory_scopes=[USER_SCOPE, project_scope(workspace)]))
         task = AgentTask(created.task_id, runtime, sink, body.objective, str(workspace))
         self.tasks[task.task_id] = task
         self._trim()
@@ -222,6 +285,37 @@ class AgentService:
         await asyncio.sleep(0)
         return self.view(task)
 
+    # ------------------------------------------------------------------ memory (spec 010)
+
+    def require_memory(self) -> MemoryStore:
+        enabled, reason, _root = self.availability()
+        if not enabled:
+            raise HTTPException(403, reason)
+        if self.memory is None:
+            raise HTTPException(503, "Memory is unavailable on this machine.")
+        return self.memory
+
+    def remember(self, body: MemoryBody) -> MemoryItem:
+        store = self.require_memory()
+        if body.scope == "project":
+            if not body.workspace:
+                raise HTTPException(400, "A folder note needs its folder.")
+            scope = project_scope(self.check_workspace(body.workspace))
+        elif body.scope == "user":
+            scope = USER_SCOPE
+        else:
+            raise HTTPException(400, "Scope must be 'user' or 'project'.")
+        try:
+            request = MemoryWriteRequest(content=body.content, type=body.type, scope=scope,
+                                         sensitivity=body.sensitivity, provenance="added by you in the app",
+                                         reason_summary="the user saved this", source="user")
+        except ValueError as e:
+            raise HTTPException(422, "Not saved: the note is empty or has an unknown type.") from e
+        decision = MemoryPolicy().evaluate(request)
+        if decision.status is not MemoryDecisionStatus.allowed:
+            raise HTTPException(422, f"Not saved: {decision.reason}.")
+        return memory_item(store.write(request))
+
     def summaries(self) -> list[TaskSummary]:
         out = []
         for task in reversed(self.tasks.values()):
@@ -274,5 +368,19 @@ def agent_router(keys_for: Callable[[Request], dict[str, str]], service: AgentSe
     @router.post("/tasks/{task_id}/cancel")
     async def cancel(task_id: str) -> TaskViewModel:
         return await svc.act(task_id, "cancel")
+
+    @router.get("/memory")
+    def memory_list() -> list[MemoryItem]:
+        return [memory_item(r) for r in svc.require_memory().list()]
+
+    @router.post("/memory")
+    def memory_add(body: MemoryBody) -> MemoryItem:
+        return svc.remember(body)
+
+    @router.delete("/memory/{record_id}")
+    def memory_delete(record_id: str) -> dict:
+        if not svc.require_memory().delete(record_id):
+            raise HTTPException(404, "Memory record not found.")
+        return {"deleted": record_id}
 
     return router

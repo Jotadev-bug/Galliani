@@ -65,7 +65,7 @@ class ObservationRecord(BaseModel):
     id: str = Field(default_factory=lambda: new_id("obs"))
     source: str  # e.g. "worker:w1", "tool:read_note", "verifier", "supervisor"
     step_id: str | None = None
-    kind: Literal["execution", "verification", "permission", "planning", "replanning", "supervisor"]
+    kind: Literal["execution", "verification", "permission", "planning", "replanning", "supervisor", "memory"]
     outcome: str
     summary: str
     data_ref: str | None = None  # key into TaskState.outputs

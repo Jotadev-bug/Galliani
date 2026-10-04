@@ -29,6 +29,14 @@ from galliani.permissions import (
 ToolHandler = Callable[[BaseModel], Any | Awaitable[Any]]
 
 
+class ToolContext(BaseModel):
+    """Who is calling: passed to handlers that accept a second parameter (e.g. for provenance)."""
+
+    task_id: str
+    step_id: str
+    call_id: str
+
+
 class ToolInputRejected(Exception):
     """Raised by a handler to refuse a request; the message must be safe to show (no internals)."""
 
@@ -58,6 +66,8 @@ class ToolDefinition(BaseModel):
     artifact_field: str | None = None  # output field naming a file the call produced (reported as an artifact)
     sensitivity: Sensitivity = Sensitivity.internal
     handler: ToolHandler = Field(exclude=True)
+    # Optional exact description of this call for approval prompts (e.g. the text to be saved).
+    describe: Callable[[BaseModel], str] | None = Field(default=None, exclude=True)
 
 
 class ToolCall(BaseModel):
@@ -152,7 +162,8 @@ class ToolSystem:
             resource=resource,
             scope=resource,
             risk_level=tool.permission_level,
-            reason_summary=reason_summary or f"step {call.requested_by_step} requests {tool.name}",
+            reason_summary=(tool.describe(args) if tool.describe else None)
+            or reason_summary or f"step {call.requested_by_step} requests {tool.name}",
         )
         decision = self.policy.evaluate(request, approvals)
         if decision.status is not PermissionStatus.allowed:
@@ -161,7 +172,8 @@ class ToolSystem:
                          permission=decision, permission_request=request)
 
         try:
-            output = await asyncio.wait_for(self._invoke(tool, args), timeout=tool.timeout_ms / 1000)
+            context = ToolContext(task_id=task_id, step_id=call.requested_by_step, call_id=call.call_id)
+            output = await asyncio.wait_for(self._invoke(tool, args, context), timeout=tool.timeout_ms / 1000)
         except asyncio.TimeoutError:
             return _fail(call, "timeout", f"timed out after {tool.timeout_ms} ms",
                          retryable=tool.retryable_on_timeout, status=ToolStatus.timed_out, permission=decision)
@@ -188,10 +200,12 @@ class ToolSystem:
         )
 
     @staticmethod
-    async def _invoke(tool: ToolDefinition, args: BaseModel) -> Any:
+    async def _invoke(tool: ToolDefinition, args: BaseModel, context: ToolContext) -> Any:
+        params = len(inspect.signature(tool.handler).parameters)
+        call_args = (args, context) if params >= 2 else (args,)
         if inspect.iscoroutinefunction(tool.handler):
-            return await tool.handler(args)
-        result = await asyncio.to_thread(tool.handler, args)
+            return await tool.handler(*call_args)
+        result = await asyncio.to_thread(tool.handler, *call_args)
         if inspect.isawaitable(result):
             result = await result
         return result

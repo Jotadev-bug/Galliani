@@ -15,6 +15,8 @@ from galliani.supervisor import Supervisor
 from galliani.testing import ScriptedAdapter
 from galliani.tools import ToolSystem
 from galliani.web.agent_api import ROOT_ENV, AgentService, agent_router
+from galliani.memory import InMemoryMemoryStore, project_scope
+from galliani.memory_tool import remember_tool
 from galliani.workspace import Workspace
 from tests.core.helpers import worker
 
@@ -42,11 +44,14 @@ class FakeRuntime:
 
 
 def factory(script: list[dict]):
-    def build(workspace, keys, budget, sinks):
+    def build(workspace, keys, budget, sinks, memory):
         adapter = ScriptedAdapter("scripted", {"w1": [{"output": "Q3 spend is under plan."}] * 3})
         tools = Workspace(workspace).registry()
+        if memory is not None:
+            tools.register(remember_tool(memory, project_scope=project_scope(workspace)))
         return FakeRuntime(Supervisor(planner=StaticPlanner(script), router=ModelRouter([worker("w1")]),
-                                      adapters=[adapter], tools=ToolSystem(tools), observability=Observability(sinks)))
+                                      adapters=[adapter], tools=ToolSystem(tools), observability=Observability(sinks),
+                                      memory=memory))
     return build
 
 
@@ -57,10 +62,11 @@ def ws(tmp_path):
     return tmp_path
 
 
-def client_for(script, monkeypatch, root) -> TestClient:
+def client_for(script, monkeypatch, root, memory=None) -> TestClient:
     monkeypatch.setenv(ROOT_ENV, str(root))
     app = FastAPI()
-    app.include_router(agent_router(keys_for=lambda request: {}, service=AgentService(factory(script))))
+    service = AgentService(factory(script), memory=memory if memory is not None else InMemoryMemoryStore())
+    app.include_router(agent_router(keys_for=lambda request: {}, service=service))
     return TestClient(app)
 
 
@@ -168,9 +174,10 @@ def test_agent_is_disabled_outside_desktop_without_a_workspace_root(ws, monkeypa
     monkeypatch.delenv(ROOT_ENV, raising=False)
     monkeypatch.delenv("ROUTER_DESKTOP", raising=False)
     app = FastAPI()
-    app.include_router(agent_router(keys_for=lambda request: {}, service=AgentService(factory([PLAN]))))
+    app.include_router(agent_router(keys_for=lambda request: {}, service=AgentService(factory([PLAN]), memory=None)))
     with TestClient(app) as client:
         assert client.get("/api/agent/config").json()["enabled"] is False
+        assert client.get("/api/agent/memory").status_code == 403
         res = client.post("/api/agent/tasks", json={"objective": "x", "workspace": str(ws)})
         assert res.status_code == 403
 
@@ -195,3 +202,46 @@ def test_approval_prompt_markup_is_accessible():
     assert '<h3 id="apTitle" tabindex="-1">' in html and '$("apTitle")?.focus()' in html  # focus moves to the prompt
     assert 'aria-label="Approve ${esc(action)} for ${esc(p.scope)}"' in html  # scope named before consent
     assert '<dt>Scope</dt>' in html and 'aria-live="polite"' in html
+
+
+# Spec 010 through the API: explicit user writes, listing with redaction, deletion, and task memory views
+def test_memory_api_add_list_redact_delete(ws, monkeypatch):
+    store = InMemoryMemoryStore()
+    with client_for([PLAN], monkeypatch, ws, memory=store) as client:
+        added = client.post("/api/agent/memory", json={"content": "Write summaries in Spanish"}).json()
+        assert added["scope"] == "user" and added["provenance"] == "added by you in the app"
+        folder = client.post("/api/agent/memory", json={"content": "Reports go in reports/", "type": "instruction",
+                                                         "scope": "project", "workspace": str(ws)}).json()
+        assert folder["scope"] == project_scope(ws)
+        client.post("/api/agent/memory", json={"content": "Blood type O+", "type": "fact", "sensitivity": "sensitive"})
+        listed = client.get("/api/agent/memory").json()
+        assert {m["content"] for m in listed} == {"Write summaries in Spanish", "Reports go in reports/", "[redacted]"}
+        secret = client.post("/api/agent/memory", json={"content": "key sk-" + "q" * 30})
+        assert secret.status_code == 422 and "secret" in secret.json()["detail"]
+        assert client.delete(f"/api/agent/memory/{added['id']}").status_code == 200
+        assert client.delete(f"/api/agent/memory/{added['id']}").status_code == 404
+        assert len(store.list()) == 2
+
+
+def test_task_view_shows_memory_used_and_saved(ws, monkeypatch):
+    store = InMemoryMemoryStore()
+    remember = {"step_id": "m", "kind": "tool", "purpose": "save it", "required_capability": "remember",
+                "expected_output": "saved", "tool": {"tool_name": "remember", "arguments": {"content": "Prefer short bullets"}},
+                "verification_criteria": [{"kind": "field_present", "field": "id"}]}
+    with client_for([PLAN], monkeypatch, ws, memory=store) as client:
+        client.post("/api/agent/memory", json={"content": "Summaries should mention the plan variance"})
+        task_id = start(client, ws)["task_id"]
+        view = wait_for(client, task_id, "waiting_for_user")["view"]
+        assert [m["summary"] for m in view["memory"]["used"]] == ["Summaries should mention the plan variance"]
+        assert view["memory"]["records"] == []
+
+    with client_for([{"steps": [remember]}], monkeypatch, ws, memory=store) as client:
+        task2 = start(client, ws, objective="Remember that I prefer short bullets")["task_id"]
+        prompt = wait_for(client, task2, "waiting_for_user")["view"]["approval_prompt"]
+        assert '"Prefer short bullets"' in prompt["action_summary"]
+        client.post(f"/api/agent/tasks/{task2}/approve")
+        done = wait_for(client, task2, "done")["view"]
+        assert [m["summary"] for m in done["memory"]["records"]] == ["Prefer short bullets"]
+        assert "with your approval" in done["memory"]["note"]
+        assert {m["content"] for m in client.get("/api/agent/memory").json()} == {
+            "Summaries should mention the plan variance", "Prefer short bullets"}

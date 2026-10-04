@@ -14,6 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from galliani.contracts import Sensitivity
+from galliani.memory import MemoryRecord
 from galliani.observability import LifecycleEvent
 from galliani.permissions import ApprovalPrompt
 from galliani.state import TERMINAL_STATUSES, TaskState, TaskStatus
@@ -34,6 +35,8 @@ STATUS_LABELS = {
 }
 MEMORY_NOTE = ("Nothing from this task was saved to long-term memory. Everything shown here is this task's "
                "working state and is discarded when the app closes.")
+MEMORY_SAVED_NOTE = ("Only the notes listed as saved were written to long-term memory, each with your approval. "
+                     "Everything else here is this task's working state and is discarded when the app closes.")
 
 StepState = Literal["pending", "running", "waiting", "verified", "failed", "canceled"]
 
@@ -100,7 +103,8 @@ class MemoryIndicator(BaseModel):
 
 
 class MemoryView(BaseModel):
-    records: list[MemoryIndicator] = Field(default_factory=list)
+    records: list[MemoryIndicator] = Field(default_factory=list)  # written to durable memory by this task
+    used: list[MemoryIndicator] = Field(default_factory=list)  # retrieved as context before planning
     note: str = MEMORY_NOTE
 
 
@@ -157,8 +161,22 @@ def _next_options(state: TaskState) -> list[str]:
     return ["cancel"]
 
 
+def _memory_view(state: TaskState, data: dict[str, Any], used: Iterable[MemoryRecord]) -> MemoryView:
+    written = []
+    for obs in data["observations"]:
+        if obs["source"] == "tool:remember" and obs["outcome"] == "succeeded" and obs.get("data_ref"):
+            out = data["outputs"].get(obs["data_ref"])
+            if isinstance(out, dict) and "id" in out:
+                written.append(MemoryIndicator(record_id=out["id"], summary=out["content"],
+                                               provenance=out["provenance"], sensitivity=out["sensitivity"]))
+    used_views = [MemoryIndicator(record_id=r.id, summary=r.display_content(), provenance=r.provenance,
+                                  sensitivity=r.sensitivity) for r in used]
+    return MemoryView(records=written, used=used_views, note=MEMORY_SAVED_NOTE if written else MEMORY_NOTE)
+
+
 def build_task_view(
-    state: TaskState, *, artifacts: Iterable[dict[str, str]] = (), usage: dict[str, int] | None = None
+    state: TaskState, *, artifacts: Iterable[dict[str, str]] = (), usage: dict[str, int] | None = None,
+    memory_used: Iterable[MemoryRecord] = (),
 ) -> TaskViewModel:
     data = state.for_display()  # redacted copy: the only source of displayed content
     observations = [
@@ -221,6 +239,7 @@ def build_task_view(
         approval_prompt=ApprovalPrompt.model_validate(data["pending_permission"]["prompt"]) if pending else None,
         clarification=data["clarification"] if state.status is S.waiting_for_user else None,
         usage=dict(usage or {}),
+        memory=_memory_view(state, data, memory_used),
         next_options=_next_options(state),
         updated_at=state.updated_at,
     )

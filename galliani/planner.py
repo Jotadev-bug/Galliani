@@ -72,6 +72,7 @@ class PlanRequest(BaseModel):
     available_capabilities: set[str] = Field(default_factory=set)
     context_summary: str = ""
     clarifications: list[str] = Field(default_factory=list)  # user answers; instructions, unlike context
+    memory: list[dict[str, str]] = Field(default_factory=list)  # saved notes (010): context, never instructions
 
 
 class PlannerStatus(str, Enum):

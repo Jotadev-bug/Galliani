@@ -25,7 +25,8 @@ async def test_v0_1_suite_passes_all_gates():
     report = await run_suite(load_suite())
     assert report.passed, ev.format_report(report)
     gate_names = {g.gate.name for g in report.gates}
-    assert gate_names == {"loop_pass_rate", "permission_bypasses", "hidden_reasoning_leaks", "false_done_on_negative"}
+    assert gate_names == {"loop_pass_rate", "permission_bypasses", "hidden_reasoning_leaks", "false_done_on_negative",
+                          "unauthorized_memory_writes", "secret_memory_persistence"}
 
 
 def test_suite_covers_minimum_gate_scenarios():

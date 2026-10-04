@@ -24,6 +24,8 @@ from app.models.registry import ModelRegistry
 from app.providers.factory import ProviderPool
 from galliani.contracts import Objective
 from galliani.limits import LoopLimits
+from galliani.memory import USER_SCOPE, JsonMemoryStore, MemoryStore, MemoryUnavailable, project_scope
+from galliani.memory_tool import remember_tool
 from galliani.model_planner import ModelPlanner
 from galliani.model_verifier import ModelSemanticVerifier
 from galliani.observability import EventSink, EventType, JsonlEventSink, LifecycleEvent, Observability
@@ -81,6 +83,25 @@ class ConsoleSink:
                     self.out(f"      {item['id']} ({item['kind']}: {item['capability']}) {item['purpose']}")
 
 
+def memory_path() -> Path:
+    """The same durable memory file the desktop app uses."""
+    from app.desktop import user_data_dir
+
+    return user_data_dir() / "memory.json"
+
+
+def open_memory(out: Out = print) -> MemoryStore | None:
+    try:
+        return JsonMemoryStore(memory_path())
+    except MemoryUnavailable as e:
+        out(f"Memory is unavailable ({e.safe_summary}); continuing without it.")
+        return None
+
+
+def memory_scopes(workspace: Path | str) -> list[str]:
+    return [USER_SCOPE, project_scope(workspace)]
+
+
 def load_keys() -> dict[str, str]:
     """Provider keys from the environment, then the OS credential store (desktop installs)."""
     from app import keys as key_store
@@ -108,7 +129,7 @@ class Runtime:
 def build_runtime(workspace: Path | str, *, registry: ModelRegistry | None = None, pool: ProviderPool | None = None,
                   out: Out = print, capability: str = "reasoning", events_path: Path | str | None = None,
                   budget_usd: float | None = DEFAULT_BUDGET_USD, keys: dict[str, str] | None = None,
-                  sinks: Sequence[EventSink] = ()) -> Runtime:
+                  sinks: Sequence[EventSink] = (), memory: MemoryStore | None = None) -> Runtime:
     registry = registry or ModelRegistry.from_yaml(CONFIG_DIR / "models.yaml")
     pool = pool or ProviderPool(registry, keys=load_keys() if keys is None else keys)
     profiles = worker_profiles(registry, pool)
@@ -121,6 +142,8 @@ def build_runtime(workspace: Path | str, *, registry: ModelRegistry | None = Non
     obs = Observability([console, *sinks, *([JsonlEventSink(events_path)] if events_path else [])])
     workers = WorkerClient(router, [adapter], obs)
     tools = Workspace(workspace).registry()
+    if memory is not None:
+        tools.register(remember_tool(memory, project_scope=project_scope(workspace)))
     limits = LoopLimits(max_cost_usd=budget_usd)
     supervisor = Supervisor(
         planner=ModelPlanner(workers, tools, capability=capability, limits=limits),
@@ -130,6 +153,7 @@ def build_runtime(workspace: Path | str, *, registry: ModelRegistry | None = Non
         tools=ToolSystem(tools),
         verifier=Verifier(ModelSemanticVerifier(workers, capability=capability)),
         observability=obs,
+        memory=memory,
     )
     return Runtime(supervisor, adapter, [p.worker_id for p in available], console)
 
@@ -180,15 +204,18 @@ def format_result(result: TaskResult) -> str:
 
 async def run(objective: str, workspace: Path | str, *, context: str = "", interactive: bool = True,
               ask: Ask = input, out: Out = print, runtime: Runtime | None = None,
-              events_path: Path | str | None = None, budget_usd: float | None = DEFAULT_BUDGET_USD) -> int:
-    runtime = runtime or build_runtime(workspace, out=out, events_path=events_path, budget_usd=budget_usd)
+              events_path: Path | str | None = None, budget_usd: float | None = DEFAULT_BUDGET_USD,
+              use_memory: bool = True) -> int:
+    runtime = runtime or build_runtime(workspace, out=out, events_path=events_path, budget_usd=budget_usd,
+                                       memory=open_memory(out) if use_memory else None)
     try:
         if not runtime.available_workers:
             out("No model provider key found. Set one of: " + ", ".join(sorted(PROVIDERS.values())))
             return 2
         out(f"Galliani: {objective}\n  workspace: {Path(workspace).resolve()}")
         full_context = workspace_overview(workspace) + (f"\n\nUser context:\n{context}" if context else "")
-        result = await runtime.supervisor.start(StartTaskRequest(objective=Objective(goal=objective, context=full_context)))
+        result = await runtime.supervisor.start(StartTaskRequest(
+            objective=Objective(goal=objective, context=full_context), memory_scopes=memory_scopes(workspace)))
         if interactive:
             result = await interact(runtime.supervisor, result, ask=ask, out=out)
         out(format_result(result))
@@ -207,6 +234,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--events", default=None, help="append the redacted event log to this JSON Lines file")
     parser.add_argument("--budget", type=float, default=DEFAULT_BUDGET_USD,
                         help=f"estimated USD per task before asking to spend more (default {DEFAULT_BUDGET_USD})")
+    parser.add_argument("--no-memory", action="store_true", help="do not read or save long-term memory for this run")
     args = parser.parse_args(argv)
     workspace = Path(args.workspace)
     if not workspace.is_dir():
@@ -215,7 +243,8 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
     return asyncio.run(run(args.objective, args.workspace, context=args.context, interactive=not args.non_interactive,
-                           events_path=args.events, budget_usd=args.budget if args.budget > 0 else None))
+                           events_path=args.events, budget_usd=args.budget if args.budget > 0 else None,
+                           use_memory=not args.no_memory))
 
 
 if __name__ == "__main__":

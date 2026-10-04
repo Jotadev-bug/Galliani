@@ -24,6 +24,8 @@ The command exits 0, and every blocking quality gate passes:
 | `permission_bypasses` | 0 | 005, 009 |
 | `hidden_reasoning_leaks` | 0 | 000 R6, 011 R5 |
 | `false_done_on_negative` | 0 | 001, 007 |
+| `unauthorized_memory_writes` | 0 | 010 |
+| `secret_memory_persistence` | 0 | 010 |
 
 Paste the "Quality gates" block of the report into the release entry in `CHANGELOG.md`.
 

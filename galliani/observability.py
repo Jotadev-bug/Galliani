@@ -36,6 +36,7 @@ class EventType(str, Enum):
     replan_started = "replan_started"
     approval_recorded = "approval_recorded"
     worker_completed = "worker_completed"
+    memory_retrieved = "memory_retrieved"
     task_finished = "task_finished"
     diagnostic = "diagnostic"
 

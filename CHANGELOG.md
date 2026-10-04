@@ -25,6 +25,7 @@ This project follows spec-driven development. Changelog entries should reference
 - Per-task spending cap: `LoopLimits.max_cost_usd` / CLI `--budget`; extending it needs approval (spec 009 R3).
 - Agentic eval fixtures `evals/cases/v0_1_agentic.yaml` (model planner, untrusted plans, spending cap, user answers) and `docs/release-checklist.md` (spec 013).
 - Desktop UI for the agent (spec 012, Decision 0018): Agent page with objective form and folder picker, live plan and activity, approval and question cards, verified result with files written, memory indicator, reconnect banner; `/api/agent/*` with long polling; `galliani/viewmodel.py` view models built only from redacted state.
+- Durable memory (spec 010, Decision 0019): JSON store in the app data folder, `user` and per-folder scopes, deterministic scoped retrieval before planning, approval-gated `remember` tool, secrets never persisted, memory API, eval gates `unauthorized_memory_writes` and `secret_memory_persistence`.
 
 ### Fixed
 

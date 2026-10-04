@@ -17,10 +17,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from galliani.adapters import ProviderAdapter
-from galliani.contracts import Objective
+from galliani.contracts import Objective, Sensitivity
 from galliani.errors import ContractError
 from galliani.execution import ArtifactRef, ExecutionEngine, ExecutionLimits, ExecutionRequest, ExecutionStatus
 from galliani.limits import LoopLimits
+from galliani.memory import USER_SCOPE, MemoryQuery, MemoryRecord, MemoryStore, keywords_of
 from galliani.observability import EventType, Observability, UsageLedger
 from galliani.permissions import (
     ApprovalPrompt,
@@ -70,6 +71,8 @@ class StartTaskRequest(BaseModel):
     context: str = ""
     constraints: dict[str, Any] = Field(default_factory=dict)
     user_policy: UserPolicy = Field(default_factory=UserPolicy)
+    # Memory scopes this task may read (010 R4): "user" plus, usually, "project:<workspace>".
+    memory_scopes: list[str] = Field(default_factory=lambda: [USER_SCOPE])
 
 
 class SupervisorDecision(BaseModel):
@@ -109,8 +112,10 @@ class Supervisor:
         limits: LoopLimits | None = None,
         store: TaskStateStore | None = None,
         observability: Observability | None = None,
+        memory: MemoryStore | None = None,
     ):
         self.planner = planner
+        self.memory = memory
         self.router = router
         self.tools = tools
         self.verifier = verifier or Verifier()
@@ -126,6 +131,8 @@ class Supervisor:
         self._policies: dict[str, UserPolicy] = {}
         self._artifacts: dict[str, list[ArtifactRef]] = {}
         self._cancel_requested: set[str] = set()
+        self._memory_scopes: dict[str, list[str]] = {}
+        self._memory_context: dict[str, list[MemoryRecord]] = {}  # retrieved records; context, not Task State
         self._running: set[str] = set()
 
     # ------------------------------------------------------------------ public API
@@ -143,6 +150,7 @@ class Supervisor:
         state = self.store.create(objective)
         self._policies[state.task_id] = request.user_policy
         self._artifacts[state.task_id] = []
+        self._memory_scopes[state.task_id] = list(request.memory_scopes)
         self.obs.emit(EventType.task_created, state.task_id, "task created", metadata={"status": state.status.value})
         if not objective.is_valid():
             state = self._transition(state, S.waiting_for_user, "objective is empty; clarification requested",
@@ -262,6 +270,8 @@ class Supervisor:
     async def _plan(self, state: TaskState) -> TaskState:
         if state.status is not S.planning:
             state = self._transition(state, S.planning, "planning started")
+        if state.task_id not in self._memory_context:
+            state = self._retrieve_memory(state)
         request = self._plan_request(state)
         attempts = 0
         while True:
@@ -512,6 +522,32 @@ class Supervisor:
     def _policy(self, task_id: str) -> UserPolicy:
         return self._policies.get(task_id) or UserPolicy()
 
+    def _retrieve_memory(self, state: TaskState) -> TaskState:
+        """010 behavior: retrieve scoped, relevant memory once before planning. Task State records only the
+        ids used; an unavailable store never blocks the task (010 error handling)."""
+        self._memory_context[state.task_id] = []
+        if self.memory is None:
+            return state
+        query = MemoryQuery(task_id=state.task_id, scope=self._memory_scopes.get(state.task_id, [USER_SCOPE]),
+                            keywords=keywords_of(f"{state.objective.goal} {' '.join(state.clarifications)}"))
+        try:
+            result = self.memory.query(query)
+        except Exception as e:  # noqa: BLE001 - memory is optional for execution
+            self.obs.emit(EventType.diagnostic, state.task_id,
+                          f"memory unavailable ({type(e).__name__}); continuing without it")
+            return state
+        self._memory_context[state.task_id] = result.records
+        ids = [r.id for r in result.records]
+        self.obs.emit(EventType.memory_retrieved, state.task_id, result.retrieval_summary,
+                      metadata={"record_ids": ids, "omitted": result.omitted_count})
+        if not ids:
+            return state
+        return self._apply(state, [self._observe(None, "memory", "retrieved",
+                                                 f"used {len(ids)} saved memory record(s): {', '.join(ids)}")])
+
+    def memory_used(self, task_id: str) -> list[MemoryRecord]:
+        return list(self._memory_context.get(task_id, []))
+
     def _plan_request(self, state: TaskState) -> PlanRequest:
         return PlanRequest(
             objective=state.objective,
@@ -519,6 +555,9 @@ class Supervisor:
             available_capabilities=self.router.capabilities() | set(self.tools.registry.names()),
             context_summary=state.objective.context[:MAX_CONTEXT_CHARS],
             clarifications=state.clarifications,
+            # Sensitive records stay on this machine: they are not sent to model workers.
+            memory=[{"id": r.id, "type": r.type, "content": r.content}
+                    for r in self._memory_context.get(state.task_id, []) if r.sensitivity is not Sensitivity.sensitive],
         )
 
     def _apply(self, state: TaskState, patches: list[StatePatch]) -> TaskState:

@@ -2,7 +2,7 @@
 
         ## Status
 
-        Draft for v0.1.
+        Approved for v0.1 implementation (2026-10-04, see `docs/decisions.md` Decision 0019).
 
         ## Goal
 
@@ -88,10 +88,10 @@ Then only scoped relevant records are returned.
 
         ## Implementation Tasks
 
-        - [ ] Define memory schemas.
-- [ ] Define read/write policy hooks.
-- [ ] Integrate optional retrieval before planning.
-- [ ] Integrate explicit write proposals after completion.
+        - [x] Define memory schemas.
+- [x] Define read/write policy hooks.
+- [x] Integrate optional retrieval before planning.
+- [x] Integrate explicit write proposals after completion.
 
         ## Dependencies
 

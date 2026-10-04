@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import ast
-import inspect
-
 import pytest
 
-import galliani.supervisor as supervisor_module
 from galliani.contracts import Objective
 from galliani.errors import ContractError
 from galliani.limits import LoopLimits
@@ -276,11 +272,16 @@ async def test_no_hidden_reasoning_or_secrets_leak_anywhere():
         assert REASONING_MARKER not in blob and secret not in blob and '"reasoning"' not in blob
 
 
-# 010 AC Separate State: the supervisor has no Memory dependency, so nothing is written to Memory
-def test_supervisor_does_not_depend_on_memory():
-    tree = ast.parse(inspect.getsource(supervisor_module))
-    imported = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
-    assert "galliani.memory" not in imported
+# 010 AC Separate State: observations are never written to Memory automatically
+async def test_completed_task_writes_nothing_to_memory():
+    from galliani.memory import InMemoryMemoryStore
+
+    store = InMemoryMemoryStore()
+    h = Harness([two_step_plan()], script={"w1": [GOOD]})
+    h.supervisor.memory = store
+    result = await h.supervisor.start(start())
+    assert result.status is S.done and result.observations
+    assert store.list() == []
 
 
 # Decision 0013: clarification resume
