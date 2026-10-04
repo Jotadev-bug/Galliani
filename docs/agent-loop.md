@@ -60,4 +60,8 @@ The loop lives in `galliani/supervisor.py`. Each loop stage maps to one module:
 
 Lifecycle (Decision 0007): `created -> planning -> executing -> verifying -> (executing | replanning | done)`. A missing approval or clarification pauses the task in `waiting_for_user`; `Supervisor.approve` / `Supervisor.deny` resume or block it. `done`, `failed`, and `canceled` are terminal.
 
+Two planners implement the same `Planner` protocol: `StaticPlanner` (deterministic fixtures) and `ModelPlanner` (an Agent Worker drafts JSON; the supervisor validates it). Semantic criteria can be judged by `ModelSemanticVerifier`. Deterministic criteria always run without a model.
+
+A task paused for clarification resumes with `Supervisor.clarify` (Decision 0013): it re-plans if no plan exists yet, and otherwise revises the current plan.
+
 A retry re-runs the same step. A replan installs a new plan version and resumes after the already verified, unchanged steps, so completed side effects are not repeated.

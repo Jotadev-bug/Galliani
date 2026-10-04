@@ -10,7 +10,7 @@ because every iteration either consumes the action budget or moves to a pausing 
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import timedelta
 from typing import Any, Literal
 
@@ -162,6 +162,40 @@ class Supervisor:
         ])
         return self._result(self._finish(state, S.blocked, f"execution blocked: {user} denied {pending.request.action}"))
 
+    async def clarify(self, task_id: str, answer: str, *, constraints: dict[str, Any] | None = None) -> TaskResult:
+        """Answer an open clarification and resume (Decision 0013).
+
+        Before a plan exists the task is planned again; otherwise the current plan is revised with the
+        answer as evidence, which consumes replan budget. The original objective is never changed.
+        """
+        state = self.store.get(task_id)
+        if state.status is not S.waiting_for_user or state.pending_permission is not None or not state.clarification:
+            raise ContractError(f"task {task_id} has no open clarification")
+        if not answer.strip() and not constraints:
+            raise ContractError("a clarification needs an answer or constraints")
+        question = state.clarification
+        patches = [
+            StatePatch(operation="set", path="clarification", value=None),
+            self._observe(None, "supervisor", "clarified", f"user answered: {question}"),
+        ]
+        if answer.strip():
+            patches.append(StatePatch(operation="append", path="clarifications", value=answer.strip()))
+        if constraints:
+            patches.append(StatePatch(operation="set", path="constraints", value={**state.constraints, **constraints}))
+        if state.plan is None:
+            state = self._transition(state, S.planning, "clarification received; planning", patches)
+            return await self._run(state)
+
+        step = state.current_plan_step() or state.plan.steps[-1]
+        budgets = Budgets(retries_used=state.retry_counts.get(step.step_id, 0), replans_used=state.replan_count)
+        if budgets.replans_used >= self.retry_policy.max_replans:
+            state = self._apply(state, patches)
+            return self._result(self._finish(state, S.failed, "clarification received but the replan budget is exhausted"))
+        state = self._apply(state, patches)
+        evidence = [f"open question: {question}", f"user answer: {answer.strip()}"]
+        return await self._run(state, start=lambda st: self._revise(
+            st, step, "clarification received; revising plan", budgets, evidence=evidence))
+
     def cancel(self, task_id: str) -> TaskResult:
         state = self.store.get(task_id)
         if state.terminal:
@@ -176,9 +210,12 @@ class Supervisor:
 
     # ------------------------------------------------------------------ loop
 
-    async def _run(self, state: TaskState) -> TaskResult:
+    async def _run(self, state: TaskState,
+                   start: Callable[[TaskState], Awaitable[TaskState]] | None = None) -> TaskResult:
         self._running.add(state.task_id)
         try:
+            if start is not None:
+                state = await start(state)
             state = await self._loop(state)
         except Exception as e:  # noqa: BLE001 - corrupt or unexpected state fails safely (002)
             state = self.store.force_fail(state.task_id, f"internal error ({type(e).__name__}); task stopped safely")
@@ -193,7 +230,7 @@ class Supervisor:
         while True:
             if state.task_id in self._cancel_requested and not state.terminal:
                 return self._finish(state, S.canceled, "task canceled by user")
-            if state.status is S.created:
+            if state.status in (S.created, S.planning):
                 state = await self._plan(state)
             elif state.status is S.executing:
                 state = await self._execute_current(state)
@@ -201,7 +238,8 @@ class Supervisor:
                 return state
 
     async def _plan(self, state: TaskState) -> TaskState:
-        state = self._transition(state, S.planning, "planning started")
+        if state.status is not S.planning:
+            state = self._transition(state, S.planning, "planning started")
         request = self._plan_request(state)
         attempts = 0
         while True:
@@ -356,39 +394,45 @@ class Supervisor:
             return self._transition(state, S.executing, summary, patches)
 
         if decision is ReplanStatus.revised:
-            summary = f"replanning after {step.step_id} failed: {signal.summary}"
-            state = self._transition(state, S.replanning, summary, [
-                StatePatch(operation="increment", path="replan_count", reason_summary=summary),
-                self._decision(step.step_id, "replan", summary),
-            ])
-            self.obs.emit(EventType.replan_started, state.task_id, summary, plan_id=state.plan.plan_id, step_id=step.step_id)
-            evidence = [o.summary for o in state.observations if o.step_id == step.step_id][-3:]
-            outcome = await self.replanner.replan(
-                ReplanRequest(task_id=state.task_id, current_plan=state.plan, failed_step=step, evidence=evidence,
-                              constraints=state.constraints, budgets=budgets),
-                self._plan_request(state),
-            )
-            if outcome.status is ReplanStatus.revised and outcome.revised_plan is not None:
-                revised = outcome.revised_plan
-                state = self._apply(state, [
-                    StatePatch(operation="append", path="plan_history", value=state.plan),
-                    StatePatch(operation="set", path="plan", value=revised, reason_summary=outcome.reason_summary),
-                    StatePatch(operation="set", path="current_step", value=outcome.resume_index),
-                    self._observe(step.step_id, "replanning", "revised", outcome.reason_summary),
-                ])
-                self.obs.emit(EventType.plan_revised, state.task_id, outcome.reason_summary, plan_id=revised.plan_id,
-                              step_id=step.step_id, metadata={
-                                  "version": revised.version,
-                                  "previous_plan_id": revised.revision.previous_plan_id if revised.revision else None,
-                                  "changed_steps": revised.revision.changed_steps if revised.revision else [],
-                                  "resume_index": outcome.resume_index})
-                return self._transition(state, S.executing, f"executing revised plan v{revised.version}")
-            status = S.blocked if outcome.status is ReplanStatus.blocked else S.failed
-            return self._finish(state, status, outcome.reason_summary)
+            return await self._revise(state, step, f"replanning after {step.step_id} failed: {signal.summary}", budgets)
 
         return self._finish(state, S.failed, f"stopped after {step.step_id} failed and budgets were exhausted "
                                               f"(retries {budgets.retries_used}, replans {budgets.replans_used}): "
                                               f"{signal.summary}")
+
+    async def _revise(self, state: TaskState, step: PlanStep, summary: str, budgets: Budgets,
+                      evidence: list[str] | None = None) -> TaskState:
+        """Install a revised plan version (008 R5) or stop safely when no safe path remains."""
+        assert state.plan is not None
+        state = self._transition(state, S.replanning, summary, [
+            StatePatch(operation="increment", path="replan_count", reason_summary=summary),
+            self._decision(step.step_id, "replan", summary),
+        ])
+        self.obs.emit(EventType.replan_started, state.task_id, summary, plan_id=state.plan.plan_id, step_id=step.step_id)
+        if evidence is None:
+            evidence = [o.summary for o in state.observations if o.step_id == step.step_id][-3:]
+        outcome = await self.replanner.replan(
+            ReplanRequest(task_id=state.task_id, current_plan=state.plan, failed_step=step, evidence=evidence,
+                          constraints=state.constraints, budgets=budgets),
+            self._plan_request(state),
+        )
+        if outcome.status is ReplanStatus.revised and outcome.revised_plan is not None:
+            revised = outcome.revised_plan
+            state = self._apply(state, [
+                StatePatch(operation="append", path="plan_history", value=state.plan),
+                StatePatch(operation="set", path="plan", value=revised, reason_summary=outcome.reason_summary),
+                StatePatch(operation="set", path="current_step", value=outcome.resume_index),
+                self._observe(step.step_id, "replanning", "revised", outcome.reason_summary),
+            ])
+            self.obs.emit(EventType.plan_revised, state.task_id, outcome.reason_summary, plan_id=revised.plan_id,
+                          step_id=step.step_id, metadata={
+                              "version": revised.version,
+                              "previous_plan_id": revised.revision.previous_plan_id if revised.revision else None,
+                              "changed_steps": revised.revision.changed_steps if revised.revision else [],
+                              "resume_index": outcome.resume_index})
+            return self._transition(state, S.executing, f"executing revised plan v{revised.version}")
+        status = S.blocked if outcome.status is ReplanStatus.blocked else S.failed
+        return self._finish(state, status, outcome.reason_summary)
 
     # ------------------------------------------------------------------ helpers
 
@@ -401,6 +445,7 @@ class Supervisor:
             constraints=state.constraints,
             available_capabilities=self.router.capabilities() | set(self.tools.registry.names()),
             context_summary=state.objective.context[:500],
+            clarifications=state.clarifications,
         )
 
     def _apply(self, state: TaskState, patches: list[StatePatch]) -> TaskState:

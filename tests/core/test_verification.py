@@ -77,7 +77,7 @@ async def test_semantic_verifier_boundary_and_unavailability():
         def __init__(self, verdict, raises=False):
             self.verdict, self.raises = verdict, raises
 
-        async def check(self, criterion, output, context_summary):
+        async def check(self, criterion, output, request):
             if self.raises:
                 raise VerifierUnavailable()
             return self.verdict, "judged"

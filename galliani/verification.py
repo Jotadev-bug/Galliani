@@ -70,9 +70,10 @@ class VerifierUnavailable(Exception):
 
 
 class SemanticVerifier(Protocol):
-    """Model-backed verifier boundary. Returns (passed, public_summary); None means cannot judge."""
+    """Model-backed verifier boundary. Returns (passed, public_summary); None means cannot judge.
+    Raises `VerifierUnavailable` when no verifier worker can run."""
 
-    async def check(self, criterion: Criterion, output: Any, context_summary: str) -> tuple[bool | None, str]: ...
+    async def check(self, criterion: Criterion, output: Any, request: VerificationRequest) -> tuple[bool | None, str]: ...
 
 
 _MISSING = object()
@@ -151,7 +152,7 @@ class Verifier:
                 undecided.append(criterion.label())
                 continue
             try:
-                passed, _summary = await self.semantic.check(criterion, output, request.context_summary)
+                passed, _summary = await self.semantic.check(criterion, output, request)
             except VerifierUnavailable:
                 return VerificationResult(
                     status=VerificationStatus.inconclusive,

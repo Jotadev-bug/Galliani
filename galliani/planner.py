@@ -71,6 +71,7 @@ class PlanRequest(BaseModel):
     constraints: dict[str, Any] = Field(default_factory=dict)
     available_capabilities: set[str] = Field(default_factory=set)
     context_summary: str = ""
+    clarifications: list[str] = Field(default_factory=list)  # user answers; instructions, unlike context
 
 
 class PlannerStatus(str, Enum):

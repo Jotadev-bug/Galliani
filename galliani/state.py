@@ -47,7 +47,7 @@ TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     S.executing: frozenset({S.verifying, S.replanning, S.waiting_for_user, S.blocked, S.failed, S.canceled}),
     S.verifying: frozenset({S.executing, S.replanning, S.done, S.waiting_for_user, S.blocked, S.failed, S.canceled}),
     S.replanning: frozenset({S.executing, S.blocked, S.failed, S.canceled}),
-    S.waiting_for_user: frozenset({S.planning, S.executing, S.blocked, S.failed, S.canceled}),
+    S.waiting_for_user: frozenset({S.planning, S.executing, S.replanning, S.blocked, S.failed, S.canceled}),
     S.blocked: frozenset({S.failed, S.canceled}),
     S.done: frozenset(),
     S.failed: frozenset(),
@@ -101,7 +101,8 @@ class TaskState(BaseModel):
     approvals: list[ApprovalRecord] = Field(default_factory=list)
     permission_decisions: list[PermissionDecision] = Field(default_factory=list)
     pending_permission: PendingPermission | None = None
-    clarification: str | None = None
+    clarification: str | None = None  # the open question while waiting_for_user
+    clarifications: list[str] = Field(default_factory=list)  # user answers received so far
     retry_counts: dict[str, int] = Field(default_factory=dict)
     replan_count: int = 0
     action_count: int = 0
@@ -156,8 +157,8 @@ class AppliedPatch(BaseModel):
     patches: list[StatePatch]
 
 
-_SETTABLE = {"status", "plan", "current_step", "pending_permission", "clarification", "result"}
-_APPENDABLE = {"observations", "approvals", "permission_decisions", "plan_history"}
+_SETTABLE = {"status", "plan", "current_step", "pending_permission", "clarification", "constraints", "result"}
+_APPENDABLE = {"observations", "approvals", "permission_decisions", "plan_history", "clarifications"}
 _COUNTERS = {"replan_count", "action_count"}
 _KEYED_COUNTERS = {"retry_counts"}
 _KEYED_PUT = {"outputs"}

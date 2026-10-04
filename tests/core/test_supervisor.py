@@ -281,3 +281,44 @@ def test_supervisor_does_not_depend_on_memory():
     tree = ast.parse(inspect.getsource(supervisor_module))
     imported = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
     assert "galliani.memory" not in imported
+
+
+# Decision 0013: clarification resume
+async def test_clarify_missing_constraint_then_plan_and_finish():
+    h = Harness([two_step_plan()], script={"w1": [GOOD]}, required_constraints=["audience"])
+    paused = await h.supervisor.start(start())
+    result = await h.supervisor.clarify(paused.task_id, "", constraints={"audience": "execs"})
+    assert result.status is S.done
+    state = h.supervisor.store.get(result.task_id)
+    assert state.constraints == {"audience": "execs"} and state.objective.goal == "Summarize note n1"
+    assert h.statuses(result.task_id)[:4] == ["created", "planning", "waiting_for_user", "planning"]
+
+
+async def test_clarify_after_inconclusive_verification_revises_plan():
+    vague = {"steps": [summarize_step(refs=())]}
+    vague["steps"][0]["verification_criteria"] = [{"kind": "semantic", "value": "good enough"}]
+    concrete = {"steps": [summarize_step(refs=())]}
+    h = Harness([vague, concrete], script={"w1": [GOOD, GOOD]})
+    paused = await h.supervisor.start(start())
+    assert paused.status is S.waiting_for_user
+    result = await h.supervisor.clarify(paused.task_id, "It must mention the budget.")
+    assert result.status is S.done
+    state = h.supervisor.store.get(result.task_id)
+    assert state.plan.version == 2 and state.clarifications == ["It must mention the budget."]
+    assert "replanning" in h.statuses(result.task_id)
+
+
+async def test_clarify_requires_open_question_and_respects_replan_budget():
+    from galliani.replanning import RetryPolicy
+
+    h = Harness([two_step_plan()], script={"w1": [GOOD]})
+    done = await h.supervisor.start(start())
+    with pytest.raises(ContractError):
+        await h.supervisor.clarify(done.task_id, "anything")
+
+    vague = {"steps": [summarize_step(refs=())]}
+    vague["steps"][0]["verification_criteria"] = [{"kind": "semantic", "value": "good enough"}]
+    h = Harness([vague], script={"w1": [GOOD]}, retry=RetryPolicy(max_replans=0))
+    paused = await h.supervisor.start(start())
+    result = await h.supervisor.clarify(paused.task_id, "be specific")
+    assert result.status is S.failed and "replan budget" in result.summary
