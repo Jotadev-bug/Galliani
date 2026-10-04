@@ -69,3 +69,48 @@ async def test_symlink_escape_is_refused(ws, tmp_path_factory):
         pytest.skip("symlinks not permitted on this system")
     result = await ToolSystem(ws.registry()).execute(call("read_file", path="link/secret.txt"), task_id="t")
     assert result.error.code == "rejected_input"
+
+
+async def test_errors_give_replanning_usable_evidence(ws):
+    system = ToolSystem(ws.registry())
+    missing = await system.execute(call("list_files", path="docs"), task_id="t")
+    assert "the workspace root ('.') contains: notes/" in missing.error.safe_summary
+    assert ".env" not in missing.error.safe_summary and ".git" not in missing.error.safe_summary
+    nested = await system.execute(call("read_file", path="notes/q4.md"), task_id="t")
+    assert "'notes' contains: q3.md" in nested.error.safe_summary
+    absolute = await system.execute(call("list_files", path="/docs"), task_id="t")
+    assert "path must be relative to the workspace" in absolute.error.safe_summary
+
+
+def test_overview_states_the_workspace_root(ws):
+    from galliani.cli import workspace_overview
+
+    overview = workspace_overview(ws.root)
+    assert f"Workspace root: the folder '{ws.root.name}'" in overview and "use '.' for the root" in overview
+
+
+async def test_read_files_reads_a_folder_in_one_bounded_step(ws):
+    (ws.root / "notes" / "q2.md").write_text("Q2 on plan.", encoding="utf-8")
+    (ws.root / "notes" / "img.png").write_bytes(b"\x89PNG")
+    system = ToolSystem(ws.registry())
+    result = await system.execute(call("read_files", path="notes", pattern="*.md"), task_id="t")
+    assert result.status is ToolStatus.succeeded
+    assert [f["path"] for f in result.data["files"]] == ["notes/q2.md", "notes/q3.md"]
+    explicit = await system.execute(call("read_files", paths=["notes\\q3.md"]), task_id="t")
+    assert explicit.data["files"][0]["text"] == "Q3 spend is under plan."
+    blocked = await system.execute(call("read_files", paths=[".env"]), task_id="t")
+    assert blocked.error.code == "rejected_input" and "real-secret" not in blocked.model_dump_json()
+    escaped = await system.execute(call("read_files", paths=["../x"]), task_id="t")
+    assert escaped.error.code == "invalid_arguments"
+    everything = await system.execute(call("read_files"), task_id="t")
+    assert ".env" not in {f["path"] for f in everything.data["files"]}
+
+
+async def test_read_files_respects_the_total_size_limit(ws, monkeypatch):
+    import galliani.workspace as wsmod
+
+    monkeypatch.setattr(wsmod, "MAX_READ_MANY_BYTES", 30)
+    (ws.root / "notes" / "q2.md").write_text("x" * 25, encoding="utf-8")
+    result = await ToolSystem(ws.registry()).execute(call("read_files", path="notes"), task_id="t")
+    assert [f["path"] for f in result.data["files"]] == ["notes/q2.md"]
+    assert result.data["skipped"] == ["notes/q3.md"] and result.data["truncated"]

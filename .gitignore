@@ -33,3 +33,6 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Galliani run outputs (event logs from --events)
+*.jsonl

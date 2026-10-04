@@ -27,6 +27,7 @@ This project follows spec-driven development. Changelog entries should reference
 
 ### Fixed
 
+- Workspace-relative path guidance, actionable tool errors and a `read_files` tool after a failed user run (Decision 0017).
 - Findings from the first live provider runs (Decision 0016): JSON-tolerant equality criteria, nested/indexed `$ref` paths with descriptive failures, replanning questions pause instead of block, workspace listing given to the planner.
 
 ### Changed

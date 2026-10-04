@@ -139,8 +139,10 @@ class ToolSystem:
         try:
             args = tool.input_schema.model_validate(call.arguments)
         except ValidationError as e:
-            fields = sorted({".".join(str(p) for p in err["loc"]) or "arguments" for err in e.errors()})
-            return _fail(call, "invalid_arguments", f"invalid arguments ({', '.join(fields)}); tool not run")
+            # Field names and validator messages only; input values are never echoed back.
+            problems = sorted({f"{'.'.join(str(p) for p in err['loc']) or 'arguments'}: "
+                               f"{str(err['msg']).removeprefix('Value error, ')[:120]}" for err in e.errors()})
+            return _fail(call, "invalid_arguments", f"invalid arguments ({'; '.join(problems[:3])}); tool not run")
 
         resource = str(getattr(args, tool.resource_field)) if tool.resource_field else tool.name
         request = PermissionRequest(

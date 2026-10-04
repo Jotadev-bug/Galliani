@@ -68,6 +68,7 @@ Rules:
 - Only check what the objective needs; do not add criteria about incidental details.
 - References: {"$ref": "s1"} is the whole output of step s1, {"$ref": "s1.text"} one field, {"$ref": "s1.files.0"} the first list item.
 - For model steps choose the least demanding capability that can do the work: "text" for summarizing, rewriting, extracting or comparing short documents; "reasoning" only for multi-step analysis, math or code.
+- File paths in tool arguments are relative to the workspace root described in inputs.context; never use absolute paths.
 - Never ask the user for information that inputs.context or a read-only tool can provide; use what inputs.context lists, or plan a list/read step.
 - If required information is missing, return status "needs_clarification" with the question in reason and no steps. If the objective cannot be done with the available capabilities and tools, return "cannot_plan".
 - Do not include explanations, reasoning, or any field not shown above."""

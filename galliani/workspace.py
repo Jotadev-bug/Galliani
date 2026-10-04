@@ -22,6 +22,9 @@ from galliani.tools import SideEffect, ToolDefinition, ToolInputRejected, ToolRe
 MAX_READ_BYTES = 100_000
 MAX_WRITE_BYTES = 200_000
 MAX_LIST = 200
+MAX_READ_MANY_FILES = 30
+MAX_READ_MANY_BYTES = 200_000  # total text returned by one read_files call
+MAX_READ_MANY_FILE_BYTES = 40_000
 BLOCKED_PATTERNS = (".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*", "*.p12", "*.pfx",
                     "credentials*", "secrets*")
 BLOCKED_DIRS = {".git", ".venv", "node_modules", "__pycache__"}
@@ -66,6 +69,23 @@ class ReadOut(BaseModel):
     truncated: bool
 
 
+class ReadManyIn(_PathArgs):
+    path: str = "."  # folder to read from
+    pattern: str = Field(default="*", max_length=100)  # file-name glob, e.g. "*.md"
+    paths: list[str] = Field(default_factory=list, max_length=50)  # explicit files; overrides path/pattern
+
+    @field_validator("paths")
+    @classmethod
+    def _relative_paths(cls, v: list[str]) -> list[str]:
+        return [normalize_relative(p) for p in v]
+
+
+class ReadManyOut(BaseModel):
+    files: list[ReadOut]
+    skipped: list[str]  # matched but not read because the total size limit was reached
+    truncated: bool
+
+
 class WriteIn(_PathArgs):
     path: str
     content: str = Field(max_length=MAX_WRITE_BYTES)
@@ -94,10 +114,24 @@ class Workspace:
             raise ToolInputRejected(f"{rel} resolves outside the workspace")
         return target
 
+    def _nearby(self, rel: str, limit: int = 10) -> str:
+        """Evidence for replanning: what the closest existing folder contains (protected names hidden)."""
+        parent = PurePosixPath(rel).parent
+        while str(parent) not in (".", "") and not (self.root / parent).is_dir():
+            parent = parent.parent
+        folder = "." if str(parent) in (".", "") else parent.as_posix()
+        entries = sorted(
+            p.name + ("/" if p.is_dir() else "") for p in (self.root / folder).iterdir()
+            if not self._blocked(p.name if folder == "." else f"{folder}/{p.name}")
+        )
+        shown = ", ".join(entries[:limit]) + (", ..." if len(entries) > limit else "")
+        where = "the workspace root ('.')" if folder == "." else f"'{folder}'"
+        return f"{where} contains: {shown or '(nothing)'}"
+
     def list_files(self, args: ListIn) -> dict:
         base = self.resolve(args.path)
         if not base.is_dir():
-            raise ToolInputRejected(f"{args.path} is not a directory")
+            raise ToolInputRejected(f"{args.path} is not a directory in the workspace; {self._nearby(args.path)}")
         files: list[str] = []
         truncated = False
         for item in sorted(base.rglob("*")):
@@ -115,10 +149,32 @@ class Workspace:
     def read_file(self, args: ReadIn) -> dict:
         target = self.resolve(args.path)
         if not target.is_file():
-            raise ToolInputRejected(f"{args.path} does not exist")
+            raise ToolInputRejected(f"{args.path} is not a file in the workspace; {self._nearby(args.path)}")
         data = target.read_bytes()
         text = data[:MAX_READ_BYTES].decode("utf-8", errors="replace")
         return {"path": args.path, "text": text, "truncated": len(data) > MAX_READ_BYTES}
+
+    def read_files(self, args: ReadManyIn) -> dict:
+        if args.paths:
+            names = args.paths
+        else:
+            listing = self.list_files(ListIn(path=args.path, pattern=args.pattern))
+            names = listing["files"]
+        files, skipped, used = [], [], 0
+        for rel in names:
+            target = self.resolve(rel)
+            if not target.is_file():
+                raise ToolInputRejected(f"{rel} is not a file in the workspace; {self._nearby(rel)}")
+            data = target.read_bytes()[:MAX_READ_MANY_FILE_BYTES + 1]
+            text = data[:MAX_READ_MANY_FILE_BYTES].decode("utf-8", errors="replace")
+            if len(files) >= MAX_READ_MANY_FILES or used + len(text) > MAX_READ_MANY_BYTES:
+                skipped.append(rel)
+                continue
+            used += len(text)
+            files.append({"path": rel, "text": text, "truncated": len(data) > MAX_READ_MANY_FILE_BYTES})
+        if not files and not skipped:
+            raise ToolInputRejected(f"no files match '{args.pattern}' under {args.path}; {self._nearby(args.path + '/x')}")
+        return {"files": files, "skipped": skipped, "truncated": bool(skipped) or any(f["truncated"] for f in files)}
 
     def write_file(self, args: WriteIn) -> dict:
         if args.path == ".":
@@ -140,6 +196,12 @@ class Workspace:
                            input_schema=ReadIn, output_schema=ReadOut, permission_level=PermissionLevel.read_only,
                            side_effects=[SideEffect.read], handler=self.read_file, resource_field="path",
                            idempotent=True),
+            ToolDefinition(name="read_files",
+                           description="Read several UTF-8 text files in one step: every file under `path` whose name "
+                                       "matches `pattern` (recursive), or the explicit `paths` list. Size-limited.",
+                           input_schema=ReadManyIn, output_schema=ReadManyOut,
+                           permission_level=PermissionLevel.read_only, side_effects=[SideEffect.read],
+                           handler=self.read_files, resource_field="path", idempotent=True),
             ToolDefinition(name="write_file", description="Create or overwrite a UTF-8 text file in the workspace.",
                            input_schema=WriteIn, output_schema=WriteOut, permission_level=PermissionLevel.write,
                            side_effects=[SideEffect.write], handler=self.write_file, resource_field="path"),

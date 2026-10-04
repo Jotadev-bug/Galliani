@@ -157,7 +157,10 @@ def workspace_overview(workspace: Path | str, limit: int = 100) -> str:
     listing = Workspace(workspace).list_files(ListIn())
     files = listing["files"][:limit]
     more = " (more not shown)" if listing["truncated"] or len(listing["files"]) > limit else ""
-    return f"Workspace files{more}:\n" + ("\n".join(f"- {f}" for f in files) if files else "(empty)")
+    root = Path(workspace).resolve().name or str(Path(workspace).resolve())
+    header = (f"Workspace root: the folder '{root}'. Every tool path is relative to it; use '.' for the root "
+              f"itself and never an absolute path or a path that starts with '{root}/'.\n")
+    return header + f"Workspace files{more}:\n" + ("\n".join(f"- {f}" for f in files) if files else "(empty)")
 
 
 def format_result(result: TaskResult) -> str:
