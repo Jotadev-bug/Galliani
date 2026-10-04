@@ -22,6 +22,8 @@ def test_core_is_provider_neutral(module: Path):
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module.split(".")[0])
     assert not imported & set(FORBIDDEN_IMPORTS), f"{module.name} imports {imported & set(FORBIDDEN_IMPORTS)}"
+    full = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    assert not any(m.startswith("galliani.providers") for m in full), f"{module.name} imports a provider adapter"
 
 
 def test_required_vocabulary_is_defined_in_foundation_spec():

@@ -13,14 +13,15 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from galliani.adapters import AdapterError, ProviderAdapter, WorkerRequest
+from galliani.adapters import ProviderAdapter
 from galliani.contracts import Sensitivity, new_id
 from galliani.observability import EventType, Observability
 from galliani.permissions import PermissionDecision, PermissionRequest
 from galliani.planner import PlanStep, StepKind
-from galliani.router import InputShape, ModelRoute, ModelRouter, ModelWorkRequest, RouteError, RoutingPolicy
+from galliani.router import ModelRoute, ModelRouter, RoutingPolicy
 from galliani.state import ObservationRecord, TaskState
 from galliani.tools import ToolCall, ToolStatus, ToolSystem
+from galliani.workers import WorkerClient
 
 
 class ExecutionStatus(str, Enum):
@@ -105,8 +106,7 @@ class ExecutionEngine:
         tools: ToolSystem,
         observability: Observability,
     ):
-        self.router = router
-        self.adapters = dict(adapters) if isinstance(adapters, Mapping) else {a.adapter_id: a for a in adapters}
+        self.workers = WorkerClient(router, adapters, observability)
         self.tools = tools
         self.obs = observability
 
@@ -132,61 +132,26 @@ class ExecutionEngine:
         except _MissingInput as e:
             return self._result(step, ExecutionStatus.failed, "supervisor", f"input {e} is missing",
                                 error=StepError(code="missing_input", retryable=False, safe_summary=f"input {e} is missing"))
-        work = ModelWorkRequest(
+        call = await self.workers.run(
             task_id=request.task_id, step_id=step.step_id, capability={step.required_capability},
-            input_shape=InputShape(estimated_tokens=(len(step.instruction) + len(str(inputs))) // 4),
-            policy=request.routing_policy,
+            instruction=step.instruction, inputs=inputs, policy=request.routing_policy, plan_id=request.plan_id,
+            is_canceled=is_canceled,
         )
-        try:
-            route = self.router.route(work)
-        except RouteError as e:
-            self.obs.emit(EventType.route_failed, request.task_id, e.safe_summary, plan_id=request.plan_id,
-                          step_id=step.step_id, metadata={"code": e.code})
-            return self._result(step, ExecutionStatus.failed, "router", e.safe_summary,
-                                error=StepError(code=e.code, retryable=e.retryable, safe_summary=e.safe_summary))
-        self.obs.emit(EventType.route_selected, request.task_id, route.rationale, plan_id=request.plan_id,
-                      step_id=step.step_id, metadata={"worker_id": route.worker_id, "adapter": route.provider_adapter_id,
-                                                      "fallbacks": route.fallback_worker_ids})
-
-        attempted: list[str] = []
-        last_error: AdapterError | None = None
-        for worker_id in [route.worker_id, *route.fallback_worker_ids]:
-            if is_canceled():
-                return self._result(step, ExecutionStatus.canceled, "supervisor", "canceled; no further workers started",
-                                    route=route, attempted_workers=attempted,
-                                    error=StepError(code="canceled", retryable=False, safe_summary="task canceled"))
-            profile = self.router.profile(worker_id)
-            adapter = self.adapters.get(profile.provider_id) if profile else None
-            if attempted:
-                self.obs.emit(EventType.route_fallback, request.task_id,
-                              f"falling back to {worker_id} after {attempted[-1]} failed ({last_error.code})",
-                              plan_id=request.plan_id, step_id=step.step_id,
-                              metadata={"from": attempted[-1], "to": worker_id, "reason": last_error.code})
-            attempted.append(worker_id)
-            if adapter is None:
-                last_error = AdapterError(f"no adapter for {worker_id}", code="provider_unavailable")
-                continue
-            try:
-                response = await adapter.invoke(WorkerRequest(
-                    task_id=request.task_id, step_id=step.step_id, worker_id=worker_id,
-                    instruction=step.instruction, inputs=inputs,
-                    max_output_tokens=profile.limits.max_output_tokens,
-                ))
-            except AdapterError as e:
-                last_error = e
-                if not e.fallback_eligible:
-                    break
-                continue
+        if call.ok:
+            response = call.response
             output = response.structured if response.structured is not None else response.output
-            return self._result(step, ExecutionStatus.succeeded, f"worker:{worker_id}",
-                                f"{worker_id} produced {step.expected_output}", output=output, output_ref=output_ref,
-                                route=route, worker_id=worker_id, attempted_workers=attempted)
-
-        assert last_error is not None
-        status = ExecutionStatus.timed_out if last_error.code == "timeout" else ExecutionStatus.failed
-        summary = f"all {len(attempted)} worker(s) failed; last error {last_error.code}"
-        return self._result(step, status, f"worker:{attempted[-1]}", summary, route=route, attempted_workers=attempted,
-                            error=StepError(code=last_error.code, retryable=last_error.retryable, safe_summary=summary))
+            return self._result(step, ExecutionStatus.succeeded, f"worker:{call.worker_id}",
+                                f"{call.worker_id} produced {step.expected_output}", output=output, output_ref=output_ref,
+                                route=call.route, worker_id=call.worker_id, attempted_workers=call.attempted)
+        failure = call.failure
+        assert failure is not None
+        status = {"canceled": ExecutionStatus.canceled, "timeout": ExecutionStatus.timed_out}.get(
+            failure.code, ExecutionStatus.failed)
+        source = f"worker:{call.attempted[-1]}" if call.attempted else "router"
+        return self._result(step, status, source, failure.safe_summary, route=call.route,
+                            attempted_workers=call.attempted,
+                            error=StepError(code=failure.code, retryable=failure.retryable,
+                                            safe_summary=failure.safe_summary))
 
     async def _tool_step(self, request: ExecutionRequest, output_ref: str) -> ExecutionResult:
         step, state = request.step, request.state_snapshot
