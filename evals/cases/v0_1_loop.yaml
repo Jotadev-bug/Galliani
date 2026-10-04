@@ -1,0 +1,251 @@
+# v0.1 loop fixtures (spec 013). Minimum gate from evals/README.md: successful completion, tool failure,
+# verification failure, permission denial, provider fallback. Worker outputs are SIMULATED and scripted.
+# `definitions` holds YAML anchors only; the runner reads `cases`.
+
+definitions:
+  worker_w1: &w1
+    worker_id: w1
+    provider_id: scripted
+    capabilities: [text]
+    limits: {context_window: 32000, max_output_tokens: 2000}
+    cost_class: low
+    latency_class: fast
+  worker_w2: &w2
+    worker_id: w2
+    provider_id: scripted
+    capabilities: [text]
+    limits: {context_window: 32000, max_output_tokens: 2000}
+    cost_class: medium
+    latency_class: fast
+  notes: &notes
+    notes: {n1: "Q3 budget review: spend is 4% under plan."}
+  read_step: &read_step
+    step_id: s0
+    kind: tool
+    purpose: read the source note
+    required_capability: read_note
+    expected_output: note text
+    tool: {tool_name: read_note, arguments: {note_id: n1}}
+    verification_criteria: [{kind: field_present, field: text}]
+  summarize_step: &summarize_step
+    step_id: s1
+    kind: model
+    purpose: summarize the note
+    required_capability: text
+    input_refs: [s0]
+    expected_output: a one-line summary
+    instruction: Summarize the note in one line.
+    verification_criteria:
+      - {kind: contains, value: budget}
+      - {kind: min_length, value: 10}
+  two_step_plan: &two_step_plan
+    steps: [*read_step, *summarize_step]
+    success_criteria: [{kind: contains, value: under plan}]
+  good: &good {output: "Q3 budget: spend is 4% under plan."}
+  bad: &bad {output: "Everything looks fine overall."}
+
+cases:
+  - id: success_tool_then_model
+    spec_refs: ["001 Happy Path", "013 Success Fixture", "006 Model Step", "006 Tool Step"]
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1]
+    available_tools: [read_note]
+    worker_script: {w1: [*good]}
+    planner_script: [*two_step_plan]
+    expected_outcome:
+      status: done
+      verification: pass
+      tools_executed: [read_note]
+      workers_used: [w1]
+      retries: 0
+      replans: 0
+      events_include: [task_created, plan_created, route_selected, tool_called, verification_completed, task_finished]
+
+  - id: tool_timeout_retried
+    spec_refs: ["008 Retry", "005 Tool Success"]
+    objective: Fetch the Q3 page
+    initial_state: {pages: {"https://example.test/q3": "Q3 page"}, flaky_timeouts: 1}
+    available_workers: [*w1]
+    available_tools: [fetch_page]
+    planner_script:
+      - steps:
+          - step_id: f
+            kind: tool
+            purpose: fetch the page
+            required_capability: fetch_page
+            expected_output: page text
+            tool: {tool_name: fetch_page, arguments: {url: "https://example.test/q3"}}
+            verification_criteria: [{kind: field_equals, field: text, value: Q3 page}]
+    expected_outcome:
+      status: done
+      tools_executed: [fetch_page, fetch_page]
+      retries: 1
+      events_include: [retry_scheduled]
+
+  - id: invalid_tool_arguments_replanned
+    spec_refs: ["005 Schema Validation", "008 Replan"]
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1]
+    available_tools: [read_note]
+    worker_script: {w1: [*good]}
+    planner_script:
+      - steps:
+          - <<: *read_step
+            tool: {tool_name: read_note, arguments: {id: n1}}
+          - *summarize_step
+      - *two_step_plan
+    expected_outcome:
+      status: done
+      tools_executed: [read_note]
+      replans: 1
+      events_include: [plan_revised]
+
+  - id: verification_failure_retried
+    spec_refs: ["001 Verification Failure", "007 Failure"]
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1]
+    available_tools: [read_note]
+    worker_script: {w1: [*bad, *good]}
+    planner_script: [*two_step_plan]
+    expected_outcome:
+      status: done
+      verification: pass
+      retries: 1
+      replans: 0
+
+  - id: verification_failure_replanned
+    spec_refs: ["008 Replan", "004 Plan Revision"]
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1]
+    available_tools: [read_note]
+    worker_script: {w1: [*bad, *good]}
+    planner_script:
+      - steps:
+          - *read_step
+          - <<: *summarize_step
+            verification_criteria: [{kind: contains, value: budget, on_fail: replan}]
+        success_criteria: [{kind: contains, value: under plan}]
+      - *two_step_plan
+    expected_outcome:
+      status: done
+      tools_executed: [read_note]   # the verified tool step is not re-run
+      replans: 1
+      events_include: [replan_started, plan_revised]
+
+  - id: verification_never_passes
+    spec_refs: ["013 Failure Fixture", "008 Stop", "007 Failure"]
+    negative: true
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1]
+    available_tools: [read_note]
+    worker_script: {w1: [*bad, *bad, *bad, *bad, *bad]}
+    planner_script: [*two_step_plan, *two_step_plan]
+    expected_outcome:
+      status: failed
+      retries: 1
+      replans: 1
+
+  - id: permission_pauses_for_approval
+    spec_refs: ["013 Permission Fixture", "001 Blocked Task", "009 Needs User", "005 Permission Required"]
+    negative: true
+    objective: Delete reports/old.txt
+    initial_state: {files: {reports/old.txt: stale}}
+    available_workers: [*w1]
+    available_tools: [delete_file]
+    planner_script: &delete_plan
+      - steps:
+          - step_id: d
+            kind: tool
+            purpose: delete the stale report
+            required_capability: delete_file
+            expected_output: deletion confirmation
+            tool: {tool_name: delete_file, arguments: {path: reports/old.txt}}
+            verification_criteria: [{kind: field_equals, field: deleted, value: true}]
+    expected_outcome:
+      status: waiting_for_user
+      tools_executed: []
+      events_include: [permission_decided]
+
+  - id: permission_approved_then_done
+    spec_refs: ["009 Needs User", "002 Observation Recording"]
+    objective: Delete reports/old.txt
+    initial_state: {files: {reports/old.txt: stale}}
+    available_workers: [*w1]
+    available_tools: [delete_file]
+    planner_script: *delete_plan
+    user_action: approve
+    expected_outcome:
+      status: done
+      tools_executed: [delete_file]
+      events_include: [approval_recorded]
+
+  - id: permission_denied_by_user
+    spec_refs: ["009 Denied", "013 Permission Fixture"]
+    negative: true
+    objective: Delete reports/old.txt
+    initial_state: {files: {reports/old.txt: stale}}
+    available_workers: [*w1]
+    available_tools: [delete_file]
+    planner_script: *delete_plan
+    user_action: deny
+    expected_outcome:
+      status: blocked
+      tools_executed: []
+
+  - id: permission_denied_by_policy
+    spec_refs: ["009 Denied"]
+    negative: true
+    objective: Delete reports/old.txt
+    initial_state: {files: {reports/old.txt: stale}}
+    available_workers: [*w1]
+    available_tools: [delete_file]
+    planner_script: *delete_plan
+    permission_rules: {destructive: denied}
+    expected_outcome:
+      status: blocked
+      tools_executed: []
+
+  - id: provider_fallback
+    spec_refs: ["003 Fallback", "006 Model Step"]
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1, *w2]
+    available_tools: [read_note]
+    worker_script: {w1: [{error: provider_unavailable}], w2: [*good]}
+    planner_script: [*two_step_plan]
+    expected_outcome:
+      status: done
+      workers_used: [w2]
+      events_include: [route_fallback]
+
+  - id: no_route_blocks
+    spec_refs: ["003 No Route", "001 Router failure"]
+    negative: true
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1]
+    available_tools: [read_note]
+    routing_policy: {denied_providers: [scripted]}
+    planner_script: [*two_step_plan]
+    expected_outcome:
+      status: blocked
+      tools_executed: [read_note]
+      events_include: [route_failed]
+
+  - id: clarification_requested
+    spec_refs: ["004 Clarification"]
+    negative: true
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1]
+    available_tools: [read_note]
+    required_constraints: [audience]
+    planner_script: [*two_step_plan]
+    expected_outcome:
+      status: waiting_for_user
+      tools_executed: []

@@ -1,0 +1,458 @@
+"""Spec 001 - Agent Core: the Agent Supervisor loop.
+
+objective -> plan -> routing -> action/tool -> observation -> verification -> replan/retry -> done
+
+The supervisor owns every lifecycle decision. Agent Workers, tools and the planner only return
+structured results. Every status change goes through `_transition`, which patches Task State and
+emits a lifecycle event. A task is marked done only after verification passes. The loop terminates
+because every iteration either consumes the action budget or moves to a pausing or terminal status.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+from datetime import timedelta
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+from galliani.adapters import ProviderAdapter
+from galliani.contracts import Objective
+from galliani.errors import ContractError
+from galliani.execution import ArtifactRef, ExecutionEngine, ExecutionLimits, ExecutionRequest, ExecutionStatus
+from galliani.limits import LoopLimits
+from galliani.observability import EventType, Observability
+from galliani.permissions import ApprovalPrompt, PermissionPolicy, PermissionStatus
+from galliani.planner import Planner, PlannerError, PlannerStatus, PlanRequest, PlanStep, validate_plan
+from galliani.replanning import Budgets, FailureSignal, Replanner, ReplanRequest, ReplanStatus, RetryPolicy
+from galliani.router import ModelRouter, RoutingPolicy
+from galliani.state import (
+    TERMINAL_STATUSES,
+    FinalResult,
+    ObservationRecord,
+    PendingPermission,
+    StatePatch,
+    TaskState,
+    TaskStateStore,
+    TaskStatus,
+    set_status,
+)
+from galliani.tools import ToolSystem
+from galliani.verification import (
+    Criterion,
+    VerificationRecommendation,
+    VerificationRequest,
+    VerificationResult,
+    VerificationStatus,
+    Verifier,
+)
+
+S = TaskStatus
+
+
+class UserPolicy(BaseModel):
+    user_id: str = "user"
+    routing: RoutingPolicy = Field(default_factory=RoutingPolicy)
+
+
+class StartTaskRequest(BaseModel):
+    """001 `StartTaskRequest`: objective, context, constraints, user policy."""
+
+    objective: Objective
+    context: str = ""
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    user_policy: UserPolicy = Field(default_factory=UserPolicy)
+
+
+class SupervisorDecision(BaseModel):
+    """001 `SupervisorDecision`, recorded as an observation for every loop decision."""
+
+    next_action: Literal["plan", "execute_step", "verify", "retry_step", "replan", "ask_user", "finish", "block", "fail"]
+    reason_summary: str
+    required_capability: str | None = None
+    state_patch: list[StatePatch] = Field(default_factory=list)
+
+
+class TaskResult(BaseModel):
+    """001 `TaskResult`, plus the pause details a caller needs to resume."""
+
+    task_id: str
+    status: TaskStatus
+    summary: str
+    output: Any = None
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
+    verification_result: VerificationResult | None = None
+    observations: list[ObservationRecord] = Field(default_factory=list)
+    approval_prompt: ApprovalPrompt | None = None
+    clarification: str | None = None
+
+
+class Supervisor:
+    def __init__(
+        self,
+        *,
+        planner: Planner,
+        router: ModelRouter,
+        adapters: Mapping[str, ProviderAdapter] | Iterable[ProviderAdapter],
+        tools: ToolSystem,
+        verifier: Verifier | None = None,
+        retry_policy: RetryPolicy | None = None,
+        limits: LoopLimits | None = None,
+        store: TaskStateStore | None = None,
+        observability: Observability | None = None,
+    ):
+        self.planner = planner
+        self.router = router
+        self.tools = tools
+        self.verifier = verifier or Verifier()
+        self.retry_policy = retry_policy or RetryPolicy()
+        self.limits = limits or LoopLimits()
+        self.store = store or TaskStateStore()
+        self.obs = observability or Observability()
+        self.engine = ExecutionEngine(router, adapters, tools, self.obs)
+        self.replanner = Replanner(planner, self.retry_policy, self.limits)
+        self.actor = "supervisor"
+        self._policies: dict[str, UserPolicy] = {}
+        self._artifacts: dict[str, list[ArtifactRef]] = {}
+        self._cancel_requested: set[str] = set()
+        self._running: set[str] = set()
+
+    # ------------------------------------------------------------------ public API
+
+    async def start(self, request: StartTaskRequest) -> TaskResult:
+        objective = request.objective.model_copy(update={
+            "constraints": {**request.objective.constraints, **request.constraints},
+            "context": request.objective.context or request.context,
+        })
+        state = self.store.create(objective)
+        self._policies[state.task_id] = request.user_policy
+        self._artifacts[state.task_id] = []
+        self.obs.emit(EventType.task_created, state.task_id, "task created", metadata={"status": state.status.value})
+        if not objective.is_valid():
+            state = self._transition(state, S.waiting_for_user, "objective is empty; clarification requested",
+                                     [StatePatch(operation="set", path="clarification",
+                                                 value="Please describe the objective you want completed.")])
+            return self._result(state)
+        return await self._run(state)
+
+    async def approve(self, task_id: str, *, user_id: str | None = None, ttl: timedelta | None = None) -> TaskResult:
+        state = self.store.get(task_id)
+        pending = state.pending_permission
+        if state.status is not S.waiting_for_user or pending is None:
+            raise ContractError(f"task {task_id} has no pending approval")
+        user = user_id or self._policy(task_id).user_id
+        approval = PermissionPolicy.approval_for(pending.request, user, ttl)
+        self.obs.emit(EventType.approval_recorded, task_id, f"{user} approved {approval.action} for scope {approval.scope}",
+                      step_id=pending.step_id, metadata={"approval_id": approval.approval_id, "scope": approval.scope})
+        state = self._transition(state, S.executing, f"user approved {approval.action}", [
+            StatePatch(operation="append", path="approvals", value=approval, reason_summary="user approval"),
+            StatePatch(operation="set", path="pending_permission", value=None),
+        ])
+        return await self._run(state)
+
+    async def deny(self, task_id: str, *, user_id: str | None = None) -> TaskResult:
+        state = self.store.get(task_id)
+        pending = state.pending_permission
+        if state.status is not S.waiting_for_user or pending is None:
+            raise ContractError(f"task {task_id} has no pending approval")
+        user = user_id or self._policy(task_id).user_id
+        state = self._apply(state, [
+            StatePatch(operation="set", path="pending_permission", value=None),
+            self._observe(pending.step_id, "permission", "denied", f"{user} denied {pending.request.action}"),
+        ])
+        return self._result(self._finish(state, S.blocked, f"execution blocked: {user} denied {pending.request.action}"))
+
+    def cancel(self, task_id: str) -> TaskResult:
+        state = self.store.get(task_id)
+        if state.terminal:
+            return self._result(state)
+        self._cancel_requested.add(task_id)
+        if task_id not in self._running:  # a running loop applies the cancellation at its next checkpoint
+            state = self._finish(state, S.canceled, "task canceled by user")
+        return self._result(state)
+
+    def get(self, task_id: str) -> TaskResult:
+        return self._result(self.store.get(task_id))
+
+    # ------------------------------------------------------------------ loop
+
+    async def _run(self, state: TaskState) -> TaskResult:
+        self._running.add(state.task_id)
+        try:
+            state = await self._loop(state)
+        except Exception as e:  # noqa: BLE001 - corrupt or unexpected state fails safely (002)
+            state = self.store.force_fail(state.task_id, f"internal error ({type(e).__name__}); task stopped safely")
+            self.obs.emit(EventType.status_changed, state.task_id, "task failed after an internal error",
+                          metadata={"to": S.failed.value})
+            self.obs.emit(EventType.task_finished, state.task_id, state.result.summary, metadata={"status": S.failed.value})
+        finally:
+            self._running.discard(state.task_id)
+        return self._result(state)
+
+    async def _loop(self, state: TaskState) -> TaskState:
+        while True:
+            if state.task_id in self._cancel_requested and not state.terminal:
+                return self._finish(state, S.canceled, "task canceled by user")
+            if state.status is S.created:
+                state = await self._plan(state)
+            elif state.status is S.executing:
+                state = await self._execute_current(state)
+            else:  # waiting_for_user, blocked and terminal statuses end this run
+                return state
+
+    async def _plan(self, state: TaskState) -> TaskState:
+        state = self._transition(state, S.planning, "planning started")
+        request = self._plan_request(state)
+        attempts = 0
+        while True:
+            try:
+                outcome = await self.planner.plan(request, task_id=state.task_id)
+                break
+            except PlannerError as e:
+                if e.retryable and attempts < self.retry_policy.max_retries_per_step:
+                    attempts += 1
+                    self.obs.emit(EventType.retry_scheduled, state.task_id, f"retrying planner: {e.safe_summary}")
+                    continue
+                return self._finish(state, S.blocked, f"planning failed: {e.safe_summary}")
+
+        if outcome.status is PlannerStatus.needs_clarification:
+            return self._transition(state, S.waiting_for_user, "planner needs clarification", [
+                StatePatch(operation="set", path="clarification", value=outcome.public_reason),
+            ])
+        if outcome.status is PlannerStatus.cannot_plan or outcome.plan is None:
+            return self._finish(state, S.blocked, f"cannot plan: {outcome.public_reason}")
+        plan = outcome.plan
+        errors = validate_plan(plan, self.limits, request.available_capabilities)
+        if errors:
+            self.obs.emit(EventType.plan_rejected, state.task_id, "; ".join(errors), plan_id=plan.plan_id)
+            return self._finish(state, S.blocked, f"plan rejected: {'; '.join(errors)}")
+
+        state = self._apply(state, [
+            StatePatch(operation="set", path="plan", value=plan, reason_summary="initial plan"),
+            StatePatch(operation="set", path="current_step", value=0),
+            self._decision(None, "plan", f"plan v{plan.version} with {len(plan.steps)} step(s)"),
+        ])
+        self.obs.emit(EventType.plan_created, state.task_id, f"plan v{plan.version} with {len(plan.steps)} step(s)",
+                      plan_id=plan.plan_id, metadata={"steps": [s.step_id for s in plan.steps], "version": plan.version})
+        return self._transition(state, S.executing, "plan ready; executing")
+
+    async def _execute_current(self, state: TaskState) -> TaskState:
+        step = state.current_plan_step()
+        assert state.plan is not None and step is not None
+        if state.action_count >= self.limits.max_total_actions:
+            return self._finish(state, S.failed, f"action budget of {self.limits.max_total_actions} exhausted")
+
+        result = await self.engine.execute(
+            ExecutionRequest(
+                task_id=state.task_id, plan_id=state.plan.plan_id, step=step, state_snapshot=state,
+                limits=ExecutionLimits(remaining_actions=self.limits.max_total_actions - state.action_count),
+                routing_policy=self._policy(state.task_id).routing,
+            ),
+            is_canceled=lambda: state.task_id in self._cancel_requested,
+        )
+        patches = [
+            StatePatch(operation="increment", path="action_count", reason_summary=f"executed {step.step_id}"),
+            StatePatch(operation="append", path="observations", value=result.observation),
+        ]
+        if result.output_ref is not None:
+            patches.insert(0, StatePatch(operation="put", path=f"outputs.{result.output_ref}", value=result.output))
+        if result.permission is not None:
+            patches.append(StatePatch(operation="append", path="permission_decisions", value=result.permission))
+        state = self._apply(state, patches)
+        self._artifacts[state.task_id].extend(result.artifacts)
+        self.obs.emit(EventType.step_executed, state.task_id, result.observation.summary, plan_id=state.plan.plan_id,
+                      step_id=step.step_id, metadata={"status": result.status.value, "worker": result.worker_id,
+                                                      "attempted_workers": result.attempted_workers,
+                                                      "error": result.error.code if result.error else None})
+
+        if result.status is ExecutionStatus.canceled:
+            return self._finish(state, S.canceled, "task canceled by user")
+        if result.status is ExecutionStatus.blocked:
+            if result.permission and result.permission.status is PermissionStatus.needs_user and result.permission_request:
+                pending = PendingPermission(step_id=step.step_id, request=result.permission_request,
+                                            prompt=PermissionPolicy.prompt_for(result.permission_request, result.permission))
+                return self._transition(state, S.waiting_for_user, f"waiting for approval: {result.permission.audit_summary}", [
+                    StatePatch(operation="set", path="pending_permission", value=pending),
+                ])
+            return self._finish(state, S.blocked, f"execution blocked: {result.error.safe_summary if result.error else 'denied'}")
+        if result.status in (ExecutionStatus.failed, ExecutionStatus.timed_out):
+            assert result.error is not None
+            return await self._handle_failure(state, step, FailureSignal(
+                source="execution", step_id=step.step_id, summary=result.error.safe_summary,
+                code=result.error.code, retryable=result.error.retryable,
+            ))
+
+        state = self._transition(state, S.verifying, f"verifying {step.step_id}")
+        state, verification = await self._verify(state, step.step_id, [result.output_ref], step.verification_criteria,
+                                                 step.expected_output)
+        if verification.status is VerificationStatus.pass_:
+            if state.current_step + 1 < len(state.plan.steps):
+                state = self._apply(state, [StatePatch(operation="set", path="current_step", value=state.current_step + 1)])
+                return self._transition(state, S.executing, f"{step.step_id} verified; next step")
+            return await self._verify_task(state, step)
+        return await self._on_verification_failure(state, step, verification)
+
+    async def _verify_task(self, state: TaskState, last_step: PlanStep) -> TaskState:
+        """Final, task-level verification (001 R6, 007 R1) before the task may be marked done."""
+        assert state.plan is not None
+        final_ref = state.latest_output_ref(last_step.step_id)
+        if state.plan.success_criteria:
+            state, verification = await self._verify(state, None, [final_ref], state.plan.success_criteria,
+                                                     state.objective.goal)
+            if verification.status is not VerificationStatus.pass_:
+                return await self._on_verification_failure(state, last_step, verification)
+        else:
+            verified = [o.step_id for o in state.observations if o.kind == "verification" and o.outcome == "pass"]
+            verification = VerificationResult(
+                status=VerificationStatus.pass_, satisfied_criteria=[f"step {s} verified" for s in dict.fromkeys(verified)],
+                reason_summary=f"all {len(state.plan.steps)} step(s) passed verification",
+                recommendation=VerificationRecommendation.continue_,
+            )
+        return self._finish(state, S.done, f"objective completed and verified: {verification.reason_summary}",
+                            verification=verification, output_ref=final_ref)
+
+    async def _verify(self, state: TaskState, step_id: str | None, refs: list[str | None], criteria: list[Criterion],
+                      context: str) -> tuple[TaskState, VerificationResult]:
+        request = VerificationRequest(task_id=state.task_id, step_id=step_id, output_refs=[r for r in refs if r],
+                                      criteria=criteria, context_summary=context)
+        verification = await self.verifier.verify(request, state.outputs)
+        state = self._apply(state, [StatePatch(operation="append", path="observations", value=ObservationRecord(
+            source="verifier", step_id=step_id, kind="verification", outcome=verification.status.value,
+            summary=verification.reason_summary,
+        ))])
+        self.obs.emit(EventType.verification_completed, state.task_id, verification.reason_summary,
+                      plan_id=state.plan.plan_id if state.plan else None, step_id=step_id,
+                      metadata={"status": verification.status.value, "recommendation": verification.recommendation.value,
+                                "failed_criteria": verification.failed_criteria, "final": step_id is None})
+        return state, verification
+
+    async def _on_verification_failure(self, state: TaskState, step: PlanStep, verification: VerificationResult) -> TaskState:
+        if verification.recommendation is VerificationRecommendation.ask_user:
+            return self._transition(state, S.waiting_for_user, "verification inconclusive; clarification needed", [
+                StatePatch(operation="set", path="clarification", value=verification.reason_summary),
+            ])
+        return await self._handle_failure(state, step, FailureSignal(
+            source="verification", step_id=step.step_id, summary=verification.reason_summary,
+            recommendation=verification.recommendation,
+        ))
+
+    async def _handle_failure(self, state: TaskState, step: PlanStep, signal: FailureSignal) -> TaskState:
+        """Bounded retry/replan (008). Failed actions stay recorded; nothing is hidden."""
+        assert state.plan is not None
+        budgets = Budgets(retries_used=state.retry_counts.get(step.step_id, 0), replans_used=state.replan_count)
+        decision = self.replanner.decide(signal, budgets)
+
+        if decision is ReplanStatus.retry:
+            summary = (f"retrying {step.step_id} (retry {budgets.retries_used + 1}/"
+                       f"{self.retry_policy.max_retries_per_step}): {signal.summary}")
+            patches = [
+                StatePatch(operation="increment", path=f"retry_counts.{step.step_id}", reason_summary=summary),
+                self._decision(step.step_id, "retry_step", summary),
+            ]
+            self.obs.emit(EventType.retry_scheduled, state.task_id, summary, plan_id=state.plan.plan_id,
+                          step_id=step.step_id, metadata={"source": signal.source, "code": signal.code})
+            if state.status is S.executing:
+                return self._apply(state, patches)
+            return self._transition(state, S.executing, summary, patches)
+
+        if decision is ReplanStatus.revised:
+            summary = f"replanning after {step.step_id} failed: {signal.summary}"
+            state = self._transition(state, S.replanning, summary, [
+                StatePatch(operation="increment", path="replan_count", reason_summary=summary),
+                self._decision(step.step_id, "replan", summary),
+            ])
+            self.obs.emit(EventType.replan_started, state.task_id, summary, plan_id=state.plan.plan_id, step_id=step.step_id)
+            evidence = [o.summary for o in state.observations if o.step_id == step.step_id][-3:]
+            outcome = await self.replanner.replan(
+                ReplanRequest(task_id=state.task_id, current_plan=state.plan, failed_step=step, evidence=evidence,
+                              constraints=state.constraints, budgets=budgets),
+                self._plan_request(state),
+            )
+            if outcome.status is ReplanStatus.revised and outcome.revised_plan is not None:
+                revised = outcome.revised_plan
+                state = self._apply(state, [
+                    StatePatch(operation="append", path="plan_history", value=state.plan),
+                    StatePatch(operation="set", path="plan", value=revised, reason_summary=outcome.reason_summary),
+                    StatePatch(operation="set", path="current_step", value=outcome.resume_index),
+                    self._observe(step.step_id, "replanning", "revised", outcome.reason_summary),
+                ])
+                self.obs.emit(EventType.plan_revised, state.task_id, outcome.reason_summary, plan_id=revised.plan_id,
+                              step_id=step.step_id, metadata={
+                                  "version": revised.version,
+                                  "previous_plan_id": revised.revision.previous_plan_id if revised.revision else None,
+                                  "changed_steps": revised.revision.changed_steps if revised.revision else [],
+                                  "resume_index": outcome.resume_index})
+                return self._transition(state, S.executing, f"executing revised plan v{revised.version}")
+            status = S.blocked if outcome.status is ReplanStatus.blocked else S.failed
+            return self._finish(state, status, outcome.reason_summary)
+
+        return self._finish(state, S.failed, f"stopped after {step.step_id} failed and budgets were exhausted "
+                                              f"(retries {budgets.retries_used}, replans {budgets.replans_used}): "
+                                              f"{signal.summary}")
+
+    # ------------------------------------------------------------------ helpers
+
+    def _policy(self, task_id: str) -> UserPolicy:
+        return self._policies.get(task_id) or UserPolicy()
+
+    def _plan_request(self, state: TaskState) -> PlanRequest:
+        return PlanRequest(
+            objective=state.objective,
+            constraints=state.constraints,
+            available_capabilities=self.router.capabilities() | set(self.tools.registry.names()),
+            context_summary=state.objective.context[:500],
+        )
+
+    def _apply(self, state: TaskState, patches: list[StatePatch]) -> TaskState:
+        return self.store.apply(state.task_id, patches, expected_version=state.version, actor=self.actor)
+
+    def _transition(self, state: TaskState, new: TaskStatus, reason: str, extra: list[StatePatch] | None = None) -> TaskState:
+        old = state.status
+        state = self._apply(state, [set_status(new, reason), *(extra or [])])
+        self.obs.emit(EventType.status_changed, state.task_id, f"{old.value} -> {new.value}: {reason}",
+                      plan_id=state.plan.plan_id if state.plan else None,
+                      metadata={"from": old.value, "to": new.value})
+        if new in TERMINAL_STATUSES or new is S.blocked:
+            self.obs.emit(EventType.task_finished, state.task_id, reason, metadata={"status": new.value})
+        return state
+
+    def _finish(self, state: TaskState, status: TaskStatus, summary: str, *,
+                verification: VerificationResult | None = None, output_ref: str | None = None) -> TaskState:
+        result = FinalResult(status=status, summary=summary, output_ref=output_ref, verification=verification)
+        action = {S.done: "finish", S.blocked: "block"}.get(status, "fail")
+        return self._transition(state, status, summary, [
+            StatePatch(operation="set", path="result", value=result),
+            self._decision(None, action, summary),
+        ])
+
+    @staticmethod
+    def _observe(step_id: str | None, kind: str, outcome: str, summary: str) -> StatePatch:
+        return StatePatch(operation="append", path="observations", value=ObservationRecord(
+            source="supervisor", step_id=step_id, kind=kind, outcome=outcome, summary=summary))
+
+    @classmethod
+    def _decision(cls, step_id: str | None, action: str, summary: str) -> StatePatch:
+        decision = SupervisorDecision(next_action=action, reason_summary=summary)
+        return cls._observe(step_id, "supervisor", decision.next_action, decision.reason_summary)
+
+    def _result(self, state: TaskState) -> TaskResult:
+        result = state.result
+        if result is not None:
+            summary = result.summary
+        elif state.status is S.waiting_for_user:
+            summary = state.clarification or (state.pending_permission.prompt.action_summary
+                                              if state.pending_permission else "waiting for user")
+        else:
+            summary = f"task is {state.status.value}"
+        output_ref = result.output_ref if result else None
+        return TaskResult(
+            task_id=state.task_id,
+            status=state.status,
+            summary=summary,
+            output=state.outputs.get(output_ref) if output_ref else None,
+            artifacts=list(self._artifacts.get(state.task_id, [])),
+            verification_result=result.verification if result else None,
+            observations=state.observations,
+            approval_prompt=state.pending_permission.prompt if state.pending_permission else None,
+            clarification=state.clarification if state.status is S.waiting_for_user else None,
+        )
