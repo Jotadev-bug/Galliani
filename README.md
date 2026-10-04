@@ -1,74 +1,78 @@
 # Galliani
 
-_You prompt. We pick the right model._
+Galliani is an Agent Supervisor and orchestration system for spec-driven AI work. It receives a user objective, creates and maintains a plan, routes work to appropriate Agent Workers, executes approved tools, observes results, verifies outcomes, replans or retries when needed, and finishes only when the objective is satisfied.
 
-Write any prompt; the router picks the cheapest model that is *sufficiently capable* of solving it.
-See [PROJECT.md](PROJECT.md) for the product thesis. This repository is at **Phase 1–3** of the plan:
-offline router + execution + metrics, validated by a benchmark. No API or UI yet, by design.
+Galliani is provider-neutral. Models are Agent Workers. Providers are adapters. Tools are explicit capabilities. Memory is not task state. Private reasoning is never exposed.
 
-## Quick start
+## v0.1 Objective
 
-```bash
-python -m venv .venv && .venv/Scripts/activate   # Windows; on macOS/Linux: source .venv/bin/activate
-pip install -e ".[dev]"
-cp .env.example .env                  # add OPENROUTER_API_KEY (one key covers Google, OpenAI and Anthropic models)
-python -m app.api                     # web UI at http://127.0.0.1:8000
-python -m pytest                      # tests, no network
-python benchmark.py --simulate        # offline pipeline check; numbers are SIMULATED
-python benchmark.py                   # the real experiment (~335 generations + 67 Jev decisions)
-python -m app.main --route-only "Prove there are infinitely many primes"   # see which model Jev picks and why
-python -m app.main "Translate 'good morning' into French"                  # route and answer
+```text
+objective -> plan -> routing -> action/tool -> observation -> verification -> replan/retry -> done
 ```
 
-## Layout
+v0.1 must prove the full loop with a small, deterministic core before adding advanced autonomy.
 
-| Path | What |
-|---|---|
-| `config/models.yaml` | Model Registry: providers, models, prices, capability priors. No model facts live in code. |
-| `config/routing.yaml` | Utility weights per mode, success model, confidence thresholds, Jev and fallback settings. |
-| `app/router/` | `Router` interface; `JevRouter` (TypeSafe Jev via the Decisions API); baselines (`rules`, `random`, `fixed`); scoring and policies. |
-| `app/providers/` | `ModelProvider` interface; OpenAI-compatible (OpenAI, OpenRouter, vLLM, Ollama), Anthropic, mock, cache; `DecisionsClient` for Jev. |
-| `app/api/`, `app/web/` | FastAPI endpoints (`/api/route`, `/api/chat`, `/api/config`) and the single-page UI. Bring-your-own-key via `X-OpenRouter-Key`. |
-| `app/executor.py` | Runs a decision, walking the fallback chain under a cost cap. |
-| `app/telemetry/costs.py` | Per-request cost/latency records (JSONL; prompts not stored by default). |
-| `benchmarks/` | 80 auto-graded tasks (13 of them hard), evaluator, runner; `routing_eval.py` judges Jev's picks without generating answers. |
-| `scripts/sync_pricing.py` | Refresh prices from OpenRouter's live model list. |
+## Principles
 
-## Docs
+1. Specs are the source of truth.
+2. The supervisor owns orchestration, not model-specific behavior.
+3. Agent Workers receive bounded tasks and return structured results.
+4. Providers are interchangeable behind stable contracts.
+5. Task State tracks the active run; Memory stores durable user/project knowledge.
+6. Tools require explicit schemas, permissions, and observable results.
+7. Verification is a first-class step, not an afterthought.
+8. Chain-of-thought or hidden reasoning must never be exposed in logs, UI, APIs, or stored artifacts.
 
-- [docs/architecture.md](docs/architecture.md) — components and data flow
-- [docs/routing.md](docs/routing.md) — how a model is chosen, and what still needs calibrating
-- [docs/benchmark.md](docs/benchmark.md) — methodology, metrics, how to read the report
+## Repository Map
 
-## Web UI
-
-`python -m app.api` serves the UI on localhost. Testers add their keys under **API Keys**:
-
-- **OpenRouter** (required): runs Jev and every model.
-- **Anthropic**, **OpenAI** (optional): when present, those vendors' models are called on the
-  vendor's own API with the user's key (e.g. `claude-sonnet-5-5` via the Anthropic SDK, with
-  server-side refusal fallbacks enabled). A failed direct call retries the same model via OpenRouter.
-
-Keys stay in the browser (web) or the OS credential store (desktop) and are sent only with the
-user's own requests. "Preview" shows Jev's pick and reasoning without generating an answer.
-Chats are stored locally on the device.
-
-Before hosting it for others: add authentication, rate limiting and HTTPS (PROJECT.md §27).
-The server binds to 127.0.0.1 by default for that reason.
-
-## Desktop app
-
-The same UI in a native window (pywebview on Edge WebView2 / WebKit), packaged as one file.
-
-```bash
-pip install -e ".[desktop,build]"
-python -m app.desktop                 # run from source
-python -m scripts.build_desktop       # -> dist/Galliani.exe (with icon), then runs its --smoke-test
+```text
+galliani/
+|-- README.md
+|-- AGENTS.md
+|-- PROJECT.md
+|-- CHANGELOG.md
+|-- CONTRIBUTING.md
+|-- LICENSE.md
+|-- specs/
+|-- docs/
+`-- evals/
 ```
 
-- The OpenRouter key is saved in the OS credential store (Windows Credential Manager / macOS
-  Keychain), not in a file or browser storage.
-- Each launch serves the UI on a random localhost port with a random token; `/api` calls without
-  the token are rejected, so other local programs can't spend the saved key.
-- Logs (no prompts, no keys) go to `%LOCALAPPDATA%\Galliani\` (Windows).
-- Build on each target OS: a Windows build makes `Galliani.exe`; build on a Mac for macOS.
+## Specification Index
+
+- `specs/000-foundation/spec.md` - product invariants and shared vocabulary.
+- `specs/001-agent-core/spec.md` - supervisor loop and lifecycle.
+- `specs/002-task-state/spec.md` - active run state model.
+- `specs/003-model-router/spec.md` - worker selection and provider abstraction.
+- `specs/004-planner/spec.md` - plan creation and maintenance.
+- `specs/005-tool-system/spec.md` - tool registry, execution contracts, and results.
+- `specs/006-execution-engine/spec.md` - step execution and orchestration.
+- `specs/007-verification/spec.md` - outcome validation.
+- `specs/008-replanning/spec.md` - retry and plan revision.
+- `specs/009-permissions/spec.md` - user approval and capability boundaries.
+- `specs/010-memory/spec.md` - durable memory separated from task state.
+- `specs/011-observability/spec.md` - structured logs, events, metrics, and traces.
+- `specs/012-desktop-ui/spec.md` - desktop user experience.
+- `specs/013-evaluation/spec.md` - quality gates and benchmark methodology.
+
+## Running the v0.1 Core
+
+The provider-neutral supervisor lives in `galliani/`. The older prompt router in `app/` is separate and unchanged.
+
+```bash
+python -m pytest tests/core
+python -m galliani.evaluation evals/cases
+```
+
+v0.1 runs deterministically, with a fixture-driven planner and scripted worker adapters. Real provider adapters implement `galliani.adapters.ProviderAdapter`.
+
+## Development Workflow
+
+1. Read the relevant spec.
+2. Confirm dependencies and non-goals.
+3. Implement the smallest behavior that satisfies acceptance criteria.
+4. Add tests named by the spec.
+5. Run evaluation where applicable.
+6. Update documentation only when behavior changes.
+
+No implementation work should begin without a matching approved spec.

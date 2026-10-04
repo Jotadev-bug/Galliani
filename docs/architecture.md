@@ -1,45 +1,68 @@
 # Architecture
 
+Galliani is organized around a single responsibility: supervise AI work until a user objective is completed or safely stopped.
+
+## High-Level Flow
+
 ```text
-RouteRequest ──► ModelRegistry.candidates()      hard constraints: status, vendor allow/block,
-                       │                         vision/tools, context window
-                       ▼
-                 Router.route()                  JevRouter | RulesRouter | RandomRouter | FixedRouter
-                       │                         -> RouteDecision (model, fallbacks, confidence, profile)
-                       ▼
-                 Executor.execute()              model, then fallbacks; skips models over the cost cap
-                       │                         and models too small after a context overflow
-                       ▼
-                 ProviderPool → ModelProvider    OpenAICompatibleProvider | AnthropicProvider | MockProvider
-                       │
-                       ▼
-                 JsonlSink(RequestRecord)        cost, latency, selection, fallbacks; prompt hash only
+User Objective
+     |
+     v
+Agent Supervisor
+     |
+     +--> Planner
+     +--> Model Router
+     +--> Execution Engine
+     +--> Tool System
+     +--> Verification
+     +--> Replanning
+     +--> Task State
+     +--> Memory
+     `--> Observability
 ```
 
-## Decisions
+## Core Components
 
-- **Registry is data.** Models, prices, limits and capability priors live in `config/models.yaml`.
-  Adding a model is a YAML edit; adding a provider is one adapter class plus one branch in
-  `providers/factory.py`. Prices are synced from OpenRouter (`scripts/sync_pricing.py`), never typed in code.
-- **Jev is one `Router` among several.** The product depends on the `Router` interface, so Jev
-  can be swapped for a learned or rules router without touching the executor, providers or telemetry.
-- **Jev answers typed questions; code decides.** Jev is a decision model reached through the
-  OpenRouter Decisions API (`app/providers/decisions.py`), not through the chat adapters. It never
-  sees prices or model names, only plain-language tier descriptions. Converting its answers into a
-  model choice (scoring, budgets, fallbacks) happens in code, where it can be audited.
-- **Failures are typed.** Providers raise `ProviderError` subclasses (timeout, rate limit, outage,
-  context overflow, model unavailable, auth, invalid request). The executor uses `try_other_model`
-  to decide whether a fallback can help.
-- **A Jev failure never blocks a request.** If the selector errors or returns unparseable output,
-  the rules router decides and the confidence is set to 0, which sends the request to the most
-  capable model. The error is recorded in `router_error`.
-- **Minimal dependencies:** pydantic, httpx, pyyaml. FastAPI and PostgreSQL are deferred to Phase 4,
-  and `JsonlSink` has the interface a Postgres sink would implement.
-- **Privacy:** prompts are not logged unless `ROUTER_STORE_PROMPTS=true`; records hold a SHA-256 of
-  the prompt. Vendor allow/block lists are request-level hard filters.
+### Agent Supervisor
 
-## Not built yet (on purpose)
+Owns the lifecycle. It decides what happens next, not the worker model.
 
-The public API (`POST /v1/chat/completions`), UI, authentication, rate limiting, encrypted key
-storage, PostgreSQL, the response evaluator and the browser extension. PROJECT.md §33–34 puts them after
-the benchmark shows that routing pays off.
+### Planner
+
+Converts objectives into explicit steps with success conditions.
+
+### Model Router
+
+Selects an Agent Worker and provider adapter based on task needs, policy, availability, and cost/quality constraints.
+
+### Execution Engine
+
+Runs plan steps, invokes models and tools, records observations, and hands results to verification.
+
+### Tool System
+
+Registers tools, validates input schemas, checks permissions, executes calls, and returns structured results.
+
+### Verification
+
+Determines whether outputs satisfy the current step and overall objective.
+
+### Replanning
+
+Responds to failed verification, blocked tools, worker errors, or changed user constraints.
+
+### Task State
+
+Stores active execution state for a single task or run.
+
+### Memory
+
+Stores durable facts, preferences, and project knowledge that are intentionally persisted.
+
+## Provider Decoupling
+
+Core orchestration must depend on provider-neutral interfaces. Provider adapters translate Galliani contracts into provider-specific requests and responses.
+
+## Privacy Boundary
+
+Galliani may store summaries, decisions, observations, and final answers. It must not expose or persist chain-of-thought, hidden reasoning traces, or private model scratchpads.

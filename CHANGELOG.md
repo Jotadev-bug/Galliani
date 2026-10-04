@@ -1,0 +1,27 @@
+# Changelog
+
+All notable changes to Galliani are recorded here.
+
+This project follows spec-driven development. Changelog entries should reference the specs that motivated the change.
+
+## Unreleased
+
+### Added
+
+- Initial spec-driven documentation structure.
+- v0.1 orchestration objective: objective, plan, routing, action/tool, observation, verification, replan/retry, done.
+- Root project guidance for Agent Supervisor architecture.
+- Specs for foundation, agent core, task state, model router, planner, tool system, execution engine, verification, replanning, permissions, memory, observability, desktop UI, and evaluation.
+- Architecture and workflow documentation.
+- `galliani/` runtime implementing the v0.1 loop (specs 000-009, 011, 013): Task State with transition table and audited patches (002), redacted lifecycle events (011), permission policy with least-privilege approvals (009), schema-validated tool system (005), provider-neutral router and adapter boundary (003), deterministic planner and plan validation (004), deterministic verifier (007), execution engine with fallback and cancellation (006), bounded retry/replan (008), and the supervisor loop with approve/deny/cancel (001).
+- `tests/core/`: unit and integration tests mapped to spec acceptance criteria.
+- `evals/cases/v0_1_loop.yaml` and `python -m galliani.evaluation`: v0.1 fixtures and blocking quality gates (013).
+- Decisions 0006-0011 in `docs/decisions.md`.
+
+### Changed
+
+- Project direction clarified around provider-neutral Agent Worker routing.
+
+### Security
+
+- Documented the rule that hidden reasoning and chain-of-thought must not be exposed.
