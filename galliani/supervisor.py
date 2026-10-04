@@ -10,6 +10,8 @@ because every iteration either consumes the action budget or moves to a pausing 
 
 from __future__ import annotations
 
+import json
+
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import timedelta
 from typing import Any, Literal
@@ -57,6 +59,7 @@ from galliani.verification import (
 S = TaskStatus
 MAX_CONTEXT_CHARS = 4_000  # reference data passed to planners
 SPEND_ACTION = "extend_budget:"
+MAX_JUDGE_SOURCE_CHARS = 8_000  # source data shown to a semantic verifier
 
 
 class UserPolicy(BaseModel):
@@ -357,7 +360,7 @@ class Supervisor:
 
         state = self._transition(state, S.verifying, f"verifying {step.step_id}")
         state, verification = await self._verify(state, step.step_id, [result.output_ref], step.verification_criteria,
-                                                 step.expected_output)
+                                                 self._verification_context(state, step))
         if verification.status is VerificationStatus.pass_:
             if state.current_step + 1 < len(state.plan.steps):
                 state = self._apply(state, [StatePatch(operation="set", path="current_step", value=state.current_step + 1)])
@@ -521,6 +524,16 @@ class Supervisor:
 
     def _policy(self, task_id: str) -> UserPolicy:
         return self._policies.get(task_id) or UserPolicy()
+
+    @staticmethod
+    def _verification_context(state: TaskState, step: PlanStep) -> str:
+        """What a semantic judge needs: the expected output and the source data the step worked from."""
+        context = f"Expected output: {step.expected_output}"
+        sources = {ref: state.outputs.get(state.latest_output_ref(ref) or "") for ref in step.input_refs}
+        if sources:
+            data = json.dumps(sources, ensure_ascii=False, default=str)
+            context += f"\nSource data the step was given:\n{data[:MAX_JUDGE_SOURCE_CHARS]}"
+        return context
 
     def _retrieve_memory(self, state: TaskState) -> TaskState:
         """010 behavior: retrieve scoped, relevant memory once before planning. Task State records only the

@@ -74,7 +74,7 @@ python -m galliani.cli "Summarize agent-loop.md in five bullets and save it as s
 
 A model plans the work, the supervisor validates the plan, cheap workers run the bounded steps, and verification gates completion. File writes pause for a y/N approval scoped to the exact path, and a task pauses again if its estimated model spend passes `--budget` (default $0.50). The agent can only touch files inside `--workspace`, which must be an existing folder (here the repo's `docs/`).
 
-In the desktop app (`python -m app.desktop`), open **Agent** in the sidebar to do the same thing visually: describe the objective, pick a folder, and follow the plan, live activity, approvals and verified result. Agent tasks are kept until the app closes; nothing is written to long-term memory.
+In the desktop app (`python -m app.desktop`), switch the message box from **Chat** to **Agent**, pick a folder, and type a task. The agent's reply shows the plan, live activity, approvals and the verified result. The **Memory** page lists what the agent remembers between tasks; it only saves a note when you approve it.
 
 Before a release, follow `docs/release-checklist.md`.
 

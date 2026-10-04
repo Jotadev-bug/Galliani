@@ -79,3 +79,19 @@ async def test_supervisor_retries_after_semantic_failure():
     result = await h.supervisor.start(StartTaskRequest(objective=Objective(goal="Summarize neutrally")))
     assert result.status is TaskStatus.done
     assert h.supervisor.store.get(result.task_id).retry_counts == {"s1": 1}
+
+
+async def test_judge_sees_expected_output_and_source_data():
+    from tests.core.helpers import read_step
+
+    step = {"step_id": "s1", "kind": "model", "purpose": "summarize", "required_capability": "text", "input_refs": ["s0"],
+            "expected_output": "a faithful summary", "instruction": "Summarize.",
+            "verification_criteria": [{"kind": "semantic", "value": "reflects the source note"}]}
+    h = Harness([{"steps": [read_step(), step]}], workers=[worker("w1"), worker("judge", cost="high", caps=("text", "reasoning"))],
+                script={"w1": [{"output": "Spend is 4% under plan."}], "judge": [verdict("pass")]})
+    h.supervisor.verifier = Verifier(ModelSemanticVerifier(h.supervisor.engine.workers))
+    result = await h.supervisor.start(StartTaskRequest(objective=Objective(goal="Summarize note n1")))
+    assert result.status.value == "done"
+    judge_call = next(c for c in h.adapter.calls if c.worker_id == "judge")
+    assert "Expected output: a faithful summary" in judge_call.inputs["context"]
+    assert "Q3 budget review" in judge_call.inputs["context"]  # the note the summary was written from

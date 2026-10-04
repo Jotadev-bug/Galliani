@@ -198,10 +198,11 @@ def test_approval_prompt_markup_is_accessible():
     from pathlib import Path
 
     html = (Path(__file__).resolve().parents[2] / "app" / "web" / "index.html").read_text(encoding="utf-8")
-    assert 'role="alertdialog" aria-labelledby="apTitle" aria-describedby="apDesc"' in html
-    assert '<h3 id="apTitle" tabindex="-1">' in html and '$("apTitle")?.focus()' in html  # focus moves to the prompt
+    assert 'role="alertdialog" aria-labelledby="ap-${esc(id)}" aria-describedby="apd-${esc(id)}"' in html
+    assert '<h3 id="ap-${esc(id)}" tabindex="-1">' in html and 'el.querySelector(".callout h3")?.focus()' in html
     assert 'aria-label="Approve ${esc(action)} for ${esc(p.scope)}"' in html  # scope named before consent
     assert '<dt>Scope</dt>' in html and 'aria-live="polite"' in html
+    assert 'role="group" aria-label="Conversation type"' in html  # the Chat | Agent switch is a labelled group
 
 
 # Spec 010 through the API: explicit user writes, listing with redaction, deletion, and task memory views

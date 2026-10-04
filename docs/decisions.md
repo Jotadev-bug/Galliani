@@ -143,3 +143,16 @@ Spec 010 is approved for v0.1 implementation.
 - **Retrieval before planning.** The supervisor retrieves once, before planning (010 behavior). Records reach planners as `PlanRequest.memory`, which is data, never instructions. Task State records only that retrieval happened and which record ids were used, not their content, so Task State and Memory stay separate. If the store is unavailable, the task continues without memory and a diagnostic event is emitted.
 - **Writes are explicit.** Users add records directly (Memory page, API), and those writes are allowed after the secret check. An agent can write only through the `remember` tool, a `sensitive` action that always needs the user's approval. The approval prompt shows the exact text to be saved. Provenance names the task and step. Observations are never written to memory automatically (010 AC Separate State), and a denied write is recorded as a task observation, not as memory.
 - **Display.** Sensitive records are redacted in events, task views and the Memory page list, which offers deletion.
+
+## Decision 0020: One chat screen with Chat and Agent conversations
+
+Status: Accepted (2026-10-04)
+
+The separate Agent page (Decision 0018) is folded into the chat screen. A switch in the composer chooses the kind of the next conversation: **Chat** (one routed model answers, as before) or **Agent** (each message starts a supervised task in a chosen folder). A conversation keeps its kind; switching modes in a non-empty conversation starts a new one.
+
+- Both kinds share the same layout. Agent conversations use a teal accent (`--agent`, `--agent-2`) where chat uses violet: composer border, send button, user bubbles, running spinners, and primary buttons inside task cards.
+- In an agent conversation each task is a reply card: approval and question callouts while live; then the result (prose first, tool records collapsed), verification, files saved, the plan, memory used and saved, collapsible activity, and usage. Cards are built only from the 012 view models.
+- Later messages in the same agent conversation reuse its folder and pass the earlier tasks' outcomes as context (data). Only one task per conversation may be in progress.
+- Card snapshots are kept with the conversation in local storage, so finished tasks survive a reload. A task the server no longer has (the app was closed) is shown as stopped, with its last known state.
+- A Memory page (spec 010) lists, adds and forgets notes. Sensitive notes are redacted in the list and never sent to models.
+- The semantic verifier now also receives the step's expected output and the source data it used, so it can judge claims about the source instead of answering "unsure".
