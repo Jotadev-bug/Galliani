@@ -90,10 +90,10 @@ Then the router returns a structured no-route error.
 
         ## Implementation Tasks
 
-        - [ ] Define worker profile schema.
-- [ ] Define model work request and route result.
-- [ ] Implement routing policy hooks.
-- [ ] Implement provider adapter boundary.
+        - [x] Define worker profile schema.
+- [x] Define model work request and route result.
+- [x] Implement routing policy hooks.
+- [x] Implement provider adapter boundary.
 
         ## Dependencies
 

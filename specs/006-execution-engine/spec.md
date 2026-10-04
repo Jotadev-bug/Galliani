@@ -89,10 +89,10 @@ Then no further actions are started.
 
         ## Implementation Tasks
 
-        - [ ] Define execution request/result contracts.
-- [ ] Implement step dispatch.
-- [ ] Integrate routing and tool system.
-- [ ] Emit observations and artifacts.
+        - [x] Define execution request/result contracts.
+- [x] Implement step dispatch.
+- [x] Integrate routing and tool system.
+- [x] Emit observations and artifacts.
 
         ## Dependencies
 

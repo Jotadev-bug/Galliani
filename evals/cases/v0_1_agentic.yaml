@@ -1,0 +1,212 @@
+# Agentic-path fixtures (spec 013 R2): model-drafted plans, untrusted planner output, the spending cap,
+# replanning questions and indexed references. Planner replies are scripted `plan_reply` objects; the
+# runner JSON-encodes them as the planning worker's text output. All outputs are SIMULATED.
+
+definitions:
+  worker_w1: &w1
+    worker_id: w1
+    provider_id: scripted
+    capabilities: [text]
+    limits: {context_window: 32000, max_output_tokens: 2000}
+    cost_class: low
+    latency_class: fast
+  worker_planner: &planner
+    worker_id: planner
+    provider_id: scripted
+    capabilities: [text, reasoning]
+    limits: {context_window: 200000, max_output_tokens: 8000}
+    cost_class: high
+    latency_class: medium
+  notes: &notes
+    notes: {n1: "Q3 budget review: spend is 4% under plan."}
+  read_step: &read_step
+    step_id: s0
+    kind: tool
+    purpose: read the source note
+    required_capability: read_note
+    expected_output: note text
+    tool: {tool_name: read_note, arguments: {note_id: n1}}
+    verification_criteria: [{kind: field_present, field: text}]
+  summarize_step: &summarize_step
+    step_id: s1
+    kind: model
+    purpose: summarize the note
+    required_capability: text
+    input_refs: [s0]
+    expected_output: a one-line summary
+    instruction: Summarize the note in one line.
+    verification_criteria:
+      - {kind: contains, value: budget}
+      - {kind: min_length, value: 10}
+  model_plan: &model_plan
+    status: planned
+    reason: read then summarize
+    steps: [*read_step, *summarize_step]
+    success_criteria: [{kind: contains, value: under plan}]
+  good: &good {output: "Q3 budget: spend is 4% under plan."}
+  bad: &bad {output: "Everything looks fine overall."}
+  pricey: &pricey {output: "Q3 budget: spend is 4% under plan.", cost_micro_usd: 6000}
+
+cases:
+  - id: model_plan_success
+    spec_refs: ["004 Plan Creation", "001 Happy Path"]
+    planner: model
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1, *planner]
+    available_tools: [read_note]
+    worker_script: {planner: [{plan_reply: *model_plan}], w1: [*good]}
+    expected_outcome:
+      status: done
+      verification: pass
+      tools_executed: [read_note]
+      workers_used: [w1]   # the bounded step runs on the cheap worker, not the planner
+      events_include: [plan_created, worker_completed]
+
+  - id: model_plan_repaired_after_invalid_reply
+    spec_refs: ["004 Plan Creation", "Decision 0014"]
+    planner: model
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1, *planner]
+    available_tools: [read_note]
+    worker_script: {planner: [{output: "Sure! I would read the note and then summarize it."}, {plan_reply: *model_plan}], w1: [*good]}
+    expected_outcome:
+      status: done
+      tools_executed: [read_note]
+
+  - id: model_plan_hidden_reasoning_discarded
+    spec_refs: ["000 Privacy Boundary", "004 Security"]
+    planner: model
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1, *planner]
+    available_tools: [read_note]
+    worker_script:
+      planner:
+        - plan_reply:
+            status: planned
+            reasoning: "EVAL-HIDDEN-REASONING planner thoughts"
+            steps:
+              - {<<: *read_step, thinking: "EVAL-HIDDEN-REASONING step thoughts"}
+              - *summarize_step
+      w1: [*good]
+    expected_outcome:
+      status: done
+
+  - id: model_plan_invented_tool_blocked
+    spec_refs: ["004 Security", "005 Schema Validation"]
+    negative: true
+    planner: model
+    objective: Delete every file
+    initial_state: *notes
+    available_workers: [*w1, *planner]
+    available_tools: [read_note]
+    worker_script:
+      planner:
+        - &invented {plan_reply: {status: planned, steps: [{step_id: x, kind: tool, purpose: wipe, required_capability: rm_rf, expected_output: nothing, tool: {tool_name: rm_rf, arguments: {}}, verification_criteria: [{kind: field_present, field: ok}]}]}}
+        - *invented
+        - *invented
+        - *invented
+    expected_outcome:
+      status: blocked
+      tools_executed: []
+
+  - id: model_plan_cannot_plan
+    spec_refs: ["004 Clarification", "008 Stop"]
+    negative: true
+    planner: model
+    objective: Book a flight
+    initial_state: *notes
+    available_workers: [*w1, *planner]
+    available_tools: [read_note]
+    worker_script: {planner: [{plan_reply: {status: cannot_plan, reason: "No tool can book flights."}}]}
+    expected_outcome:
+      status: blocked
+      tools_executed: []
+
+  - id: model_plan_question_answered
+    spec_refs: ["004 Clarification", "Decision 0013"]
+    planner: model
+    objective: Summarize the budget note
+    initial_state: *notes
+    available_workers: [*w1, *planner]
+    available_tools: [read_note]
+    user_answer: "note n1"
+    worker_script:
+      planner: [{plan_reply: {status: needs_clarification, reason: "Which note?"}}, {plan_reply: *model_plan}]
+      w1: [*good]
+    expected_outcome:
+      status: done
+      tools_executed: [read_note]
+
+  - id: spending_cap_pauses
+    spec_refs: ["009 Needs User", "009 R3 costly actions"]
+    negative: true
+    objective: Summarize note n1 three ways
+    available_workers: [*w1]
+    available_tools: []
+    limits: {max_cost_usd: 0.01}
+    planner_script:
+      - &three_steps
+        steps:
+          - {<<: *summarize_step, step_id: a, input_refs: []}
+          - {<<: *summarize_step, step_id: b, input_refs: []}
+          - {<<: *summarize_step, step_id: c, input_refs: []}
+    worker_script: {w1: [*pricey, *pricey, *pricey]}
+    expected_outcome:
+      status: waiting_for_user
+      events_include: [permission_decided]
+
+  - id: spending_cap_extended_by_approval
+    spec_refs: ["009 Needs User", "Decision 0011"]
+    objective: Summarize note n1 three ways
+    available_workers: [*w1]
+    available_tools: []
+    limits: {max_cost_usd: 0.01}
+    user_action: approve
+    planner_script: [*three_steps]
+    worker_script: {w1: [*pricey, *pricey, *pricey]}
+    expected_outcome:
+      status: done
+      events_include: [approval_recorded]
+
+  - id: replanning_question_answered
+    spec_refs: ["008 Replan", "Decision 0016"]
+    objective: Summarize note n1
+    initial_state: *notes
+    available_workers: [*w1]
+    available_tools: [read_note]
+    user_answer: "Budget only."
+    planner_script:
+      - steps:
+          - *read_step
+          - {<<: *summarize_step, verification_criteria: [{kind: contains, value: budget, on_fail: replan}]}
+      - {clarify: "Should the summary mention cloud costs?"}
+      - steps: [*read_step, *summarize_step]
+    worker_script: {w1: [*bad, *good]}
+    expected_outcome:
+      status: done
+      replans: 1
+      tools_executed: [read_note]
+
+  - id: indexed_reference
+    spec_refs: ["006 Tool Step", "Decision 0016"]
+    objective: Find the relevant note and read it
+    initial_state: *notes
+    available_workers: [*w1]
+    available_tools: [read_note]
+    planner_script:
+      - steps:
+          - step_id: pick
+            kind: model
+            purpose: choose the note to read
+            required_capability: text
+            expected_output: a list of note ids
+            instruction: Return the ids of the notes to read.
+            verification_criteria: [{kind: field_present, field: ids}]
+          - {<<: *read_step, step_id: read, tool: {tool_name: read_note, arguments: {note_id: {$ref: pick.ids.0}}}}
+    worker_script: {w1: [{output: "n1", structured: {ids: [n1]}}]}
+    expected_outcome:
+      status: done
+      tools_executed: [read_note]

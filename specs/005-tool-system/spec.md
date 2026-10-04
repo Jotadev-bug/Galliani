@@ -90,10 +90,10 @@ Then a structured ToolResult and observation are produced.
 
         ## Implementation Tasks
 
-        - [ ] Define tool registry interface.
-- [ ] Define ToolCall and ToolResult contracts.
-- [ ] Integrate permission checks.
-- [ ] Add timeout and error normalization.
+        - [x] Define tool registry interface.
+- [x] Define ToolCall and ToolResult contracts.
+- [x] Integrate permission checks.
+- [x] Add timeout and error normalization.
 
         ## Dependencies
 

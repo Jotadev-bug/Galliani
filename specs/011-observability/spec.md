@@ -88,10 +88,10 @@ Then the task is not failed solely because telemetry failed.
 
         ## Implementation Tasks
 
-        - [ ] Define event schema.
-- [ ] Define redaction policy.
-- [ ] Instrument supervisor, router, tools, verifier, and replanner.
-- [ ] Add metrics for v0.1 loop health.
+        - [x] Define event schema.
+- [x] Define redaction policy.
+- [x] Instrument supervisor, router, tools, verifier, and replanner.
+- [x] Add metrics for v0.1 loop health.
 
         ## Dependencies
 

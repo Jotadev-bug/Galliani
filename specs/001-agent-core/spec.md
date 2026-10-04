@@ -91,10 +91,10 @@ Then the task is marked waiting for user approval.
 
         ## Implementation Tasks
 
-        - [ ] Define supervisor state machine.
-- [ ] Define decision interface.
-- [ ] Wire planner, router, execution, verification, and replanning contracts.
-- [ ] Add lifecycle event emission.
+        - [x] Define supervisor state machine.
+- [x] Define decision interface.
+- [x] Wire planner, router, execution, verification, and replanning contracts.
+- [x] Add lifecycle event emission.
 
         ## Dependencies
 

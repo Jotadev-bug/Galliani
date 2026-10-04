@@ -88,10 +88,10 @@ Then the system denies execution.
 
         ## Implementation Tasks
 
-        - [ ] Define permission levels.
-- [ ] Define decision contract.
-- [ ] Integrate with Tool System and Execution Engine.
-- [ ] Add approval records to Task State.
+        - [x] Define permission levels.
+- [x] Define decision contract.
+- [x] Integrate with Tool System and Execution Engine.
+- [x] Add approval records to Task State.
 
         ## Dependencies
 

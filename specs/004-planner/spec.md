@@ -88,10 +88,10 @@ Then a revised plan version is created with a reason summary.
 
         ## Implementation Tasks
 
-        - [ ] Define Plan and PlanStep schema.
-- [ ] Define planner prompt/input contract if model-backed.
-- [ ] Add plan validation.
-- [ ] Add plan revision metadata.
+        - [x] Define Plan and PlanStep schema.
+- [x] Define planner prompt/input contract if model-backed.
+- [x] Add plan validation.
+- [x] Add plan revision metadata.
 
         ## Dependencies
 

@@ -88,10 +88,10 @@ Then the verifier returns inconclusive and asks for clarification or better crit
 
         ## Implementation Tasks
 
-        - [ ] Define verification contracts.
-- [ ] Implement deterministic verification hooks.
-- [ ] Add model-backed verifier boundary.
-- [ ] Integrate recommendations with replanning.
+        - [x] Define verification contracts.
+- [x] Implement deterministic verification hooks.
+- [x] Add model-backed verifier boundary.
+- [x] Integrate recommendations with replanning.
 
         ## Dependencies
 

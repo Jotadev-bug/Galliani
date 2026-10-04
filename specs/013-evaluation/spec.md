@@ -89,10 +89,10 @@ Then the task retries or replans within budget and then blocks or fails safely.
 
         ## Implementation Tasks
 
-        - [ ] Define eval case schema.
-- [ ] Create v0.1 fixture suite.
-- [ ] Define quality gates.
-- [ ] Integrate evaluation reporting with changelog or release checklist.
+        - [x] Define eval case schema.
+- [x] Create v0.1 fixture suite.
+- [x] Define quality gates.
+- [x] Integrate evaluation reporting with changelog or release checklist.
 
         ## Dependencies
 

@@ -72,7 +72,9 @@ To run a real objective against your configured providers (keys from `OPENROUTER
 python -m galliani.cli "Summarize agent-loop.md in five bullets and save it as summary.md" --workspace docs
 ```
 
-A model plans the work, the supervisor validates the plan, cheap workers run the bounded steps, and verification gates completion. File writes pause for a y/N approval scoped to the exact path. The agent can only touch files inside `--workspace`, which must be an existing folder (here the repo's `docs/`).
+A model plans the work, the supervisor validates the plan, cheap workers run the bounded steps, and verification gates completion. File writes pause for a y/N approval scoped to the exact path, and a task pauses again if its estimated model spend passes `--budget` (default $0.50). The agent can only touch files inside `--workspace`, which must be an existing folder (here the repo's `docs/`).
+
+Before a release, follow `docs/release-checklist.md`.
 
 ## Development Workflow
 

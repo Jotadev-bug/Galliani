@@ -89,10 +89,10 @@ Then the transition is rejected.
 
         ## Implementation Tasks
 
-        - [ ] Define TaskState schema.
-- [ ] Define status transition table.
-- [ ] Create state patch validation.
-- [ ] Add observation and approval records.
+        - [x] Define TaskState schema.
+- [x] Define status transition table.
+- [x] Create state patch validation.
+- [x] Add observation and approval records.
 
         ## Dependencies
 

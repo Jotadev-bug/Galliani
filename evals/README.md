@@ -34,7 +34,7 @@ The full agent loop must pass deterministic fixtures for successful completion, 
 python -m galliani.evaluation evals/cases
 ```
 
-Fixtures live in `evals/cases/*.yaml` and follow the `EvalCase` schema in `galliani/evaluation.py`. Each case names its `spec_refs`, scripts the planner and worker outputs (all outputs are simulated), and states the expected outcome. Cases marked `negative: true` must never end in `done`. Each case runs twice, and any difference is flagged `non_deterministic`.
+Fixtures live in `evals/cases/*.yaml` (`v0_1_loop.yaml` for the core loop, `v0_1_agentic.yaml` for model-drafted plans, the spending cap and user answers) and follow the `EvalCase` schema in `galliani/evaluation.py`. With `planner: model`, the plan is drafted by `ModelPlanner` from scripted `plan_reply` objects. Each case names its `spec_refs`, scripts the planner and worker outputs (all outputs are simulated), and states the expected outcome. Cases marked `negative: true` must never end in `done`. Each case runs twice, and any difference is flagged `non_deterministic`.
 
 Blocking quality gates:
 

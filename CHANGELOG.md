@@ -22,6 +22,8 @@ This project follows spec-driven development. Changelog entries should reference
 - `Supervisor.clarify` to resume after a clarification question (Decision 0013).
 - Workspace toolkit and `python -m galliani.cli` with interactive approvals (Decision 0015).
 - CLI `--events FILE` (redacted JSON Lines event log), plan outline and per-run usage/cost summary.
+- Per-task spending cap: `LoopLimits.max_cost_usd` / CLI `--budget`; extending it needs approval (spec 009 R3).
+- Agentic eval fixtures `evals/cases/v0_1_agentic.yaml` (model planner, untrusted plans, spending cap, user answers) and `docs/release-checklist.md` (spec 013).
 
 ### Fixed
 

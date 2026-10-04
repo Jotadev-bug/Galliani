@@ -88,10 +88,10 @@ Then the task is marked blocked or failed with a safe summary.
 
         ## Implementation Tasks
 
-        - [ ] Define retry policy.
-- [ ] Define replan contracts.
-- [ ] Integrate verification recommendations.
-- [ ] Add plan versioning behavior.
+        - [x] Define retry policy.
+- [x] Define replan contracts.
+- [x] Integrate verification recommendations.
+- [x] Add plan versioning behavior.
 
         ## Dependencies
 

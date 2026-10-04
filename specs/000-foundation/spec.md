@@ -106,10 +106,10 @@ Then hidden reasoning is discarded or sealed and never exposed.
 
         ## Implementation Tasks
 
-        - [ ] Create shared glossary.
-- [ ] Confirm v0.1 scope.
-- [ ] Record initial architecture decisions.
-- [ ] Link downstream specs to this foundation.
+        - [x] Create shared glossary.
+- [x] Confirm v0.1 scope.
+- [x] Record initial architecture decisions.
+- [x] Link downstream specs to this foundation.
 
         ## Dependencies
 

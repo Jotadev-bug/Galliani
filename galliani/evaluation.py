@@ -9,6 +9,7 @@ fixtures fail fast. Runner crashes are reported as `error` (runner failure), not
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from galliani.contracts import Objective
 from galliani.limits import LoopLimits
+from galliani.model_planner import ModelPlanner
 from galliani.observability import InMemoryEventSink, Observability
 from galliani.permissions import PermissionLevel, PermissionPolicy, PermissionStatus
 from galliani.planner import StaticPlanner
@@ -28,9 +30,11 @@ from galliani.state import TaskStatus
 from galliani.supervisor import StartTaskRequest, Supervisor, TaskResult, UserPolicy
 from galliani.testing import FixtureWorld, ScriptedAdapter, fixture_tool_registry
 from galliani.tools import ToolRegistry, ToolSystem
+from galliani.workers import WorkerClient
 
 DEFAULT_CASES = Path(__file__).resolve().parent.parent / "evals" / "cases"
 REASONING_MARKER = "EVAL-HIDDEN-REASONING"
+MAX_USER_TURNS = 3
 
 
 class FixtureError(Exception):
@@ -65,20 +69,26 @@ class EvalCase(BaseModel):
     available_workers: list[dict[str, Any]]
     available_tools: list[str]
     worker_script: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
-    planner_script: list[dict[str, Any]]
+    planner_script: list[dict[str, Any]] = Field(default_factory=list)
     required_constraints: list[str] = Field(default_factory=list)
     permission_rules: dict[PermissionLevel, PermissionStatus] | None = None
     routing_policy: RoutingPolicy = Field(default_factory=RoutingPolicy)
-    user_action: Literal["approve", "deny"] | None = None  # answer to a pending approval prompt
+    user_action: Literal["approve", "deny"] | None = None  # answer to every pending approval prompt
+    user_answer: str | None = None  # answer to a clarification question
+    # "model": ModelPlanner drafts plans through the worker named by planner_worker; its scripted replies
+    # are `plan_reply` objects (JSON-encoded by the runner) or raw `output` strings in worker_script.
+    planner: Literal["static", "model"] = "static"
+    planner_worker: str = "planner"
+    limits: LoopLimits = Field(default_factory=LoopLimits)
     negative: bool = False  # must never end in `done`
     expected_outcome: ExpectedOutcome
 
     @field_validator("spec_refs")
     @classmethod
     def _spec_refs_point_at_specs(cls, refs: list[str]) -> list[str]:
-        bad = [r for r in refs if not re.fullmatch(r"\d{3}(\s.*)?", r)]
+        bad = [r for r in refs if not re.fullmatch(r"(\d{3}|Decision \d{4})(\s.*)?", r)]
         if bad:
-            raise ValueError(f"spec_refs must start with a spec number, got {bad}")
+            raise ValueError(f"spec_refs must start with a spec number or 'Decision NNNN', got {bad}")
         return refs
 
 
@@ -165,27 +175,41 @@ async def _run_once(case: EvalCase) -> _Run:
     world = FixtureWorld(**case.initial_state.model_dump())
     full = fixture_tool_registry(world)
     registry = ToolRegistry([full.get(t) for t in case.available_tools])
-    script = {w: [{"reasoning": REASONING_MARKER, **entry} for entry in entries]
+    script = {w: [{"reasoning": REASONING_MARKER, **_encode_reply(entry)} for entry in entries]
               for w, entries in case.worker_script.items()}
     sink = InMemoryEventSink()
+    obs = Observability([sink])
+    router = ModelRouter(case.available_workers)
+    adapter = ScriptedAdapter("scripted", script)
+    if case.planner == "model":
+        planner = ModelPlanner(WorkerClient(router, [adapter], obs), registry, limits=case.limits,
+                               required_constraints=case.required_constraints)
+    else:
+        planner = StaticPlanner(case.planner_script, required_constraints=case.required_constraints)
     supervisor = Supervisor(
-        planner=StaticPlanner(case.planner_script, required_constraints=case.required_constraints),
-        router=ModelRouter(case.available_workers),
-        adapters=[ScriptedAdapter("scripted", script)],
+        planner=planner,
+        router=router,
+        adapters=[adapter],
         tools=ToolSystem(registry, PermissionPolicy(case.permission_rules)),
         retry_policy=RetryPolicy(),
-        limits=LoopLimits(),
-        observability=Observability([sink]),
+        limits=case.limits,
+        observability=obs,
     )
     result = await supervisor.start(StartTaskRequest(
         objective=Objective(goal=case.objective, constraints=case.constraints),
         user_policy=UserPolicy(routing=case.routing_policy),
     ))
-    if case.user_action and result.status is TaskStatus.waiting_for_user and result.approval_prompt:
-        if case.user_action == "approve":
+    for _ in range(MAX_USER_TURNS):  # bounded, like a person answering prompts
+        if result.status is not TaskStatus.waiting_for_user:
+            break
+        if result.approval_prompt and case.user_action == "approve":
             result = await supervisor.approve(result.task_id)
-        else:
+        elif result.approval_prompt and case.user_action == "deny":
             result = await supervisor.deny(result.task_id)
+        elif result.clarification and case.user_answer:
+            result = await supervisor.clarify(result.task_id, case.user_answer)
+        else:
+            break
     state = supervisor.store.get(result.task_id)
     events = sink.for_task(result.task_id)
     return _Run(
@@ -199,6 +223,12 @@ async def _run_once(case: EvalCase) -> _Run:
         retries=sum(state.retry_counts.values()),
         replans=state.replan_count,
     )
+
+
+def _encode_reply(entry: dict[str, Any]) -> dict[str, Any]:
+    if "plan_reply" in entry:
+        entry = {**{k: v for k, v in entry.items() if k != "plan_reply"}, "output": json.dumps(entry["plan_reply"])}
+    return entry
 
 
 def _fingerprint(run: _Run) -> tuple:
