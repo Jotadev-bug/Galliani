@@ -197,6 +197,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--non-interactive", action="store_true", help="stop instead of asking for approvals or answers")
     parser.add_argument("--events", default=None, help="append the redacted event log to this JSON Lines file")
     args = parser.parse_args(argv)
+    workspace = Path(args.workspace)
+    if not workspace.is_dir():
+        print(f"Workspace folder not found: {workspace.resolve()}\n"
+              "Pass --workspace with an existing folder the agent may read (it can only touch files inside it).",
+              file=sys.stderr)
+        return 2
     return asyncio.run(run(args.objective, args.workspace, context=args.context, interactive=not args.non_interactive,
                            events_path=args.events))
 

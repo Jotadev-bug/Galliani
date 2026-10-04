@@ -69,10 +69,10 @@ The tests and evals are deterministic: they use fixture-driven planners and scri
 To run a real objective against your configured providers (keys from `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or the desktop app's OS credential store):
 
 ```bash
-python -m galliani.cli "Summarize the notes in docs/ into summary.md" --workspace ./my-project
+python -m galliani.cli "Summarize agent-loop.md in five bullets and save it as summary.md" --workspace docs
 ```
 
-A model plans the work, the supervisor validates the plan, cheap workers run the bounded steps, and verification gates completion. File writes pause for a y/N approval scoped to the exact path. The agent can only touch files inside `--workspace`.
+A model plans the work, the supervisor validates the plan, cheap workers run the bounded steps, and verification gates completion. File writes pause for a y/N approval scoped to the exact path. The agent can only touch files inside `--workspace`, which must be an existing folder (here the repo's `docs/`).
 
 ## Development Workflow
 

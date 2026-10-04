@@ -157,3 +157,11 @@ async def test_usage_and_estimated_cost_are_reported(workspace):
     usage = next(line for line in lines if line.startswith("Usage:"))
     assert f"{len(mock.calls)} model call(s)" in usage and "est. $" in usage
     assert rt.console.usage.cost_micro_usd > 0
+
+
+def test_missing_workspace_folder_gives_a_clear_message(tmp_path, capsys):
+    from galliani.cli import main
+
+    assert main(["do something", "--workspace", str(tmp_path / "does-not-exist")]) == 2
+    err = capsys.readouterr().err
+    assert "Workspace folder not found" in err and "Traceback" not in err
