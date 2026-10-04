@@ -92,3 +92,12 @@ async def test_semantic_verifier_boundary_and_unavailability():
 async def test_reason_summary_does_not_copy_output():
     result = await Verifier().verify(vreq(C(kind="contains", value="total")), {"r1": "PRIVATE-PAYLOAD"})
     assert "PRIVATE-PAYLOAD" not in result.model_dump_json()
+
+
+@pytest.mark.parametrize("actual,expected,ok", [
+    (False, "false", True), (True, "True", True), (3, "3", True), (3.0, "3", True), ("ok", "OK", False),
+    (False, 0, False), (True, 1, False), (False, "no", False), (3, "4", False), ({"a": 1}, {"a": 1}, True),
+])
+async def test_equality_tolerates_json_scalar_type_mismatch(actual, expected, ok):
+    result = await Verifier().verify(vreq(C(kind="field_equals", field="x", value=expected)), {"r1": {"x": actual}})
+    assert (result.status is VS.pass_) is ok

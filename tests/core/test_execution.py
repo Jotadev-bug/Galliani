@@ -36,7 +36,7 @@ async def test_model_step_routes_to_worker_and_returns_structured_result():
     assert result.worker_id == "w1" and result.route.worker_id == "w1"
     assert result.output == "budget is fine" and result.output_ref
     assert result.observation.step_id == "s1" and result.observation.source == "worker:w1"
-    assert [e.type.value for e in sink.events] == ["route_selected"]
+    assert [e.type.value for e in sink.events] == ["route_selected", "worker_completed"]
 
 
 # AC: Tool Step
@@ -104,3 +104,28 @@ async def test_no_route_is_a_structured_failure():
     result = await engine.execute(request(state, step))
     assert result.status is ExecutionStatus.failed and result.error.code == "no_route"
     assert sink.events[0].type.value == "route_failed"
+
+
+async def test_nested_and_indexed_refs_resolve_and_failures_describe_the_output():
+    from galliani.state import ObservationRecord, StatePatch, TaskStateStore
+
+    store = TaskStateStore()
+    state = store.create(Objective(goal="g"))
+    state = store.apply(state.task_id, [
+        StatePatch(operation="put", path="outputs.o1", value={"files": ["notes/q2.md", "notes/q3.md"], "truncated": False}),
+        StatePatch(operation="append", path="observations", value=ObservationRecord(
+            source="tool:list_files", step_id="s1", kind="execution", outcome="succeeded", summary="ok", data_ref="o1")),
+    ], expected_version=0, actor="supervisor")
+    engine, _, world, _, _ = setup()
+    world.notes["notes/q3.md"] = "q3 text"
+    step = read_step(step_id="s2")
+    step["tool"]["arguments"] = {"note_id": {"$ref": "s1.files.-1"}}
+    result = await engine.execute(request(state, step))
+    assert result.status is ExecutionStatus.succeeded and result.output == {"text": "q3 text"}
+
+    step["tool"]["arguments"] = {"note_id": {"$ref": "s1.paths.0"}}
+    result = await engine.execute(request(state, step))
+    assert result.error.code == "missing_input"
+    assert "fields ['files', 'truncated']" in result.error.safe_summary and "no 'paths'" in result.error.safe_summary
+    step["tool"]["arguments"] = {"note_id": {"$ref": "s1.files.5"}}
+    assert "a list of 2 item(s)" in (await engine.execute(request(state, step))).error.safe_summary

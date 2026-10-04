@@ -62,6 +62,7 @@ class ReplanResult(BaseModel):
     reason_summary: str
     retry_decision: bool = False
     resume_index: int = 0
+    clarification: str | None = None  # the planner needs the user's answer before it can revise
 
 
 class Replanner:
@@ -93,7 +94,8 @@ class Replanner:
             return ReplanResult(status=ReplanStatus.failed, reason_summary=f"replanning failed: {e.safe_summary}")
         # No safe path remains: block (the user may change constraints) rather than fail (008 behavior).
         if outcome.status is PlannerStatus.needs_clarification:
-            return ReplanResult(status=ReplanStatus.blocked, reason_summary=f"replanning needs input: {outcome.public_reason}")
+            return ReplanResult(status=ReplanStatus.blocked, clarification=outcome.public_reason,
+                                reason_summary=f"replanning needs input: {outcome.public_reason}")
         if outcome.status is not PlannerStatus.planned or outcome.plan is None:
             return ReplanResult(status=ReplanStatus.blocked, reason_summary=f"no revised plan: {outcome.public_reason}")
 

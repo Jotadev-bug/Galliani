@@ -73,3 +73,17 @@ def test_metrics_derived_from_events():
     metrics = {(m.name, tuple(m.tags.items())): m.value for m in derive_metrics(sink.events)}
     assert metrics[("events.retry_scheduled", ())] == 1
     assert metrics[("tasks.finished", (("status", "done"),))] == 1
+
+
+def test_jsonl_sink_stores_redacted_events(tmp_path):
+    import json
+
+    from galliani.observability import JsonlEventSink
+
+    path = tmp_path / "logs" / "events.jsonl"
+    obs = Observability([JsonlEventSink(path)])
+    obs.emit(EventType.tool_called, "t", "ok", metadata={"api_key": "abc", "reasoning": "hidden"})
+    obs.emit(EventType.task_finished, "t", "done")
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [r["type"] for r in rows] == ["tool_called", "task_finished"]
+    assert rows[0]["metadata"] == {"api_key": "[redacted]"}

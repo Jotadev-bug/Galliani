@@ -129,7 +129,9 @@ class AppProviderAdapter(ProviderAdapter):
             raise AdapterError("provider returned an unexpected response", code="malformed_response")
         return WorkerResponse(
             output=raw.text,
-            usage={"input_tokens": raw.usage.input_tokens, "output_tokens": raw.usage.output_tokens},
+            usage={"input_tokens": raw.usage.input_tokens, "output_tokens": raw.usage.output_tokens,
+                   # registry-price estimate in micro-USD (integers keep WorkerResponse.usage provider-neutral)
+                   "cost_micro_usd": round(raw.usage.total_cost * 1_000_000)},
             finish_reason=raw.finish_reason,
         )
 

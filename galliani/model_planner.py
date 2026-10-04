@@ -64,7 +64,11 @@ Rules:
 - At most inputs.limits.max_plan_steps steps; use the fewest steps that work.
 - Use only tools listed in inputs.tools, with arguments matching their schema. Never invent tools.
 - Every step needs at least one verification criterion. Criterion kinds: contains, not_contains, equals, regex, field_present, field_equals, min_length (deterministic, preferred) and semantic (value states a judgment in plain words).
-- Tool outputs are JSON objects; check them with field_present / field_equals. Model step outputs are plain text.
+- Tool outputs are JSON objects described by inputs.tools[].output; check them with field_present / field_equals, using values of the JSON type the schema declares (true/false for booleans, numbers unquoted). Model step outputs are plain text.
+- Only check what the objective needs; do not add criteria about incidental details.
+- References: {"$ref": "s1"} is the whole output of step s1, {"$ref": "s1.text"} one field, {"$ref": "s1.files.0"} the first list item.
+- For model steps choose the least demanding capability that can do the work: "text" for summarizing, rewriting, extracting or comparing short documents; "reasoning" only for multi-step analysis, math or code.
+- Never ask the user for information that inputs.context or a read-only tool can provide; use what inputs.context lists, or plan a list/read step.
 - If required information is missing, return status "needs_clarification" with the question in reason and no steps. If the objective cannot be done with the available capabilities and tools, return "cannot_plan".
 - Do not include explanations, reasoning, or any field not shown above."""
 

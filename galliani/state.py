@@ -46,7 +46,7 @@ TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     S.planning: frozenset({S.executing, S.waiting_for_user, S.blocked, S.failed, S.canceled}),
     S.executing: frozenset({S.verifying, S.replanning, S.waiting_for_user, S.blocked, S.failed, S.canceled}),
     S.verifying: frozenset({S.executing, S.replanning, S.done, S.waiting_for_user, S.blocked, S.failed, S.canceled}),
-    S.replanning: frozenset({S.executing, S.blocked, S.failed, S.canceled}),
+    S.replanning: frozenset({S.executing, S.waiting_for_user, S.blocked, S.failed, S.canceled}),
     S.waiting_for_user: frozenset({S.planning, S.executing, S.replanning, S.blocked, S.failed, S.canceled}),
     S.blocked: frozenset({S.failed, S.canceled}),
     S.done: frozenset(),

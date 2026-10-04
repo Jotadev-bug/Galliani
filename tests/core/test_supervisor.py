@@ -322,3 +322,16 @@ async def test_clarify_requires_open_question_and_respects_replan_budget():
     paused = await h.supervisor.start(start())
     result = await h.supervisor.clarify(paused.task_id, "be specific")
     assert result.status is S.failed and "replan budget" in result.summary
+
+
+async def test_question_during_replanning_pauses_and_resumes_without_charging_budget():
+    plan = two_step_plan(on_fail="replan")
+    h = Harness([plan, {"clarify": "Should the summary mention cloud costs?"}, two_step_plan()],
+                script={"w1": [BAD, GOOD]})
+    paused = await h.supervisor.start(start())
+    assert paused.status is S.waiting_for_user and "cloud costs" in paused.clarification
+    assert h.supervisor.store.get(paused.task_id).replan_count == 0  # no revision happened yet
+    result = await h.supervisor.clarify(paused.task_id, "No, budget only.")
+    assert result.status is S.done
+    state = h.supervisor.store.get(result.task_id)
+    assert state.replan_count == 1 and state.plan.version == 2

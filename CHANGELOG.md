@@ -21,6 +21,11 @@ This project follows spec-driven development. Changelog entries should reference
 - `ModelPlanner` and `ModelSemanticVerifier` (specs 004, 007; Decision 0014).
 - `Supervisor.clarify` to resume after a clarification question (Decision 0013).
 - Workspace toolkit and `python -m galliani.cli` with interactive approvals (Decision 0015).
+- CLI `--events FILE` (redacted JSON Lines event log), plan outline and per-run usage/cost summary.
+
+### Fixed
+
+- Findings from the first live provider runs (Decision 0016): JSON-tolerant equality criteria, nested/indexed `$ref` paths with descriptive failures, replanning questions pause instead of block, workspace listing given to the planner.
 
 ### Changed
 

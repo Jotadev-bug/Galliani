@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable
 from datetime import datetime
+from pathlib import Path
 from enum import Enum
 from typing import Any, Protocol
 
@@ -34,6 +35,7 @@ class EventType(str, Enum):
     retry_scheduled = "retry_scheduled"
     replan_started = "replan_started"
     approval_recorded = "approval_recorded"
+    worker_completed = "worker_completed"
     task_finished = "task_finished"
     diagnostic = "diagnostic"
 
@@ -77,6 +79,18 @@ class InMemoryEventSink:
 
     def for_task(self, task_id: str) -> list[LifecycleEvent]:
         return [e for e in self.events if e.task_id == task_id]
+
+
+class JsonlEventSink:
+    """Appends redacted events to a JSON Lines file for post-run audit (011: events are stored after redaction)."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write(self, event: LifecycleEvent) -> None:
+        with self.path.open("a", encoding="utf-8") as fh:
+            fh.write(event.model_dump_json() + "\n")
 
 
 class Observability:

@@ -48,6 +48,7 @@ from galliani.verification import (
 )
 
 S = TaskStatus
+MAX_CONTEXT_CHARS = 4_000  # reference data passed to planners
 
 
 class UserPolicy(BaseModel):
@@ -271,7 +272,7 @@ class Supervisor:
             self._decision(None, "plan", f"plan v{plan.version} with {len(plan.steps)} step(s)"),
         ])
         self.obs.emit(EventType.plan_created, state.task_id, f"plan v{plan.version} with {len(plan.steps)} step(s)",
-                      plan_id=plan.plan_id, metadata={"steps": [s.step_id for s in plan.steps], "version": plan.version})
+                      plan_id=plan.plan_id, metadata={"steps": self._outline(plan), "version": plan.version})
         return self._transition(state, S.executing, "plan ready; executing")
 
     async def _execute_current(self, state: TaskState) -> TaskState:
@@ -427,14 +428,27 @@ class Supervisor:
             self.obs.emit(EventType.plan_revised, state.task_id, outcome.reason_summary, plan_id=revised.plan_id,
                           step_id=step.step_id, metadata={
                               "version": revised.version,
+                              "steps": self._outline(revised),
                               "previous_plan_id": revised.revision.previous_plan_id if revised.revision else None,
                               "changed_steps": revised.revision.changed_steps if revised.revision else [],
                               "resume_index": outcome.resume_index})
             return self._transition(state, S.executing, f"executing revised plan v{revised.version}")
+        if outcome.clarification:
+            return self._transition(state, S.waiting_for_user, "replanning needs the user's answer", [
+                StatePatch(operation="increment", path="replan_count", value=-1,
+                           reason_summary="no revision was made; the replan is not charged"),
+                StatePatch(operation="set", path="clarification", value=outcome.clarification),
+            ])
         status = S.blocked if outcome.status is ReplanStatus.blocked else S.failed
         return self._finish(state, status, outcome.reason_summary)
 
     # ------------------------------------------------------------------ helpers
+
+    @staticmethod
+    def _outline(plan) -> list[dict[str, str]]:
+        """Public plan outline for events: what each step does, never how a model reasoned about it."""
+        return [{"id": st.step_id, "kind": st.kind.value, "capability": st.required_capability, "purpose": st.purpose}
+                for st in plan.steps]
 
     def _policy(self, task_id: str) -> UserPolicy:
         return self._policies.get(task_id) or UserPolicy()
@@ -444,7 +458,7 @@ class Supervisor:
             objective=state.objective,
             constraints=state.constraints,
             available_capabilities=self.router.capabilities() | set(self.tools.registry.names()),
-            context_summary=state.objective.context[:500],
+            context_summary=state.objective.context[:MAX_CONTEXT_CHARS],
             clarifications=state.clarifications,
         )
 

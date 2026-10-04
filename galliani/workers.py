@@ -96,6 +96,8 @@ class WorkerClient:
                 if not e.fallback_eligible:
                     break
                 continue
+            self.obs.emit(EventType.worker_completed, task_id, f"{worker_id} completed", plan_id=plan_id,
+                          step_id=step_id, metadata={"worker_id": worker_id, "usage": response.usage})
             return WorkerCall(response=response, route=route, worker_id=worker_id, attempted=attempted)
 
         assert last is not None

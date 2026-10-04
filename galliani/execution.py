@@ -78,19 +78,36 @@ class _MissingInput(Exception):
     pass
 
 
+def _describe(value: Any) -> str:
+    if isinstance(value, dict):
+        return f"an object with fields {sorted(map(str, value))[:10]}"
+    if isinstance(value, list):
+        return f"a list of {len(value)} item(s)"
+    return f"a {type(value).__name__}"
+
+
 def _resolve_refs(value: Any, state: TaskState) -> Any:
-    """Replace ``{"$ref": "step_id"}`` or ``{"$ref": "step_id.field"}`` with an earlier step's output."""
+    """Replace ``{"$ref": "step_id"}`` or ``{"$ref": "step_id.path"}`` with an earlier step's output.
+
+    The path is dotted; numeric parts index into lists (``s1.files.0``). A failed lookup names what the
+    output actually contains (field names or list length only), so replanning gets usable evidence.
+    """
     if isinstance(value, dict):
         if set(value) == {"$ref"}:
-            step_id, _, field = str(value["$ref"]).partition(".")
+            step_id, *path = str(value["$ref"]).split(".")
             ref = state.latest_output_ref(step_id)
             if ref is None or ref not in state.outputs:
-                raise _MissingInput(step_id)
+                raise _MissingInput(f"reference {value['$ref']}: step {step_id} has no successful output")
             out = state.outputs[ref]
-            if field:
-                if not isinstance(out, dict) or field not in out:
-                    raise _MissingInput(f"{step_id}.{field}")
-                out = out[field]
+            walked = step_id
+            for part in path:
+                if isinstance(out, dict) and part in out:
+                    out = out[part]
+                elif isinstance(out, list) and part.lstrip("-").isdigit() and -len(out) <= int(part) < len(out):
+                    out = out[int(part)]
+                else:
+                    raise _MissingInput(f"reference {value['$ref']}: {walked} is {_describe(out)}, no '{part}'")
+                walked += f".{part}"
             return out
         return {k: _resolve_refs(v, state) for k, v in value.items()}
     if isinstance(value, list):
@@ -130,8 +147,8 @@ class ExecutionEngine:
         try:
             inputs = {ref: _resolve_refs({"$ref": ref}, state) for ref in step.input_refs}
         except _MissingInput as e:
-            return self._result(step, ExecutionStatus.failed, "supervisor", f"input {e} is missing",
-                                error=StepError(code="missing_input", retryable=False, safe_summary=f"input {e} is missing"))
+            return self._result(step, ExecutionStatus.failed, "supervisor", str(e),
+                                error=StepError(code="missing_input", retryable=False, safe_summary=str(e)))
         call = await self.workers.run(
             task_id=request.task_id, step_id=step.step_id, capability={step.required_capability},
             instruction=step.instruction, inputs=inputs, policy=request.routing_policy, plan_id=request.plan_id,
@@ -159,8 +176,8 @@ class ExecutionEngine:
         try:
             arguments = _resolve_refs(step.tool.arguments, state)
         except _MissingInput as e:
-            return self._result(step, ExecutionStatus.failed, f"tool:{step.tool.tool_name}", f"input {e} is missing",
-                                error=StepError(code="missing_input", retryable=False, safe_summary=f"input {e} is missing"))
+            return self._result(step, ExecutionStatus.failed, f"tool:{step.tool.tool_name}", str(e),
+                                error=StepError(code="missing_input", retryable=False, safe_summary=str(e)))
         call = ToolCall(tool_name=step.tool.tool_name, call_id=new_id("call"), arguments=arguments,
                         idempotency_key=f"{request.task_id}:{step.step_id}:{state.action_count + 1}",
                         requested_by_step=step.step_id)

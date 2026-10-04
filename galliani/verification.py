@@ -93,6 +93,27 @@ def _text(output: Any) -> str:
     return output if isinstance(output, str) else str(output)
 
 
+def _scalar_text(value: Any) -> str | None:
+    """Canonical text for a JSON scalar: booleans as true/false, numbers without a trailing .0."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(int(value)) if float(value).is_integer() else str(value)
+    if isinstance(value, str):
+        return value.strip().lower()
+    return None
+
+
+def loosely_equal(actual: Any, expected: Any) -> bool:
+    """Equality that tolerates JSON scalar type mismatches ("false" vs false, "3" vs 3) written by planners."""
+    if actual == expected and type(actual) is type(expected):
+        return True
+    a, e = _scalar_text(actual), _scalar_text(expected)
+    if a is not None and e is not None and (isinstance(actual, str) != isinstance(expected, str)):
+        return a == e
+    return actual == expected and not (isinstance(actual, bool) or isinstance(expected, bool))
+
+
 def check_deterministic(criterion: Criterion, output: Any) -> bool:
     target = output
     if criterion.field and criterion.kind not in ("field_present", "field_equals"):
@@ -105,7 +126,7 @@ def check_deterministic(criterion: Criterion, output: Any) -> bool:
         case "not_contains":
             return str(criterion.value).lower() not in _text(target).lower()
         case "equals":
-            return target == criterion.value
+            return loosely_equal(target, criterion.value)
         case "regex":
             return re.search(str(criterion.value), _text(target)) is not None
         case "min_length":
@@ -113,7 +134,7 @@ def check_deterministic(criterion: Criterion, output: Any) -> bool:
         case "field_present":
             return _get_field(output, criterion.field or "") is not _MISSING
         case "field_equals":
-            return _get_field(output, criterion.field or "") == criterion.value
+            return loosely_equal(_get_field(output, criterion.field or ""), criterion.value)
     raise ValueError(f"not a deterministic criterion: {criterion.kind}")
 
 

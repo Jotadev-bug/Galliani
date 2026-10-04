@@ -113,3 +113,47 @@ def test_console_sink_prints_public_summaries_only():
         EventType.tool_called, "t", "read_file succeeded",
         step_id="s1", metadata={"arguments": {"path": "x"}})
     assert lines == ["  - tool_called [s1]: read_file succeeded"]
+
+
+async def test_plan_outline_is_printed_and_events_can_be_saved(workspace, tmp_path):
+    lines: list[str] = []
+    registry = ModelRegistry([spec("fast", "cheap", 0.5, 0.1, 0.4), spec("smart", "strong", 0.9, 3, 15)],
+                             {"mock": ProviderConfig(adapter="mock")})
+    pool = ProviderPool(registry, overrides={"mock": MockProvider("mock", responder=responder(PLAN))})
+    events = tmp_path / "run.jsonl"
+    rt = build_runtime(workspace, registry=registry, pool=pool, out=lines.append, events_path=events)
+    await run("Summarize", workspace, runtime=rt, ask=lambda _: "y", out=lines.append)
+    assert "      s1 (tool: read_file) read the notes" in lines
+    assert "      s2 (model: text) summarize" in lines
+    assert '"type":"task_finished"' in events.read_text(encoding="utf-8")
+
+
+async def test_planner_gets_workspace_listing_as_data_without_protected_files(workspace):
+    from galliani.cli import workspace_overview
+
+    (workspace / ".env").write_text("API_KEY=x", encoding="utf-8")
+    overview = workspace_overview(workspace)
+    assert "- notes/q3.md" in overview and ".env" not in overview
+
+    lines: list[str] = []
+    rt, mock = runtime(workspace, lines=lines)
+    seen = {}
+    original = rt.adapter.send
+
+    async def spy(request):
+        if request.step_id == "planner":
+            seen.update(request.inputs)
+        return await original(request)
+
+    rt.adapter.send = spy
+    await run("Summarize", workspace, runtime=rt, ask=lambda _: "y", out=lines.append, context="Audience: execs")
+    assert "- notes/q3.md" in seen["context"] and "Audience: execs" in seen["context"]
+
+
+async def test_usage_and_estimated_cost_are_reported(workspace):
+    lines: list[str] = []
+    rt, mock = runtime(workspace, lines=lines)
+    await run("Summarize", workspace, runtime=rt, ask=lambda _: "y", out=lines.append)
+    usage = next(line for line in lines if line.startswith("Usage:"))
+    assert f"{len(mock.calls)} model call(s)" in usage and "est. $" in usage
+    assert rt.console.usage.cost_micro_usd > 0
