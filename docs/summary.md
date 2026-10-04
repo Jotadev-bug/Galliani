@@ -1,5 +1,0 @@
-- The v0.1 agent loop follows a structured progression from objective definition and planning through routing, action execution, observation, verification, and potential replanning.
-- The supervisor acts as the central coordinator, managing task states and lifecycle transitions while ensuring each step adheres to specific constraints and inputs.
-- Verification is mandatory for task completion, ensuring that the model's actions align with the defined goals before the task is marked as done.
-- Loop limits—such as maximum retries, replans, and steps—are implemented to prevent uncontrolled execution and ensure terminal outcomes.
-- Each stage of the loop corresponds to a dedicated module, with support for both deterministic and model-based planning and verification processes.
