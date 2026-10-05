@@ -114,3 +114,86 @@ async def test_read_files_respects_the_total_size_limit(ws, monkeypatch):
     result = await ToolSystem(ws.registry()).execute(call("read_files", path="notes"), task_id="t")
     assert [f["path"] for f in result.data["files"]] == ["notes/q2.md"]
     assert result.data["skipped"] == ["notes/q3.md"] and result.data["truncated"]
+
+
+BUNDLE = """Here are the files.
+=== index.html ===
+```html
+<!doctype html>
+<script src="js/app.js"></script>
+```
+
+=== styles.css ===
+body { margin: 0; }
+=== js/app.js ===
+```javascript
+const items = JSON.parse(localStorage.getItem("items") || "[]");
+```
+"""
+
+
+def test_bundle_parsing_drops_preamble_and_code_fences():
+    from galliani.workspace import parse_bundle
+
+    assert parse_bundle(BUNDLE) == [
+        ("index.html", '<!doctype html>\n<script src="js/app.js"></script>\n'),
+        ("styles.css", "body { margin: 0; }\n"),
+        ("js/app.js", 'const items = JSON.parse(localStorage.getItem("items") || "[]");\n'),
+    ]
+
+
+async def test_write_files_writes_any_file_type_with_one_approval(ws):
+    system = ToolSystem(ws.registry())
+    blocked = await system.execute(call("write_files", bundle=BUNDLE), task_id="t")
+    assert blocked.error.code == "permission_required" and blocked.permission_request.scope == "."
+    # the prompt names every file it will write (009: specific, understandable prompts)
+    assert "3 file(s): index.html" in blocked.permission_request.reason_summary
+    assert "js/app.js" in blocked.permission_request.reason_summary
+    assert not (ws.root / "index.html").exists()
+
+    approval = ApprovalRecord(user_id="u", action="write_files", scope=".")
+    ok = await system.execute(call("write_files", bundle=BUNDLE), task_id="t", approvals=[approval])
+    assert ok.status is ToolStatus.succeeded
+    assert ok.data["paths"] == ["index.html", "styles.css", "js/app.js"]
+    assert [a["uri"] for a in ok.artifacts] == ["index.html", "styles.css", "js/app.js"]
+    assert (ws.root / "js" / "app.js").read_text(encoding="utf-8").startswith("const items")
+    assert "```" not in (ws.root / "index.html").read_text(encoding="utf-8")
+
+
+async def test_write_files_scope_is_the_common_folder(ws):
+    system = ToolSystem(ws.registry())
+    files = [{"path": "site/index.html", "content": "<p>hi</p>"}, {"path": "site/js/app.js", "content": "1;"}]
+    blocked = await system.execute(call("write_files", files=files), task_id="t")
+    assert blocked.permission_request.scope == "site"
+    elsewhere = ApprovalRecord(user_id="u", action="write_files", scope="other")
+    denied = await system.execute(call("write_files", files=files), task_id="t", approvals=[elsewhere])
+    assert denied.error.code == "permission_denied"
+
+
+async def test_write_files_refuses_the_whole_set_if_one_path_is_protected(ws):
+    system = ToolSystem(ws.registry())
+    approval = ApprovalRecord(user_id="u", action="write_files", scope=".")
+    bad = "=== app.js ===\n1;\n=== .env ===\nAPI_KEY=x\n"
+    result = await system.execute(call("write_files", bundle=bad), task_id="t", approvals=[approval])
+    assert result.error.code == "rejected_input" and not (ws.root / "app.js").exists()
+    assert (ws.root / ".env").read_text(encoding="utf-8") == "API_KEY=real-secret"
+
+
+@pytest.mark.parametrize("arguments,reason", [
+    ({"bundle": "just prose, no headers"}, "no '=== path ===' file headers"),
+    ({"bundle": "=== ../x.js ===\n1;"}, "may not leave the workspace"),
+    ({"bundle": "=== a.js ===\n1;\n=== a.js ===\n2;"}, "more than once"),
+    ({}, "no files to write"),
+])
+async def test_write_files_invalid_sets_are_never_run(ws, arguments, reason):
+    result = await ToolSystem(ws.registry()).execute(call("write_files", **arguments), task_id="t")
+    assert result.error.code == "invalid_arguments" and reason in result.error.safe_summary
+
+
+async def test_env_templates_are_ordinary_files_but_env_files_stay_protected(ws):
+    system = ToolSystem(ws.registry())
+    approval = ApprovalRecord(user_id="u", action="write_file", scope=".env.example")
+    ok = await system.execute(call("write_file", path=".env.example", content="API_KEY="), task_id="t",
+                              approvals=[approval])
+    assert ok.status is ToolStatus.succeeded
+    assert (await system.execute(call("read_file", path=".env.local"), task_id="t")).error.code == "rejected_input"

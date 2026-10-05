@@ -8,6 +8,10 @@ This project follows spec-driven development. Changelog entries should reference
 
 ### Added
 
+- AGPL-3.0 license, CI and a release pipeline (Decision 0026): tests and evals run on every push and pull request, and pushing a `v*` tag builds, smoke-tests and publishes `Galliani.exe` with its checksum on GitHub Releases.
+- New logo as the app icon and in-app logo (Decision 0025): the icons and favicon are generated from `assets/logo.png`, and the UI palette moves from blue and violet to the logo's graphite and silver.
+- Showcase video (Decision 0024): `video/` Remotion project. It is a 28-second greyscale, single-shot product showcase: a coding prompt is routed to Sonnet 5.5 (the Claude mascot high-fives the robot), with the model and cost always visible, savings against Opus 5.5 at the end, and the new logo.
+- Desktop UI redesign (spec 012, Decision 0023): icon rail, Home dashboard with recent tasks and totals, conversation header with tabs (Overview, Plan, Activity, Files, Settings), an agent progress stepper with model and tools, and a compact final response that folds code and does not repeat file contents.
 - Initial spec-driven documentation structure.
 - v0.1 orchestration objective: objective, plan, routing, action/tool, observation, verification, replan/retry, done.
 - Root project guidance for Agent Supervisor architecture.
@@ -27,6 +31,9 @@ This project follows spec-driven development. Changelog entries should reference
 - Desktop UI for the agent (spec 012, Decision 0018): Agent page with objective form and folder picker, live plan and activity, approval and question cards, verified result with files written, memory indicator, reconnect banner; `/api/agent/*` with long polling; `galliani/viewmodel.py` view models built only from redacted state.
 - Durable memory (spec 010, Decision 0019): JSON store in the app data folder, `user` and per-folder scopes, deterministic scoped retrieval before planning, approval-gated `remember` tool, secrets never persisted, memory API, eval gates `unauthorized_memory_writes` and `secret_memory_persistence`.
 - Chat and Agent conversations in one chat screen (Decision 0020): composer switch, teal accent for agent conversations, task reply cards, per-conversation folder, Memory page; semantic verifier gets source data.
+- `write_files` workspace tool (Decision 0021, specs 005/009): several files of any type in one step and one approval, from a file list or a model-generated `=== path ===` bundle, so multi-file builds fit the 5-step plan limit; `.env.example`-style templates are no longer protected.
+- Accept-edits mode (spec 014, Decision 0022): opt-in per task, workspace file writes run without a prompt while every other restricted action still asks. Composer toggle, "Yes, and accept edits" on write approvals, task badge, and new/overwritten labels in the UI; `--accept-edits` and the `a` answer in the CLI; `edit_mode` in the agent API; eval fixtures and the `unaudited_auto_approvals` gate.
+- Remotion explainer video spec (spec 015): vertical-first, fast kinetic typography video brief for explaining Galliani's supervisor loop, Agent Workers, provider adapters, Task State vs Memory, verification, retry/replan, and no chain-of-thought exposure.
 
 ### Fixed
 

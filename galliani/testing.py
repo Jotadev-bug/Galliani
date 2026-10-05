@@ -155,7 +155,7 @@ def fixture_tool_registry(world: FixtureWorld) -> ToolRegistry:
                        resource_field="note_id", idempotent=True),
         ToolDefinition(name="write_file", description="Write a file.", input_schema=WriteIn, output_schema=WriteOut,
                        permission_level=PermissionLevel.write, side_effects=[SideEffect.write], handler=write_file,
-                       resource_field="path"),
+                       resource_field="path", workspace_edit=True),
         ToolDefinition(name="delete_file", description="Delete a file.", input_schema=PathIn, output_schema=DeleteOut,
                        permission_level=PermissionLevel.destructive, side_effects=[SideEffect.delete],
                        handler=delete_file, resource_field="path"),

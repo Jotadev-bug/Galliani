@@ -1,0 +1,31 @@
+# Tests and deterministic evals on every push and pull request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest  # the platform the desktop app ships on
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[dev,desktop]"
+      - name: Tests
+        run: python -m pytest -q
+      - name: Evals
+        run: python -m galliani.evaluation evals/cases

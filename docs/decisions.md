@@ -156,3 +156,81 @@ The separate Agent page (Decision 0018) is folded into the chat screen. A switch
 - Card snapshots are kept with the conversation in local storage, so finished tasks survive a reload. A task the server no longer has (the app was closed) is shown as stopped, with its last known state.
 - A Memory page (spec 010) lists, adds and forgets notes. Sensitive notes are redacted in the list and never sent to models.
 - The semantic verifier now also receives the step's expected output and the source data it used, so it can judge claims about the source instead of answering "unsure".
+
+## Decision 0021: `write_files` for multi-file builds
+
+Status: Accepted (2026-10-05)
+
+A live run asked the agent to build a small web app (`index.html`, `styles.css`, `app.js`). The planner answered `cannot_plan`: with only `write_file`, every file needed a generation step and a write step, so six steps exceeded the 5-step plan limit. No file type was ever blocked. The limit of one file per write call made any build of three or more files impossible. The fix mirrors `read_files` (Decision 0017) and keeps the step limits unchanged (Decision 0008):
+
+- `write_files` (a `write` action that requires approval) writes up to 50 files, 400 KB in total, in one call. It takes either `files: [{path, content}]` or a `bundle`, which is a model step's text where each file starts with a line `=== path/to/file ===`. Text before the first header and a code fence wrapping a whole file are removed, so a model's framing never ends up in the written files. Every path is validated and checked against protected names before any file is written.
+- The permission scope is the deepest folder that holds every file. The approval prompt lists each file with its size (009: specific, understandable prompts). One approval covers that call only.
+- A tool's `artifact_field` may name a list, so each written file is reported as an artifact.
+- The planner prompt says to save generated files with one model step that produces a bundle plus one `write_files` step, never one step pair per file. The same web app now plans in 2 steps.
+- `.env.example`, `.env.sample` and `.env.template` are ordinary project files. Other `.env*` files stay protected.
+
+## Decision 0022: Accept-edits mode (spec 014 approved)
+
+Status: Accepted (2026-10-05)
+
+Spec 014 is approved for implementation with its draft defaults. The UI does not remember the mode across app restarts. Overwrites are auto-approved but labelled in the result.
+
+- **Policy.** `EditMode` (`ask` | `accept_edits`) lives in `UserPolicy` and `TaskState`. `PermissionPolicy.evaluate` applies the mode only where a request would otherwise need the user, and only to `write`-level requests whose tool declares `workspace_edit`. A policy rule that denies writes, a missing rule, and an explicit approval all take precedence. An approved write is credited to the approval, not the mode. An earlier approval for another path no longer causes a scope-mismatch denial while the mode is on. The registry refuses `workspace_edit` on any tool that is not `write`-level.
+- **Switching while a task runs.** Task State is versioned, so a switch made from the UI during a run would conflict with the loop. `Supervisor.set_edit_mode` updates the task's policy at once and emits `edit_mode_changed`. An idle task records the change in Task State immediately; a running loop records it at the start of its next step, before any permission check.
+- **Audit.** Automatic approvals are ordinary `PermissionDecision`s with the audit summary "allowed by accept-edits mode" and a `permission_decided` event (`metadata.auto = true`). No `ApprovalRecord` is created, because no user approved that call. Write tools report `created` or `overwritten` for each file, and the task view lists them as `files_changed` with an `edits_auto_approved` count.
+- **UI.** In agent mode the composer has an "Ask before edits" / "Accept edits" toggle next to the folder chip, similar to the edit-mode switch in other coding agents. The choice is kept in memory per conversation and resets for a new conversation or after a restart. Switching it during a live task also switches that task. Write approvals offer "Yes, and accept edits". Running cards show an "Accepting edits" badge, and results mark files as new or overwritten.
+- **Evaluation.** `evals/cases/v0_1_accept_edits.yaml` covers the acceptance criteria. Any accept-edits approval of a non-eligible action counts as a permission bypass, and the new blocking gate `unaudited_auto_approvals` must be 0.
+
+## Decision 0023: Dashboard and task-view redesign of the desktop UI
+
+Status: Accepted (2026-10-05)
+
+The desktop UI (spec 012) is restyled after a dashboard and task-view mockup. Every existing function stays: routed chat with preview and routing details, agent tasks with approvals, questions, accept-edits, memory, models, usage, keys and settings. No API or view-model contract changes.
+
+- **Shell.** An icon rail replaces the sidebar: Home, All conversations, Memory, Models, Usage, API Keys, Settings, and the OpenRouter credit. The conversation list moves to a drawer that the header's panel button opens. The global routing bar is removed. The routing mode lives in the composer, and each answer's model chip expands that answer's routing details.
+- **Home.** Welcome text, the composer (Chat | Agent, folder, edit mode), suggestions, the four most recent conversations with their status, and totals (tasks completed, spent, saved).
+- **Conversation view.** A header shows the title, status, duration and cost, with Stop while a task runs and Copy result after it ends. Tabs: Overview, Plan, Activity, Files and Settings for agent conversations; Overview, Routing and Settings for chats.
+- **Running task.** "Agent progress" is a stepper: understanding the objective, planning, each plan step, then reviewing and finishing. A "Model & tools" card shows the current model, taken from the router's public `route_selected` rationale, and the tools in the plan. Approval and question prompts appear right under the progress, next to the composer. Their accessible markup is unchanged.
+- **Finished task: compact final response.** The Overview shows the outcome, file cards for `files_changed` or artifacts, verification, and memory. It does not repeat the whole output:
+  - When the task saved files, the model text written into them is not shown again.
+  - A text output is clamped, with "Show more".
+  - Every fenced code block is folded into a collapsed "language · N lines" row.
+  - The raw tool record (JSON) is only in the Files tab.
+  Spec 012's "Done" criterion still holds: final result, verification summary and artifacts are visible. The full content stays reachable, but it is never dumped by default.
+- Suggested next steps under the final response only fill the composer. They never send anything.
+
+## Decision 0024: Showcase video in `video/`
+
+Status: Accepted (2026-10-05)
+
+The first Remotion explainer for spec 015 (kinetic text, 28 beats, wipes) was too busy. It is replaced, at the user's request, with a quiet product showcase that sets spec 015 aside:
+
+- One continuous 28-second shot at 1920x1080 with a smooth camera. It snaps in (up to 1.5x) while typing and while the tasks load, eases between focus points, and does not zoom during the logo reveal, ending on the new mark: a G and a star, cut out of the logo tile in `video/public/galliani-mark*.png`. The G draws itself and the robot becomes the star. There are no cuts or transitions, and every movement is a smooth eased move.
+- Dark background and greyscale UI only. The chat bar appears and a prompt is typed and sent. The agent card plans four steps, runs them (including a write approval), verifies, and shows the resulting file.
+- There is no explanatory copy. The UI itself is the message. A tiny greyscale robot wanders the chat, curious about each moment.
+- Model choice and cost are part of the core UI. The agent card header always shows the current model and running cost. A routing panel weighs Haiku 4.5, Sonnet 5.5 and Opus 5.5 for the coding step and picks Sonnet 5.5. The finished task leads with model, cost and savings tiles. The figures come from the published per-token prices and illustrative token counts.
+- The Claude mascot (our own pixel-style SVG, the only color in the video) pops out of the chosen model and high-fives the robot. Public use of Anthropic's marks should follow Anthropic's brand guidelines.
+- Timing, copy and the robot's path live in `video/src/timeline.ts`. The logo pieces are the only assets, and the render is deterministic.
+
+Spec 015 still describes the old explainer. Its requirements on copy beats, concept coverage, duration (35-55 s) and vertical-first output no longer apply to this video. Update or retire the spec before relying on it.
+
+## Decision 0025: The logo tile is the app icon, and the UI palette follows it
+
+Status: Accepted (2026-10-06)
+
+The new logo (`assets/logo.png`: a silver G and star on a graphite rounded tile) replaces the blue-to-violet SVG "G" everywhere:
+
+- `scripts/make_icon.py` derives every icon from `assets/logo.png`: `assets/galliani.ico` and `assets/galliani.icns` for the desktop build, `assets/galliani.png`, and `app/web/logo.png` (128 px). The desktop build runs it before packaging, as before.
+- The web UI uses `app/web/logo.png` as its favicon and rail logo. The server serves it at `/logo.png`. Like `/`, it needs no app token, because a favicon request cannot send one.
+- The palette moves from blue and violet to the logo's graphite and silver. The dark theme's background is the tile color (`#121318`). The accent is silver in the dark theme and graphite in the light theme, and primary buttons and the send button use the G's silver gradient (dark) or a graphite gradient (light). Links keep their underline because the accent is close to the text color.
+- Status colors (good, warn, bad), the agent's teal (Decision 0020, slightly desaturated) and the vendor marks stay in color, because they carry meaning. Chat no longer uses violet.
+
+## Decision 0026: AGPL-3.0 license and a free release pipeline
+
+Status: Accepted (2026-10-06)
+
+- **License.** Galliani is licensed under the GNU AGPL-3.0 or later, replacing the reserved placeholder in `LICENSE.md`. It is an approved open-source license, so the project qualifies for free open-source code signing. Anyone who offers a modified Galliani as a network service must publish their changes, which protects a future hosted version and paid credits. The full text is in `LICENSE`, unmodified from gnu.org.
+- **CI.** `.github/workflows/ci.yml` runs the tests and the deterministic evals on Windows (the platform the app ships on) for every push to `main` and every pull request.
+- **Releases.** `.github/workflows/release.yml` runs on a `v*` tag. It checks that the tag matches `pyproject.toml`, runs the tests, builds `Galliani.exe` with `scripts/build_desktop.py`, and fails unless the binary's `--smoke-test` passes. It then publishes the `.exe` and its SHA-256 on GitHub Releases. GitHub attaches the tagged source, which is how the binary's source is offered under the AGPL. Hosting and builds cost nothing for a public repository.
+- **Signing.** Builds are unsigned for now. The release notes explain the SmartScreen "Run anyway" step and the checksum. Signing will be added as a workflow step once the project is accepted by an open-source signing program.
+- The desktop smoke test also checks that the logo is bundled (`/logo.png`, Decision 0025).

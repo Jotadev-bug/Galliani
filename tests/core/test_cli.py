@@ -177,3 +177,69 @@ async def test_cli_budget_pauses_for_approval_when_exceeded(workspace):
     text = "\n".join(lines)
     assert code == 1 and "extend_budget:1" in text and "Status: blocked" in text
     assert not (workspace / "summary.md").exists()
+
+
+WEB_PLAN = {
+    "status": "planned", "reason": "generate the app, then save it",
+    "steps": [
+        {"step_id": "s1", "kind": "model", "purpose": "write the app", "required_capability": "reasoning",
+         "expected_output": "a file bundle", "instruction": "Write index.html, styles.css and app.js as a bundle.",
+         "verification_criteria": [{"kind": "contains", "value": "=== app.js ==="}]},
+        {"step_id": "s2", "kind": "tool", "purpose": "save the files", "required_capability": "write_files",
+         "expected_output": "files written", "tool": {"tool_name": "write_files", "arguments": {"bundle": {"$ref": "s1"}}},
+         "verification_criteria": [{"kind": "field_present", "field": "paths"}]},
+    ],
+}
+WEB_BUNDLE = '=== index.html ===\n```html\n<script src="app.js"></script>\n```\n=== styles.css ===\nbody{}\n=== app.js ===\nlet n = 1;\n'
+
+
+async def test_multi_file_build_fits_the_plan_and_needs_one_approval(workspace):
+    registry = ModelRegistry([spec("fast", "cheap", 0.5, 0.1, 0.4), spec("smart", "strong", 0.9, 3, 15)],
+                             {"mock": ProviderConfig(adapter="mock")})
+
+    def respond(messages, model) -> str:
+        task = messages[-1].content
+        if "planning worker" in task:
+            return json.dumps(WEB_PLAN)
+        if "verification worker" in task:
+            return json.dumps({"verdict": "pass", "summary": "ok"})
+        return WEB_BUNDLE
+
+    pool = ProviderPool(registry, overrides={"mock": MockProvider("mock", responder=respond)})
+    rt = build_runtime(workspace, registry=registry, pool=pool, out=lambda _: None)
+    prompts: list[str] = []
+    code = await run("Build a counter web app", workspace, runtime=rt, ask=lambda q: prompts.append(q) or "y",
+                     out=lambda _: None)
+    assert code == 0 and len(prompts) == 1
+    assert (workspace / "index.html").read_text(encoding="utf-8") == '<script src="app.js"></script>\n'
+    assert (workspace / "app.js").read_text(encoding="utf-8") == "let n = 1;\n"
+    assert (workspace / "styles.css").exists()
+
+
+async def test_accept_edits_flag_and_a_answer(workspace):
+    lines: list[str] = []
+    rt, _ = runtime(workspace, lines=lines)
+    asked: list[str] = []
+    code = await run("Summarize", workspace, runtime=rt, ask=lambda q: asked.append(q) or "", out=lines.append,
+                     accept_edits=True)
+    assert code == 0 and asked == [] and "edits: accepted without asking" in "\n".join(lines)
+
+    (workspace / "summary.md").unlink()
+    rt, _ = runtime(workspace)
+    prompts: list[str] = []
+    code = await run("Summarize", workspace, runtime=rt, ask=lambda q: prompts.append(q) or "a", out=lambda _: None)
+    assert code == 0 and "a = yes, and accept edits" in prompts[0] and (workspace / "summary.md").exists()
+
+
+def test_accept_edits_cli_flag_is_parsed(monkeypatch, tmp_path):
+    import galliani.cli as cli
+
+    seen = {}
+
+    async def fake_run(objective, workspace, **kw):
+        seen.update(kw)
+        return 0
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    assert cli.main(["build", "--workspace", str(tmp_path), "--accept-edits"]) == 0
+    assert seen["accept_edits"] is True

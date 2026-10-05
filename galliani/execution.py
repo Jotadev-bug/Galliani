@@ -182,11 +182,12 @@ class ExecutionEngine:
                         idempotency_key=f"{request.task_id}:{step.step_id}:{state.action_count + 1}",
                         requested_by_step=step.step_id)
         result = await self.tools.execute(call, task_id=request.task_id, approvals=state.approvals,
-                                          reason_summary=step.purpose)
+                                          reason_summary=step.purpose, edit_mode=state.edit_mode)
         if result.permission is not None:
             self.obs.emit(EventType.permission_decided, request.task_id, result.permission.audit_summary,
                           plan_id=request.plan_id, step_id=step.step_id, call_id=call.call_id,
-                          metadata={"status": result.permission.status.value, "scope": result.permission.scope})
+                          metadata={"status": result.permission.status.value, "scope": result.permission.scope,
+                                    "auto": result.permission.audit_summary.endswith("accept-edits mode")})
         self.obs.emit(EventType.tool_called, request.task_id, result.observation_summary, plan_id=request.plan_id,
                       step_id=step.step_id, call_id=call.call_id,
                       metadata={"tool": call.tool_name, "status": result.status.value, "arguments": call.arguments,

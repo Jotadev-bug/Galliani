@@ -5,16 +5,20 @@
   scopes are always clean relative paths.
 - Symlinks that escape the root are refused at execution time.
 - Credential-like files (`.env`, keys, `.git/`) are never read or written, so secrets cannot enter
-  Task State (002 security).
-- `list_files` and `read_file` are read-only; `write_file` is a `write` action that needs approval.
+  Task State (002 security). Env templates such as `.env.example` are ordinary project files.
+- `list_files` and `read_file` are read-only; `write_file` and `write_files` are `write` actions that
+  need approval. `write_files` writes a whole set of files (e.g. a web page's HTML, CSS and JS) in one
+  step and one approval, checking every path before it writes any.
 """
 
 from __future__ import annotations
 
 import fnmatch
+import re
 from pathlib import Path, PurePosixPath
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from galliani.permissions import PermissionLevel
 from galliani.tools import SideEffect, ToolDefinition, ToolInputRejected, ToolRegistry
@@ -25,9 +29,38 @@ MAX_LIST = 200
 MAX_READ_MANY_FILES = 30
 MAX_READ_MANY_BYTES = 200_000  # total text returned by one read_files call
 MAX_READ_MANY_FILE_BYTES = 40_000
+MAX_WRITE_MANY_FILES = 50
+MAX_WRITE_MANY_BYTES = 400_000  # total content written by one write_files call
 BLOCKED_PATTERNS = (".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*", "*.p12", "*.pfx",
                     "credentials*", "secrets*")
+TEMPLATE_NAMES = {".env.example", ".env.sample", ".env.template"}  # placeholders, not secrets
 BLOCKED_DIRS = {".git", ".venv", "node_modules", "__pycache__"}
+BUNDLE_HEADER = re.compile(r"^===\s*(?:file:\s*)?(\S(?:.*\S)?)\s*===\s*$", re.IGNORECASE)
+FENCE = re.compile(r"\A```[^\n`]*\n(.*?)\n?```\s*\Z", re.DOTALL)
+
+
+def parse_bundle(bundle: str) -> list[tuple[str, str]]:
+    """Split a file bundle into (path, content) pairs.
+
+    Each file starts with a line `=== path/to/file ===` and runs to the next header. Text before the
+    first header is ignored, and a code fence wrapping a whole file is removed, so a model's usual
+    framing ("Here are the files", ```html ... ```) never ends up inside the written files.
+    """
+    files: list[tuple[str, list[str]]] = []
+    for line in bundle.replace("\r\n", "\n").split("\n"):
+        header = BUNDLE_HEADER.match(line)
+        if header:
+            files.append((header.group(1), []))
+        elif files:
+            files[-1][1].append(line)
+    out = []
+    for path, lines in files:
+        body = "\n".join(lines).strip("\n")
+        fenced = FENCE.match(body.strip())
+        if fenced:
+            body = fenced.group(1)
+        out.append((path, body + "\n" if body else ""))
+    return out
 
 
 def normalize_relative(path: str) -> str:
@@ -94,6 +127,65 @@ class WriteIn(_PathArgs):
 class WriteOut(BaseModel):
     path: str
     bytes: int
+    change: Literal["created", "overwritten"]  # 014 R5: overwrites stay visible when no prompt was shown
+
+
+class WriteManyIn(BaseModel):
+    files: list[WriteIn] = Field(default_factory=list, max_length=MAX_WRITE_MANY_FILES)
+    bundle: str = Field(default="", max_length=MAX_WRITE_MANY_BYTES)  # text from a model step; see parse_bundle
+
+    @model_validator(mode="after")
+    def _one_file_set(self) -> WriteManyIn:
+        if self.files and self.bundle.strip():
+            raise ValueError("give either files or bundle, not both")
+        if self.bundle.strip():
+            parsed = parse_bundle(self.bundle)
+            if not parsed:
+                raise ValueError("bundle has no '=== path ===' file headers")
+            if len(parsed) > MAX_WRITE_MANY_FILES:
+                raise ValueError(f"at most {MAX_WRITE_MANY_FILES} files per call")
+            try:
+                self.files = [WriteIn(path=path, content=content) for path, content in parsed]
+            except ValidationError as e:
+                reason = str(e.errors()[0]["msg"]).removeprefix("Value error, ")
+                raise ValueError(f"a bundle file is invalid: {reason}") from None
+            self.bundle = ""
+        if not self.files:
+            raise ValueError("no files to write")
+        paths = [f.path for f in self.files]
+        if "." in paths:
+            raise ValueError("every file needs a file name")
+        if len(set(paths)) != len(paths):
+            raise ValueError("the same file appears more than once")
+        if sum(len(f.content) for f in self.files) > MAX_WRITE_MANY_BYTES:
+            raise ValueError(f"files exceed {MAX_WRITE_MANY_BYTES} characters in total")
+        return self
+
+    @property
+    def folder(self) -> str:
+        """Deepest folder holding every file: the permission scope of the call."""
+        parents = [PurePosixPath(f.path).parent.parts for f in self.files]
+        common = []
+        for parts in zip(*parents):
+            if len(set(parts)) != 1:
+                break
+            common.append(parts[0])
+        return "/".join(common) or "."
+
+
+class WriteManyOut(BaseModel):
+    paths: list[str]
+    bytes: int
+    files: list[WriteOut]
+
+
+def _size(n: int) -> str:
+    return f"{n} B" if n < 1024 else f"{n / 1024:.1f} KB"
+
+
+def describe_write_many(args: WriteManyIn) -> str:
+    listed = ", ".join(f"{f.path} ({_size(len(f.content.encode('utf-8')))})" for f in args.files)
+    return f"create or overwrite {len(args.files)} file(s): {listed}"
 
 
 class Workspace:
@@ -104,7 +196,9 @@ class Workspace:
 
     def _blocked(self, rel: str) -> bool:
         parts = rel.split("/")
-        return any(p in BLOCKED_DIRS for p in parts) or any(fnmatch.fnmatch(parts[-1], pat) for pat in BLOCKED_PATTERNS)
+        if any(p in BLOCKED_DIRS for p in parts):
+            return True
+        return parts[-1] not in TEMPLATE_NAMES and any(fnmatch.fnmatch(parts[-1], pat) for pat in BLOCKED_PATTERNS)
 
     def resolve(self, rel: str) -> Path:
         if rel != "." and self._blocked(rel):
@@ -182,9 +276,25 @@ class Workspace:
         target = self.resolve(args.path)
         if target.is_dir():
             raise ToolInputRejected(f"{args.path} is a directory")
+        change = "overwritten" if target.exists() else "created"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(args.content, encoding="utf-8")
-        return {"path": args.path, "bytes": len(args.content.encode("utf-8"))}
+        return {"path": args.path, "bytes": len(args.content.encode("utf-8")), "change": change}
+
+    def write_files(self, args: WriteManyIn) -> dict:
+        targets = []
+        for f in args.files:  # every path is checked before anything is written
+            target = self.resolve(f.path)
+            if target.is_dir():
+                raise ToolInputRejected(f"{f.path} is a directory")
+            targets.append(target)
+        written = []
+        for f, target in zip(args.files, targets):
+            change = "overwritten" if target.exists() else "created"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(f.content, encoding="utf-8")
+            written.append({"path": f.path, "bytes": len(f.content.encode("utf-8")), "change": change})
+        return {"paths": [f.path for f in args.files], "bytes": sum(w["bytes"] for w in written), "files": written}
 
     def tools(self) -> list[ToolDefinition]:
         return [
@@ -205,7 +315,18 @@ class Workspace:
             ToolDefinition(name="write_file", description="Create or overwrite a UTF-8 text file in the workspace.",
                            input_schema=WriteIn, output_schema=WriteOut, permission_level=PermissionLevel.write,
                            side_effects=[SideEffect.write], handler=self.write_file, resource_field="path",
-                           artifact_field="path"),
+                           artifact_field="path", workspace_edit=True),
+            ToolDefinition(name="write_files",
+                           description="Create or overwrite several UTF-8 text files (any type: .html, .css, .js, "
+                                       ".py, .json, ...) in one step. Pass `files` as [{path, content}], or pass "
+                                       "`bundle`: text where each file starts with a line '=== path/to/file ===' "
+                                       "followed by its full content (code fences around a file are removed). "
+                                       "Use `bundle` with {\"$ref\": \"<model step>\"} to save files a model step "
+                                       "generated.",
+                           input_schema=WriteManyIn, output_schema=WriteManyOut,
+                           permission_level=PermissionLevel.write, side_effects=[SideEffect.write],
+                           handler=self.write_files, resource_field="folder", artifact_field="paths",
+                           describe=describe_write_many, timeout_ms=15_000, workspace_edit=True),
         ]
 
     def registry(self) -> ToolRegistry:

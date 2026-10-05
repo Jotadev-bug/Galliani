@@ -5,6 +5,8 @@ This is a wiring layer (Decision 0015). It may import provider adapters; core mo
     python -m galliani.cli "Summarize the notes in docs/ into summary.md" --workspace ./my-project
 
 Restricted actions (writes) pause for a y/N approval; planner questions are asked interactively.
+`--accept-edits` lets workspace file writes run without asking (spec 014); answering `a` at a write
+prompt approves it and turns that mode on for the rest of the task.
 Only public summaries are printed; hidden reasoning never reaches this layer.
 """
 
@@ -32,7 +34,8 @@ from galliani.observability import EventSink, EventType, JsonlEventSink, Lifecyc
 from galliani.providers.app_bridge import AppProviderAdapter, worker_profiles
 from galliani.router import ModelRouter
 from galliani.state import TaskStatus
-from galliani.supervisor import StartTaskRequest, Supervisor, TaskResult
+from galliani.permissions import ACCEPT_EDITS_CHOICE, EditMode
+from galliani.supervisor import StartTaskRequest, Supervisor, TaskResult, UserPolicy
 from galliani.tools import ToolSystem
 from galliani.verification import Verifier
 from galliani.workers import WorkerClient
@@ -164,8 +167,13 @@ async def interact(supervisor: Supervisor, result: TaskResult, *, ask: Ask = inp
         if result.approval_prompt is not None:
             prompt = result.approval_prompt
             out(f"\nApproval needed: {prompt.action_summary}\n  risk: {prompt.risk_summary}; scope: {prompt.scope}")
-            if ask("Approve? [y/N] ").strip().lower() in ("y", "yes"):
+            can_accept = ACCEPT_EDITS_CHOICE in prompt.allowed_choices
+            answer = ask("Approve? [y/N/a = yes, and accept edits for this task] " if can_accept
+                         else "Approve? [y/N] ").strip().lower()
+            if answer in ("y", "yes"):
                 result = await supervisor.approve(result.task_id)
+            elif can_accept and answer in ("a", "always"):
+                result = await supervisor.approve(result.task_id, accept_edits=True)
             else:
                 result = await supervisor.deny(result.task_id)
         elif result.clarification:
@@ -205,17 +213,20 @@ def format_result(result: TaskResult) -> str:
 async def run(objective: str, workspace: Path | str, *, context: str = "", interactive: bool = True,
               ask: Ask = input, out: Out = print, runtime: Runtime | None = None,
               events_path: Path | str | None = None, budget_usd: float | None = DEFAULT_BUDGET_USD,
-              use_memory: bool = True) -> int:
+              use_memory: bool = True, accept_edits: bool = False) -> int:
     runtime = runtime or build_runtime(workspace, out=out, events_path=events_path, budget_usd=budget_usd,
                                        memory=open_memory(out) if use_memory else None)
     try:
         if not runtime.available_workers:
             out("No model provider key found. Set one of: " + ", ".join(sorted(PROVIDERS.values())))
             return 2
-        out(f"Galliani: {objective}\n  workspace: {Path(workspace).resolve()}")
+        out(f"Galliani: {objective}\n  workspace: {Path(workspace).resolve()}\n  edits: "
+            + ("accepted without asking (--accept-edits)" if accept_edits else "ask before each write"))
         full_context = workspace_overview(workspace) + (f"\n\nUser context:\n{context}" if context else "")
         result = await runtime.supervisor.start(StartTaskRequest(
-            objective=Objective(goal=objective, context=full_context), memory_scopes=memory_scopes(workspace)))
+            objective=Objective(goal=objective, context=full_context),
+            user_policy=UserPolicy(edit_mode=EditMode.accept_edits if accept_edits else EditMode.ask),
+            memory_scopes=memory_scopes(workspace)))
         if interactive:
             result = await interact(runtime.supervisor, result, ask=ask, out=out)
         out(format_result(result))
@@ -235,6 +246,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--budget", type=float, default=DEFAULT_BUDGET_USD,
                         help=f"estimated USD per task before asking to spend more (default {DEFAULT_BUDGET_USD})")
     parser.add_argument("--no-memory", action="store_true", help="do not read or save long-term memory for this run")
+    parser.add_argument("--accept-edits", action="store_true",
+                        help="write files in the workspace without asking each time (other actions still ask)")
     args = parser.parse_args(argv)
     workspace = Path(args.workspace)
     if not workspace.is_dir():
@@ -244,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     return asyncio.run(run(args.objective, args.workspace, context=args.context, interactive=not args.non_interactive,
                            events_path=args.events, budget_usd=args.budget if args.budget > 0 else None,
-                           use_memory=not args.no_memory))
+                           use_memory=not args.no_memory, accept_edits=args.accept_edits))
 
 
 if __name__ == "__main__":

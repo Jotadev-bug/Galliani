@@ -19,6 +19,7 @@ from galliani.contracts import Sensitivity
 from galliani.errors import ContractError
 from galliani.permissions import (
     ApprovalRecord,
+    EditMode,
     PermissionDecision,
     PermissionLevel,
     PermissionPolicy,
@@ -63,8 +64,9 @@ class ToolDefinition(BaseModel):
     retryable_on_timeout: bool = True
     idempotent: bool = False
     resource_field: str | None = None  # argument naming the resource; it also becomes the permission scope
-    artifact_field: str | None = None  # output field naming a file the call produced (reported as an artifact)
+    artifact_field: str | None = None  # output field naming the file(s) the call produced (reported as artifacts)
     sensitivity: Sensitivity = Sensitivity.internal
+    workspace_edit: bool = False  # 014: only writes files inside the workspace sandbox (accept-edits eligible)
     handler: ToolHandler = Field(exclude=True)
     # Optional exact description of this call for approval prompts (e.g. the text to be saved).
     describe: Callable[[BaseModel], str] | None = Field(default=None, exclude=True)
@@ -115,6 +117,8 @@ class ToolRegistry:
             raise ContractError(f"invalid tool name {tool.name!r}")
         if tool.name in self._tools:
             raise ContractError(f"tool {tool.name} is already registered")
+        if tool.workspace_edit and tool.permission_level is not PermissionLevel.write:
+            raise ContractError(f"tool {tool.name}: only write-level tools may be workspace edits (014 R3)")
         self._tools[tool.name] = tool
 
     def get(self, name: str) -> ToolDefinition | None:
@@ -141,7 +145,8 @@ class ToolSystem:
         self.policy = policy or PermissionPolicy()
 
     async def execute(
-        self, call: ToolCall, *, task_id: str, approvals: Iterable[ApprovalRecord] = (), reason_summary: str = ""
+        self, call: ToolCall, *, task_id: str, approvals: Iterable[ApprovalRecord] = (), reason_summary: str = "",
+        edit_mode: EditMode = EditMode.ask,
     ) -> ToolResult:
         tool = self.registry.get(call.tool_name)
         if tool is None:
@@ -164,8 +169,9 @@ class ToolSystem:
             risk_level=tool.permission_level,
             reason_summary=(tool.describe(args) if tool.describe else None)
             or reason_summary or f"step {call.requested_by_step} requests {tool.name}",
+            workspace_edit=tool.workspace_edit,
         )
-        decision = self.policy.evaluate(request, approvals)
+        decision = self.policy.evaluate(request, approvals, edit_mode=edit_mode)
         if decision.status is not PermissionStatus.allowed:
             code = "permission_required" if decision.status is PermissionStatus.needs_user else "permission_denied"
             return _fail(call, code, decision.audit_summary, status=ToolStatus.blocked,
@@ -187,8 +193,9 @@ class ToolSystem:
         except ValidationError:
             return _fail(call, "invalid_output", "tool returned output that does not match its schema",
                          permission=decision)
-        artifacts = ([{"kind": "file", "uri": str(data[tool.artifact_field])}]
-                     if tool.artifact_field and data.get(tool.artifact_field) else [])
+        produced = data.get(tool.artifact_field) if tool.artifact_field else None
+        produced = produced if isinstance(produced, list) else [produced] if produced else []
+        artifacts = [{"kind": "file", "uri": str(uri)} for uri in produced if uri]
         return ToolResult(
             call_id=call.call_id,
             status=ToolStatus.succeeded,

@@ -25,6 +25,15 @@ class PermissionLevel(str, Enum):
     sensitive = "sensitive"
 
 
+class EditMode(str, Enum):
+    """Spec 014: `accept_edits` lets workspace file writes run without a prompt; nothing else changes."""
+
+    ask = "ask"
+    accept_edits = "accept_edits"
+
+
+ACCEPT_EDITS_CHOICE = "approve_and_accept_edits"
+
 RESTRICTED_LEVELS = frozenset(level for level in PermissionLevel if level is not PermissionLevel.read_only)
 
 
@@ -41,6 +50,12 @@ class PermissionRequest(BaseModel):
     scope: str
     risk_level: PermissionLevel
     reason_summary: str
+    workspace_edit: bool = False  # 014: the tool only writes files inside the workspace sandbox
+
+
+def accepts_edits(request: PermissionRequest) -> bool:
+    """014 R2: the only requests accept-edits mode may allow without a prompt."""
+    return request.risk_level is PermissionLevel.write and request.workspace_edit
 
 
 class PermissionDecision(BaseModel):
@@ -93,7 +108,8 @@ class PermissionPolicy:
         self.rules = dict(DEFAULT_RULES if rules is None else rules)
 
     def evaluate(
-        self, request: PermissionRequest, approvals: Iterable[ApprovalRecord] = (), now: datetime | None = None
+        self, request: PermissionRequest, approvals: Iterable[ApprovalRecord] = (), now: datetime | None = None,
+        edit_mode: EditMode = EditMode.ask,
     ) -> PermissionDecision:
         now = now or utcnow()
         level = request.risk_level
@@ -125,6 +141,10 @@ class PermissionPolicy:
                 approved_scope=approval.scope,
                 expires_at=approval.expiration,
             )
+        # 014: only what would otherwise need the user; an explicit approval above is credited first.
+        if edit_mode is EditMode.accept_edits and accepts_edits(request):
+            return decide(PermissionStatus.allowed, f"{request.action}: allowed by accept-edits mode",
+                          approved_scope=request.scope)
         if covering:  # only expired approvals cover this scope
             return decide(
                 PermissionStatus.needs_user,
@@ -162,8 +182,10 @@ class PermissionPolicy:
 
     @staticmethod
     def prompt_for(request: PermissionRequest, decision: PermissionDecision) -> ApprovalPrompt:
+        choices = ["approve", ACCEPT_EDITS_CHOICE, "deny"] if accepts_edits(request) else ["approve", "deny"]
         return ApprovalPrompt(
             action_summary=decision.user_prompt or f"Allow '{request.action}' on '{request.resource}'?",
             risk_summary=f"{request.risk_level.value} action",
+            allowed_choices=choices,
             scope=request.scope,
         )

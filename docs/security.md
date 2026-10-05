@@ -29,6 +29,8 @@ Every tool call must pass:
 4. Result normalization.
 5. Sensitive data redaction.
 
+Accept-edits mode (spec 014) only replaces the user's prompt for `write`-level tools declared as workspace edits (`write_file`, `write_files`). Path validation, symlink checks and protected names still run first. Deletes, network, spending and memory writes always ask. Only the user can turn the mode on, for one task at a time, and every write it allows is recorded as a permission decision and event.
+
 ## Auditability
 
 Galliani should record what action occurred, why it was allowed, and what result was observed. Audit entries must be useful without revealing private reasoning.

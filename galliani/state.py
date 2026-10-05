@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from galliani.contracts import Objective, Sensitivity, new_id, utcnow
 from galliani.errors import ConcurrencyConflict, ContractError, InvalidTransition, TaskNotFound
-from galliani.permissions import ApprovalPrompt, ApprovalRecord, PermissionDecision, PermissionRequest
+from galliani.permissions import ApprovalPrompt, ApprovalRecord, EditMode, PermissionDecision, PermissionRequest
 from galliani.planner import Plan
 from galliani.redaction import REDACTED, redact
 from galliani.verification import VerificationResult
@@ -101,6 +101,7 @@ class TaskState(BaseModel):
     approvals: list[ApprovalRecord] = Field(default_factory=list)
     permission_decisions: list[PermissionDecision] = Field(default_factory=list)
     pending_permission: PendingPermission | None = None
+    edit_mode: EditMode = EditMode.ask  # 014: task context, never memory
     clarification: str | None = None  # the open question while waiting_for_user
     clarifications: list[str] = Field(default_factory=list)  # user answers received so far
     retry_counts: dict[str, int] = Field(default_factory=dict)
@@ -157,7 +158,8 @@ class AppliedPatch(BaseModel):
     patches: list[StatePatch]
 
 
-_SETTABLE = {"status", "plan", "current_step", "pending_permission", "clarification", "constraints", "result"}
+_SETTABLE = {"status", "plan", "current_step", "pending_permission", "clarification", "constraints", "result",
+             "edit_mode"}
 _APPENDABLE = {"observations", "approvals", "permission_decisions", "plan_history", "clarifications"}
 _COUNTERS = {"replan_count", "action_count"}
 _KEYED_COUNTERS = {"retry_counts"}
