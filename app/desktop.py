@@ -94,12 +94,14 @@ def smoke_test(base: str, token: str) -> int:
     ok = httpx.get(f"{base}/api/config", headers={"X-App-Token": token}, timeout=10)
     blocked = httpx.get(f"{base}/api/config", timeout=10)
     page = httpx.get(f"{base}/", timeout=10)
+    logo = httpx.get(f"{base}/logo.png", timeout=10)
     agent = httpx.get(f"{base}/api/agent/config", headers={"X-App-Token": token}, timeout=10)
     agent_blocked = httpx.get(f"{base}/api/agent/config", timeout=10)
     checks = {
         "config with token": ok.status_code == 200 and ok.json().get("desktop") is True,
         "config without token rejected": blocked.status_code == 403,
         "UI served": page.status_code == 200 and "Welcome to Galliani" in page.text,
+        "logo bundled": logo.status_code == 200 and logo.headers.get("content-type") == "image/png",
         "agent API enabled": agent.status_code == 200 and agent.json().get("enabled") is True,
         "agent API without token rejected": agent_blocked.status_code == 403,
         "agent runtime builds (offline)": _agent_runtime_builds(),

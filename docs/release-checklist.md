@@ -50,7 +50,11 @@ python -c "import re,sys; t=open('smoke.jsonl',encoding='utf-8').read(); [print(
 
 Delete `docs/summary.md` and `smoke.jsonl` afterwards.
 
-## 5. Documentation
+## 5. Publish
+
+Bump `version` in `pyproject.toml`, then push a tag that matches it (`v0.1.0`, or `v0.2.0-beta.1` for a pre-release). The `Release` workflow refuses a tag that does not match, runs the tests, builds `Galliani.exe`, and fails unless the binary's `--smoke-test` passes. Check the published release has the `.exe` and its `.sha256`, and download it once on a clean Windows machine.
+
+## 6. Documentation
 
 - `CHANGELOG.md` lists the change with its spec references.
 - `docs/decisions.md` records any change to contracts, lifecycle states, or security behavior.

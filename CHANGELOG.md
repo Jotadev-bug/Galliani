@@ -8,6 +8,7 @@ This project follows spec-driven development. Changelog entries should reference
 
 ### Added
 
+- AGPL-3.0 license, CI and a release pipeline (Decision 0026): tests and evals run on every push and pull request, and pushing a `v*` tag builds, smoke-tests and publishes `Galliani.exe` with its checksum on GitHub Releases.
 - New logo as the app icon and in-app logo (Decision 0025): the icons and favicon are generated from `assets/logo.png`, and the UI palette moves from blue and violet to the logo's graphite and silver.
 - Showcase video (Decision 0024): `video/` Remotion project. It is a 28-second greyscale, single-shot product showcase: a coding prompt is routed to Sonnet 5.5 (the Claude mascot high-fives the robot), with the model and cost always visible, savings against Opus 5.5 at the end, and the new logo.
 - Desktop UI redesign (spec 012, Decision 0023): icon rail, Home dashboard with recent tasks and totals, conversation header with tabs (Overview, Plan, Activity, Files, Settings), an agent progress stepper with model and tools, and a compact final response that folds code and does not repeat file contents.

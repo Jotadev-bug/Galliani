@@ -46,6 +46,10 @@ Spec updates should include:
 - Logs and outputs do not expose chain-of-thought, secrets, or private scratchpads.
 - The changelog is updated when user-visible behavior changes.
 
+## License
+
+Galliani is licensed under the GNU AGPL-3.0 or later (see `LICENSE`). By contributing, you agree that your contribution is licensed under the same terms.
+
 ## Communication
 
 Prefer precise issue descriptions, small pull requests, and concrete acceptance criteria. If a decision changes architecture, add it to `docs/decisions.md`.

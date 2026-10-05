@@ -32,7 +32,7 @@ galliani/
 |-- PROJECT.md
 |-- CHANGELOG.md
 |-- CONTRIBUTING.md
-|-- LICENSE.md
+|-- LICENSE
 |-- specs/
 |-- docs/
 `-- evals/
@@ -78,7 +78,20 @@ A model plans the work, the supervisor validates the plan, cheap workers run the
 
 In the desktop app (`python -m app.desktop`), switch the message box from **Chat** to **Agent**, pick a folder, and type a task. The agent's reply shows the plan, live activity, approvals and the verified result. The **Memory** page lists what the agent remembers between tasks; it only saves a note when you approve it.
 
-Before a release, follow `docs/release-checklist.md`.
+## Download
+
+Windows builds are published on [GitHub Releases](https://github.com/Jotadev-bug/Galliani/releases/latest). You need your own OpenRouter key, which the app keeps in your OS credential store. Builds are not code-signed yet, so on first launch Windows SmartScreen may warn: choose **More info**, then **Run anyway**. Each release lists the SHA-256 of the `.exe`.
+
+## Releasing
+
+Before a release, follow `docs/release-checklist.md`. Then bump `version` in `pyproject.toml`, commit, and push a matching tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The `Release` workflow (`.github/workflows/release.yml`) runs the tests, builds `Galliani.exe`, runs its smoke test, and publishes the `.exe` with its checksum on GitHub Releases. Tags with a suffix, such as `v0.2.0-beta.1`, publish as pre-releases. The `CI` workflow runs the tests and evals on every push to `main` and every pull request.
 
 ## Development Workflow
 
@@ -90,3 +103,9 @@ Before a release, follow `docs/release-checklist.md`.
 6. Update documentation only when behavior changes.
 
 No implementation work should begin without a matching approved spec.
+
+## License
+
+Copyright (C) 2026 Galliani contributors.
+
+Galliani is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [`LICENSE`](LICENSE) for the full text.

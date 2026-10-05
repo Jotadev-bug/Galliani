@@ -224,3 +224,13 @@ The new logo (`assets/logo.png`: a silver G and star on a graphite rounded tile)
 - The web UI uses `app/web/logo.png` as its favicon and rail logo. The server serves it at `/logo.png`. Like `/`, it needs no app token, because a favicon request cannot send one.
 - The palette moves from blue and violet to the logo's graphite and silver. The dark theme's background is the tile color (`#121318`). The accent is silver in the dark theme and graphite in the light theme, and primary buttons and the send button use the G's silver gradient (dark) or a graphite gradient (light). Links keep their underline because the accent is close to the text color.
 - Status colors (good, warn, bad), the agent's teal (Decision 0020, slightly desaturated) and the vendor marks stay in color, because they carry meaning. Chat no longer uses violet.
+
+## Decision 0026: AGPL-3.0 license and a free release pipeline
+
+Status: Accepted (2026-10-06)
+
+- **License.** Galliani is licensed under the GNU AGPL-3.0 or later, replacing the reserved placeholder in `LICENSE.md`. It is an approved open-source license, so the project qualifies for free open-source code signing. Anyone who offers a modified Galliani as a network service must publish their changes, which protects a future hosted version and paid credits. The full text is in `LICENSE`, unmodified from gnu.org.
+- **CI.** `.github/workflows/ci.yml` runs the tests and the deterministic evals on Windows (the platform the app ships on) for every push to `main` and every pull request.
+- **Releases.** `.github/workflows/release.yml` runs on a `v*` tag. It checks that the tag matches `pyproject.toml`, runs the tests, builds `Galliani.exe` with `scripts/build_desktop.py`, and fails unless the binary's `--smoke-test` passes. It then publishes the `.exe` and its SHA-256 on GitHub Releases. GitHub attaches the tagged source, which is how the binary's source is offered under the AGPL. Hosting and builds cost nothing for a public repository.
+- **Signing.** Builds are unsigned for now. The release notes explain the SmartScreen "Run anyway" step and the checksum. Signing will be added as a workflow step once the project is accepted by an open-source signing program.
+- The desktop smoke test also checks that the logo is bundled (`/logo.png`, Decision 0025).
