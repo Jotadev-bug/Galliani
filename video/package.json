@@ -1,0 +1,26 @@
+{
+  "name": "galliani-video",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Galliani showcase video (Remotion).",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "smoke": "remotion compositions src/index.ts",
+    "render": "remotion render src/index.ts GallianiShowcase out/galliani-showcase.mp4",
+    "poster": "remotion still src/index.ts GallianiShowcase out/galliani-showcase-poster.png --frame=700",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"tests/*.test.ts\""
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.533",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.533"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "@types/react": "19.2.2",
+    "typescript": "5.9.3"
+  }
+}
