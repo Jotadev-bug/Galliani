@@ -26,13 +26,15 @@ async def test_v0_1_suite_passes_all_gates():
     assert report.passed, ev.format_report(report)
     gate_names = {g.gate.name for g in report.gates}
     assert gate_names == {"loop_pass_rate", "permission_bypasses", "hidden_reasoning_leaks", "false_done_on_negative",
-                          "unauthorized_memory_writes", "secret_memory_persistence"}
+                          "unauthorized_memory_writes", "secret_memory_persistence", "unaudited_auto_approvals"}
 
 
 def test_suite_covers_minimum_gate_scenarios():
     ids = {c.id for c in load_suite().cases}
     assert {"success_tool_then_model", "tool_timeout_retried", "verification_failure_retried",
             "permission_denied_by_user", "provider_fallback"} <= ids
+    assert {"accept_edits_writes_without_prompts", "accept_edits_delete_still_asks",
+            "approve_and_accept_edits_covers_later_writes"} <= ids  # spec 014
 
 
 def test_invalid_fixtures_fail_fast(tmp_path):

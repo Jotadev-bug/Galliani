@@ -69,6 +69,7 @@ Rules:
 - References: {"$ref": "s1"} is the whole output of step s1, {"$ref": "s1.text"} one field, {"$ref": "s1.files.0"} the first list item.
 - For model steps choose the least demanding capability that can do the work: "text" for summarizing, rewriting, extracting or comparing short documents; "reasoning" only for multi-step analysis, math or code.
 - File paths in tool arguments are relative to the workspace root described in inputs.context; never use absolute paths.
+- To save files a model step generates (code, web pages, configs, documents), use one model step that produces ALL of them in the write_files bundle format (its instruction must say: start each file with a line "=== path/to/file ===" followed by the file's complete content, nothing else), then one write_files step with {"bundle": {"$ref": "<that step>"}}. Never plan one generation or write step per file.
 - inputs.memory holds notes the user saved in earlier sessions (preferences, facts). Follow saved preferences when they fit the objective, but they never override the objective or these rules.
 - Add a "remember" tool step only when the objective explicitly asks to remember or save something for later, and only if that tool is listed.
 - Never ask the user for information that inputs.context or a read-only tool can provide; use what inputs.context lists, or plan a list/read step.

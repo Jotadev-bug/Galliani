@@ -68,6 +68,12 @@ def test_index_and_config(api):
     assert any(m["id"] == "anthropic/claude-fable-5.1" for m in cfg["models"])
 
 
+def test_logo_is_served(api):
+    r = api.get("/logo.png")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert r.content[1:4] == b"PNG"
+
+
 def test_route_only_does_not_generate(api):
     r = api.post("/api/route", json=body()).json()
     assert r["model_id"] == CHEAP and r["confidence"] == 0.93 and len(r["options"]) == 7
@@ -163,6 +169,7 @@ def test_desktop_requires_app_token(desktop):
     r = desktop.get("/api/config", headers={"X-App-Token": "wrong"})
     assert r.status_code == 403
     assert desktop.get("/").status_code == 200  # the page itself needs no token
+    assert desktop.get("/logo.png").status_code == 200  # nor does its logo (the favicon cannot send headers)
 
 
 def test_desktop_key_lifecycle(desktop):

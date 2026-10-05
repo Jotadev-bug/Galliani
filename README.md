@@ -54,6 +54,8 @@ galliani/
 - `specs/011-observability/spec.md` - structured logs, events, metrics, and traces.
 - `specs/012-desktop-ui/spec.md` - desktop user experience.
 - `specs/013-evaluation/spec.md` - quality gates and benchmark methodology.
+- `specs/014-accept-edits/spec.md` - opt-in mode that auto-approves workspace file writes.
+- `specs/015-remotion-video/spec.md` - fast Remotion explainer video for Galliani.
 
 ## Running the v0.1 Core
 

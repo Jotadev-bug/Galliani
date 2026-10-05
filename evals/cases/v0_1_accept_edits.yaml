@@ -1,0 +1,108 @@
+# Accept-edits mode fixtures (spec 014): workspace writes run without a prompt only when the user chose the
+# mode, every other restricted action still asks, and every automatic approval is audited.
+
+definitions:
+  worker_w1: &w1
+    worker_id: w1
+    provider_id: scripted
+    capabilities: [text]
+    limits: {context_window: 32000, max_output_tokens: 2000}
+    cost_class: low
+    latency_class: fast
+  write_a: &write_a
+    step_id: wa
+    kind: tool
+    purpose: write the page
+    required_capability: write_file
+    expected_output: file written
+    tool: {tool_name: write_file, arguments: {path: index.html, content: "<p>hi</p>"}}
+    verification_criteria: [{kind: field_present, field: bytes}]
+  write_b: &write_b
+    step_id: wb
+    kind: tool
+    purpose: write the script
+    required_capability: write_file
+    expected_output: file written
+    tool: {tool_name: write_file, arguments: {path: app.js, content: "let n = 1;"}}
+    verification_criteria: [{kind: field_present, field: bytes}]
+  delete_a: &delete_a
+    step_id: da
+    kind: tool
+    purpose: delete the old page
+    required_capability: delete_file
+    expected_output: file deleted
+    tool: {tool_name: delete_file, arguments: {path: old.html}}
+    verification_criteria: [{kind: field_present, field: deleted}]
+  remember_pref: &remember_pref
+    step_id: rm
+    kind: tool
+    purpose: save a preference
+    required_capability: remember
+    expected_output: saved
+    tool: {tool_name: remember, arguments: {content: "Use tabs for indentation.", type: preference}}
+    verification_criteria: [{kind: field_present, field: id}]
+
+cases:
+  - id: accept_edits_writes_without_prompts
+    spec_refs: ["014 Writes Proceed Without Prompts"]
+    objective: Build a two-file page
+    edit_mode: accept_edits
+    available_workers: [*w1]
+    available_tools: [write_file]
+    planner_script: [{steps: [*write_a, *write_b]}]
+    expected_outcome:
+      status: done
+      tools_executed: [write_file, write_file]
+      events_include: [permission_decided]
+
+  - id: accept_edits_delete_still_asks
+    spec_refs: ["014 Other Restricted Actions Still Ask", "009 Needs User"]
+    objective: Replace the old page
+    edit_mode: accept_edits
+    initial_state: {files: {old.html: "old"}}
+    available_workers: [*w1]
+    available_tools: [write_file, delete_file]
+    planner_script: [{steps: [*write_a, *delete_a]}]
+    user_action: deny
+    negative: true
+    expected_outcome:
+      status: blocked
+      tools_executed: [write_file]
+
+  - id: accept_edits_memory_still_asks
+    spec_refs: ["014 Other Restricted Actions Still Ask", "010 Explicit Write"]
+    objective: Write the page and remember my indentation preference
+    edit_mode: accept_edits
+    memory: []
+    available_workers: [*w1]
+    available_tools: [write_file, remember]
+    planner_script: [{steps: [*write_a, *remember_pref]}]
+    user_action: deny
+    negative: true
+    expected_outcome:
+      status: blocked
+      tools_executed: [write_file]
+      memory_records: 0
+
+  - id: default_mode_asks_before_writing
+    spec_refs: ["014 Default Is Ask"]
+    objective: Build a page
+    available_workers: [*w1]
+    available_tools: [write_file]
+    planner_script: [{steps: [*write_a]}]
+    negative: true
+    expected_outcome:
+      status: waiting_for_user
+      tools_executed: []
+
+  - id: approve_and_accept_edits_covers_later_writes
+    spec_refs: ["014 Approve and Accept Edits"]
+    objective: Build a two-file page
+    available_workers: [*w1]
+    available_tools: [write_file]
+    planner_script: [{steps: [*write_a, *write_b]}]
+    user_action: approve_and_accept_edits
+    expected_outcome:
+      status: done
+      tools_executed: [write_file, write_file]
+      events_include: [approval_recorded, edit_mode_changed]

@@ -205,6 +205,18 @@ def test_approval_prompt_markup_is_accessible():
     assert 'role="group" aria-label="Conversation type"' in html  # the Chat | Agent switch is a labelled group
 
 
+
+def test_final_response_markup_stays_compact():
+    """012 Done + Decision 0023: a finished task shows result, verification and files without dumping its output."""
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[2] / "app" / "web" / "index.html").read_text(encoding="utf-8")
+    assert "markdown(text, { foldCode: true })" in html  # code blocks in a final response are folded
+    assert '<details class="code-fold">' in html and "data-clamp" in html  # long text is clamped
+    assert "else if (!hasFiles && r.preview) text = r.preview;" in html  # file contents are not repeated
+    assert html.count("JSON.stringify(r.output") == 1 and "function filesTab" in html  # raw tool record: Files tab only
+    assert "Verified" in html and "file-cards" in html
+
 # Spec 010 through the API: explicit user writes, listing with redaction, deletion, and task memory views
 def test_memory_api_add_list_redact_delete(ws, monkeypatch):
     store = InMemoryMemoryStore()
@@ -246,3 +258,34 @@ def test_task_view_shows_memory_used_and_saved(ws, monkeypatch):
         assert "with your approval" in done["memory"]["note"]
         assert {m["content"] for m in client.get("/api/agent/memory").json()} == {
             "Summaries should mention the plan variance", "Prefer short bullets"}
+
+
+# Spec 014 through the API: start in accept-edits, approve-and-accept, switch a task's mode
+def test_accept_edits_mode_through_the_api(ws, monkeypatch):
+    with client_for([PLAN, PLAN], monkeypatch, ws) as client:
+        res = client.post("/api/agent/tasks", json={"objective": "Summarize", "workspace": str(ws),
+                                                    "edit_mode": "accept_edits"})
+        view = wait_for(client, res.json()["task_id"], "done")["view"]
+        assert view["edit_mode"] == "accept_edits" and view["edits_auto_approved"] == 1
+        assert view["files_changed"] == [{"path": "summary.md", "change": "created"}]
+        assert client.get("/api/agent/tasks").json()[0]["edit_mode"] == "accept_edits"
+
+        task_id = start(client, ws)["task_id"]  # defaults to ask (014 R9)
+        paused = wait_for(client, task_id, "waiting_for_user")["view"]
+        assert paused["edit_mode"] == "ask"
+        assert paused["approval_prompt"]["allowed_choices"] == ["approve", "approve_and_accept_edits", "deny"]
+        assert client.post(f"/api/agent/tasks/{task_id}/approve", json={"accept_edits": True}).status_code == 200
+        done = wait_for(client, task_id, "done")["view"]
+        assert done["edit_mode"] == "accept_edits"
+        assert done["files_changed"] == [{"path": "summary.md", "change": "overwritten"}]
+
+        assert client.post(f"/api/agent/tasks/{task_id}/edit-mode", json={"edit_mode": "ask"}).status_code == 409
+        assert client.post(f"/api/agent/tasks/{task_id}/edit-mode", json={"edit_mode": "all"}).status_code == 422
+
+
+def test_switching_a_paused_task_to_accept_edits(ws, monkeypatch):
+    with client_for([PLAN], monkeypatch, ws) as client:
+        task_id = start(client, ws)["task_id"]
+        wait_for(client, task_id, "waiting_for_user")
+        view = client.post(f"/api/agent/tasks/{task_id}/edit-mode", json={"edit_mode": "accept_edits"}).json()
+        assert view["edit_mode"] == "accept_edits"

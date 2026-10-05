@@ -27,6 +27,8 @@ from galliani.memory import USER_SCOPE, MemoryQuery, MemoryRecord, MemoryStore, 
 from galliani.observability import EventType, Observability, UsageLedger
 from galliani.permissions import (
     ApprovalPrompt,
+    EditMode,
+    accepts_edits,
     PermissionLevel,
     PermissionPolicy,
     PermissionRequest,
@@ -65,6 +67,7 @@ MAX_JUDGE_SOURCE_CHARS = 8_000  # source data shown to a semantic verifier
 class UserPolicy(BaseModel):
     user_id: str = "user"
     routing: RoutingPolicy = Field(default_factory=RoutingPolicy)
+    edit_mode: EditMode = EditMode.ask  # 014: chosen by the user for this task only
 
 
 class StartTaskRequest(BaseModel):
@@ -151,10 +154,15 @@ class Supervisor:
             "context": request.objective.context or request.context,
         })
         state = self.store.create(objective)
-        self._policies[state.task_id] = request.user_policy
+        self._policies[state.task_id] = request.user_policy.model_copy(deep=True)
         self._artifacts[state.task_id] = []
         self._memory_scopes[state.task_id] = list(request.memory_scopes)
-        self.obs.emit(EventType.task_created, state.task_id, "task created", metadata={"status": state.status.value})
+        if request.user_policy.edit_mode is not EditMode.ask:
+            state = self._apply(state, [StatePatch(operation="set", path="edit_mode",
+                                                   value=request.user_policy.edit_mode.value,
+                                                   reason_summary="edit mode chosen by the user")])
+        self.obs.emit(EventType.task_created, state.task_id, "task created",
+                      metadata={"status": state.status.value, "edit_mode": state.edit_mode.value})
         if not objective.is_valid():
             state = self._transition(state, S.waiting_for_user, "objective is empty; clarification requested",
                                      [StatePatch(operation="set", path="clarification",
@@ -168,20 +176,49 @@ class Supervisor:
             return self._result(state)
         return await self._run(state)
 
-    async def approve(self, task_id: str, *, user_id: str | None = None, ttl: timedelta | None = None) -> TaskResult:
+    async def approve(self, task_id: str, *, user_id: str | None = None, ttl: timedelta | None = None,
+                      accept_edits: bool = False) -> TaskResult:
+        """Approve the pending request. `accept_edits` also switches the task to accept-edits mode (014 R6)."""
         state = self.store.get(task_id)
         pending = state.pending_permission
         if state.status is not S.waiting_for_user or pending is None:
             raise ContractError(f"task {task_id} has no pending approval")
+        if accept_edits and not accepts_edits(pending.request):
+            raise ContractError("accept-edits mode does not cover this action; approve or deny it")
         user = user_id or self._policy(task_id).user_id
         approval = PermissionPolicy.approval_for(pending.request, user, ttl)
         self.obs.emit(EventType.approval_recorded, task_id, f"{user} approved {approval.action} for scope {approval.scope}",
                       step_id=pending.step_id, metadata={"approval_id": approval.approval_id, "scope": approval.scope})
-        state = self._transition(state, S.executing, f"user approved {approval.action}", [
+        patches = [
             StatePatch(operation="append", path="approvals", value=approval, reason_summary="user approval"),
             StatePatch(operation="set", path="pending_permission", value=None),
-        ])
+        ]
+        if accept_edits:
+            self._policies.setdefault(task_id, UserPolicy()).edit_mode = EditMode.accept_edits
+            patches.append(self._edit_mode_patch(EditMode.accept_edits))
+            self.obs.emit(EventType.edit_mode_changed, task_id, f"{user} turned on accept-edits mode",
+                          metadata={"edit_mode": EditMode.accept_edits.value})
+        state = self._transition(state, S.executing, f"user approved {approval.action}", patches)
         return await self._run(state)
+
+    def set_edit_mode(self, task_id: str, mode: EditMode | str) -> TaskResult:
+        """Switch a task's edit mode (014 R7). A running loop records it at the start of its next step."""
+        mode = EditMode(mode)
+        state = self.store.get(task_id)
+        if state.terminal:
+            raise ContractError(f"task {task_id} is {state.status.value}; its edit mode can no longer change")
+        policy = self._policies.setdefault(task_id, UserPolicy())
+        policy.edit_mode = mode
+        label = "accept-edits mode" if mode is EditMode.accept_edits else "ask before edits"
+        self.obs.emit(EventType.edit_mode_changed, task_id, f"{policy.user_id} switched to {label}",
+                      metadata={"edit_mode": mode.value})
+        if task_id not in self._running and state.edit_mode is not mode:
+            state = self._apply(state, [self._edit_mode_patch(mode)])
+        return self._result(state)
+
+    @staticmethod
+    def _edit_mode_patch(mode: EditMode) -> StatePatch:
+        return StatePatch(operation="set", path="edit_mode", value=mode.value, reason_summary="edit mode set by the user")
 
     async def deny(self, task_id: str, *, user_id: str | None = None) -> TaskResult:
         state = self.store.get(task_id)
@@ -314,6 +351,9 @@ class Supervisor:
         assert state.plan is not None and step is not None
         if state.action_count >= self.limits.max_total_actions:
             return self._finish(state, S.failed, f"action budget of {self.limits.max_total_actions} exhausted")
+        mode = self._policy(state.task_id).edit_mode
+        if state.edit_mode is not mode:  # a switch made while the loop was running (014 R7)
+            state = self._apply(state, [self._edit_mode_patch(mode)])
         state, stop = self._check_spend(state, step)
         if stop:
             return state

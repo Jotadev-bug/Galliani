@@ -4,7 +4,9 @@
     GET  /api/agent/tasks                       recent tasks
     GET  /api/agent/tasks/{id}                  current TaskViewModel
     GET  /api/agent/tasks/{id}/events?after=N   long poll: new EventFeedItems plus the current view
-    POST /api/agent/tasks/{id}/approve|deny     answer an approval prompt
+    POST /api/agent/tasks/{id}/approve|deny     answer an approval prompt ({"accept_edits": true} also
+                                                turns on accept-edits mode, spec 014)
+    POST /api/agent/tasks/{id}/edit-mode        {"edit_mode": "ask" | "accept_edits"}
     POST /api/agent/tasks/{id}/clarify          answer a question
     POST /api/agent/tasks/{id}/cancel           stop the task
 
@@ -40,8 +42,9 @@ from galliani.memory import (
     project_scope,
 )
 from galliani.observability import LifecycleEvent
+from galliani.permissions import EditMode
 from galliani.state import TERMINAL_STATUSES, TaskStatus
-from galliani.supervisor import StartTaskRequest
+from galliani.supervisor import StartTaskRequest, UserPolicy
 from galliani.viewmodel import EventFeedItem, TaskViewModel, build_feed, build_task_view
 
 ROOT_ENV = "GALLIANI_AGENT_WORKSPACE_ROOT"
@@ -114,6 +117,15 @@ class StartBody(BaseModel):
     workspace: str = Field(min_length=1, max_length=1_000)
     context: str = Field(default="", max_length=4_000)
     budget_usd: float | None = Field(default=DEFAULT_BUDGET_USD, gt=0, le=100)
+    edit_mode: EditMode = EditMode.ask  # 014 R9: the API defaults to asking
+
+
+class ApproveBody(BaseModel):
+    accept_edits: bool = False
+
+
+class EditModeBody(BaseModel):
+    edit_mode: EditMode
 
 
 class AnswerBody(BaseModel):
@@ -127,6 +139,7 @@ class TaskSummary(BaseModel):
     status_label: str
     workspace: str
     created_at: datetime
+    edit_mode: EditMode = EditMode.ask
 
 
 class EventsPage(BaseModel):
@@ -229,6 +242,7 @@ class AgentService:
         context = workspace_overview(workspace) + (f"\n\nUser context:\n{body.context}" if body.context else "")
         created = runtime.supervisor.create(StartTaskRequest(
             objective=Objective(goal=body.objective, context=context),
+            user_policy=UserPolicy(edit_mode=body.edit_mode),
             memory_scopes=[USER_SCOPE, project_scope(workspace)]))
         task = AgentTask(created.task_id, runtime, sink, body.objective, str(workspace))
         self.tasks[task.task_id] = task
@@ -259,7 +273,8 @@ class AgentService:
         feed = build_feed(task.sink.events, after=after)
         return EventsPage(events=feed, seq=len(task.sink.events), view=self.view(task))
 
-    async def act(self, task_id: str, action: str, answer: str | None = None) -> TaskViewModel:
+    async def act(self, task_id: str, action: str, answer: str | None = None, *,
+                  accept_edits: bool = False) -> TaskViewModel:
         task = self.get(task_id)
         supervisor = task.runtime.supervisor
         if action == "cancel":
@@ -272,7 +287,8 @@ class AgentService:
             if action in ("approve", "deny"):
                 if state.status is not TaskStatus.waiting_for_user or state.pending_permission is None:
                     raise ContractError("there is no approval to answer")
-                coro = supervisor.approve(task_id) if action == "approve" else supervisor.deny(task_id)
+                coro = (supervisor.approve(task_id, accept_edits=accept_edits) if action == "approve"
+                        else supervisor.deny(task_id))
             elif action == "clarify":
                 if state.status is not TaskStatus.waiting_for_user or not state.clarification:
                     raise ContractError("there is no question to answer")
@@ -283,6 +299,15 @@ class AgentService:
             raise HTTPException(409, e.safe_summary) from None
         self._launch(task, coro)
         await asyncio.sleep(0)
+        return self.view(task)
+
+    def set_edit_mode(self, task_id: str, mode: EditMode) -> TaskViewModel:
+        """Takes effect at once, even while the task runs (014 R7)."""
+        task = self.get(task_id)
+        try:
+            task.runtime.supervisor.set_edit_mode(task_id, mode)
+        except ContractError as e:
+            raise HTTPException(409, e.safe_summary) from None
         return self.view(task)
 
     # ------------------------------------------------------------------ memory (spec 010)
@@ -322,7 +347,7 @@ class AgentService:
             view = self.view(task)
             out.append(TaskSummary(task_id=task.task_id, objective=task.objective, status=view.status,
                                    status_label=view.status_label, workspace=task.workspace,
-                                   created_at=task.created_at))
+                                   created_at=task.created_at, edit_mode=view.edit_mode))
         return out
 
 
@@ -354,8 +379,12 @@ def agent_router(keys_for: Callable[[Request], dict[str, str]], service: AgentSe
         return await svc.events(task_id, after, wait)
 
     @router.post("/tasks/{task_id}/approve")
-    async def approve(task_id: str) -> TaskViewModel:
-        return await svc.act(task_id, "approve")
+    async def approve(task_id: str, body: ApproveBody | None = None) -> TaskViewModel:
+        return await svc.act(task_id, "approve", accept_edits=bool(body and body.accept_edits))
+
+    @router.post("/tasks/{task_id}/edit-mode")
+    def edit_mode(task_id: str, body: EditModeBody) -> TaskViewModel:
+        return svc.set_edit_mode(task_id, body.edit_mode)
 
     @router.post("/tasks/{task_id}/deny")
     async def deny(task_id: str) -> TaskViewModel:

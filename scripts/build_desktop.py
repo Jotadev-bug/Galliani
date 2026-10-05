@@ -38,6 +38,7 @@ def main() -> int:
         "--collect-submodules", "uvicorn",
         "--collect-submodules", "keyring",
         "--collect-submodules", "app",
+        "--collect-submodules", "galliani",  # the supervisor; the agent API and CLI are imported lazily
     ]
     make_icon()
     icon = ROOT / "assets" / ("galliani.ico" if sys.platform == "win32" else "galliani.icns")

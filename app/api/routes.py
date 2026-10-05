@@ -313,3 +313,9 @@ app.include_router(agent_router(keys_for=caller_keys))
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/logo.png")
+def logo() -> FileResponse:
+    """The app logo (favicon and rail), generated from assets/logo.png by scripts/make_icon.py."""
+    return FileResponse(WEB_DIR / "logo.png", media_type="image/png")

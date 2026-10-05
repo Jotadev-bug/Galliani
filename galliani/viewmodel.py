@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from galliani.contracts import Sensitivity
 from galliani.memory import MemoryRecord
 from galliani.observability import LifecycleEvent
-from galliani.permissions import ApprovalPrompt
+from galliani.permissions import ApprovalPrompt, EditMode
 from galliani.state import TERMINAL_STATUSES, TaskState, TaskStatus
 
 S = TaskStatus
@@ -93,6 +93,13 @@ class ResultView(BaseModel):
     preview: str | None = None
 
 
+class FileChangeView(BaseModel):
+    """A file a workspace tool wrote, and whether it existed before (014 R5)."""
+
+    path: str
+    change: Literal["created", "overwritten"]
+
+
 class MemoryIndicator(BaseModel):
     """012 `MemoryIndicator`: one durable memory record a task wrote. Always empty until spec 010 ships."""
 
@@ -134,6 +141,9 @@ class TaskViewModel(BaseModel):
     result: ResultView | None = None
     approval_prompt: ApprovalPrompt | None = None
     clarification: str | None = None
+    edit_mode: EditMode = EditMode.ask  # 014 R8
+    files_changed: list[FileChangeView] = Field(default_factory=list)
+    edits_auto_approved: int = 0  # writes allowed by accept-edits mode without a prompt
     usage: dict[str, int] = Field(default_factory=dict)
     memory: MemoryView = Field(default_factory=MemoryView)
     next_options: list[str] = Field(default_factory=list)
@@ -238,11 +248,30 @@ def build_task_view(
         result=result,
         approval_prompt=ApprovalPrompt.model_validate(data["pending_permission"]["prompt"]) if pending else None,
         clarification=data["clarification"] if state.status is S.waiting_for_user else None,
+        edit_mode=state.edit_mode,
+        files_changed=_files_changed(data),
+        edits_auto_approved=sum(1 for d in state.permission_decisions
+                                if d.status.value == "allowed" and d.audit_summary.endswith("accept-edits mode")),
         usage=dict(usage or {}),
         memory=_memory_view(state, data, memory_used),
         next_options=_next_options(state),
         updated_at=state.updated_at,
     )
+
+
+def _files_changed(data: dict[str, Any]) -> list[FileChangeView]:
+    """Files written by workspace tools, in first-write order. A file this task created stays `created`."""
+    changes: dict[str, str] = {}
+    for obs in data["observations"]:
+        if obs["kind"] != "execution" or obs["outcome"] != "succeeded" or not obs.get("data_ref"):
+            continue
+        out = data["outputs"].get(obs["data_ref"])
+        if not isinstance(out, dict):
+            continue
+        for item in out.get("files") or ([out] if "change" in out else []):
+            if isinstance(item, dict) and item.get("change") in ("created", "overwritten") and "path" in item:
+                changes[item["path"]] = changes.get(item["path"], item["change"])
+    return [FileChangeView(path=p, change=c) for p, c in changes.items()]
 
 
 def _model_text_preview(state: TaskState, outputs: dict[str, Any]) -> str | None:
