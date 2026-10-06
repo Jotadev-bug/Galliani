@@ -52,9 +52,32 @@ Delete `docs/summary.md` and `smoke.jsonl` afterwards.
 
 ## 5. Publish
 
-Bump `version` in `pyproject.toml`, then push a tag that matches it (`v0.1.0`, or `v0.2.0-beta.1` for a pre-release). The `Release` workflow refuses a tag that does not match, runs the tests, builds `Galliani.exe`, and fails unless the binary's `--smoke-test` passes. Check the published release has the `.exe` and its `.sha256`, and download it once on a clean Windows machine.
+Bump `version` in `pyproject.toml`, commit, then push **only** the matching tag (`v0.1.0`, or `v0.2.0-beta.1` for a pre-release):
 
-## 6. Documentation
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Push the tag on its own, not with `--tags` or together with a branch, so GitHub sends the tag push event that starts the `Release` workflow. If no Release run appears under **Actions** within a minute, start it by hand: **Actions > Release > Run workflow**, leave the branch on `main`, enter the tag (for example `v0.1.0`), and click **Run workflow** (spec 016 R1).
+
+Either way the workflow refuses a tag that is malformed, missing or does not match `pyproject.toml` (`scripts/release_tag.py`), runs the tests, builds `Galliani.exe`, and fails unless the binary's `--smoke-test` passes. Check the published release has the `.exe` and its `.sha256`. Stable releases become "latest"; pre-releases never do, so `https://github.com/Jotadev-bug/Galliani/releases/latest/download/Galliani.exe` always serves the newest stable build.
+
+## 6. Before announcing (manual)
+
+Spec 016 R4. Do not link the release anywhere until each step holds.
+
+1. **Clean machine.** On a clean Windows 10 or 11 machine, or a fresh Windows Sandbox, download `Galliani.exe` from the release page. Check its SHA-256 against `Galliani.exe.sha256`:
+
+   ```powershell
+   (Get-FileHash Galliani.exe -Algorithm SHA256).Hash
+   ```
+
+   Run it past SmartScreen (**More info**, then **Run anyway**), add an OpenRouter key, send one chat message, and run one agent task in a throwaway folder. All three must work.
+2. **VirusTotal.** Upload the `.exe` to [virustotal.com](https://www.virustotal.com/gui/home/upload) and keep the report link. Add it to the release notes.
+3. **False positives.** If Microsoft Defender or another major engine flags the file, submit it as a false positive. Microsoft's portal is free: [microsoft.com/wdsi/filesubmission](https://www.microsoft.com/en-us/wdsi/filesubmission) (choose "Software developer"). For other engines, use their own false-positive form. Note each submission and its date in the release notes. Never tell users to turn off SmartScreen or their antivirus.
+
+## 7. Documentation
 
 - `CHANGELOG.md` lists the change with its spec references.
 - `docs/decisions.md` records any change to contracts, lifecycle states, or security behavior.

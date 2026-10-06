@@ -234,3 +234,13 @@ Status: Accepted (2026-10-06)
 - **Releases.** `.github/workflows/release.yml` runs on a `v*` tag. It checks that the tag matches `pyproject.toml`, runs the tests, builds `Galliani.exe` with `scripts/build_desktop.py`, and fails unless the binary's `--smoke-test` passes. It then publishes the `.exe` and its SHA-256 on GitHub Releases. GitHub attaches the tagged source, which is how the binary's source is offered under the AGPL. Hosting and builds cost nothing for a public repository.
 - **Signing.** Builds are unsigned for now. The release notes explain the SmartScreen "Run anyway" step and the checksum. Signing will be added as a workflow step once the project is accepted by an open-source signing program.
 - The desktop smoke test also checks that the logo is bundled (`/logo.png`, Decision 0025).
+
+## Decision 0027: Public launch plan (spec 016 approved), Phase 1
+
+Status: Accepted (2026-10-06)
+
+- Spec 016 is approved. It ships in phases: first release, landing page on GitHub Pages, winget, Microsoft Store, and optionally PyPI. Each phase ships on its own.
+- **Manual release runs.** `release.yml` also has a `workflow_dispatch` trigger with a required `tag` input, because the `v0.1.0` tag reached GitHub without starting the workflow. A manual run checks out that tag and then behaves like a tag push.
+- **Tag check in `scripts/release_tag.py`.** The inline check moved to a tested script. It reads `pyproject.toml` at the tag (`git show <tag>:pyproject.toml`), not from the branch the run started on, so a manual run from `main` checks the tag it will publish, and older tags without the script can still be released. It refuses malformed tags (before calling git), missing tags and mismatched versions with a message naming the tag and the version. The tag reaches scripts only through an environment variable.
+- **Pre-releases never become latest.** The publish step sets `make_latest` from the check's `prerelease` output, so `/releases/latest/download/Galliani.exe` always serves the newest stable build.
+- The clean-machine, VirusTotal and false-positive steps are manual items in `docs/release-checklist.md` (R4).

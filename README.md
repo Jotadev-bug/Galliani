@@ -56,6 +56,7 @@ galliani/
 - `specs/013-evaluation/spec.md` - quality gates and benchmark methodology.
 - `specs/014-accept-edits/spec.md` - opt-in mode that auto-approves workspace file writes.
 - `specs/015-remotion-video/spec.md` - fast Remotion explainer video for Galliani.
+- `specs/016-public-launch/spec.md` - first release, landing page, winget and Microsoft Store distribution.
 
 ## Running the v0.1 Core
 
@@ -80,18 +81,18 @@ In the desktop app (`python -m app.desktop`), switch the message box from **Chat
 
 ## Download
 
-Windows builds are published on [GitHub Releases](https://github.com/Jotadev-bug/Galliani/releases/latest). You need your own OpenRouter key, which the app keeps in your OS credential store. Builds are not code-signed yet, so on first launch Windows SmartScreen may warn: choose **More info**, then **Run anyway**. Each release lists the SHA-256 of the `.exe`.
+Windows builds are published on [GitHub Releases](https://github.com/Jotadev-bug/Galliani/releases/latest). The direct link to the newest stable build is `https://github.com/Jotadev-bug/Galliani/releases/latest/download/Galliani.exe`. You need your own OpenRouter key, which the app keeps in your OS credential store. Builds are not code-signed yet, so on first launch Windows SmartScreen may warn: choose **More info**, then **Run anyway**. Each release lists the SHA-256 of the `.exe`.
 
 ## Releasing
 
-Before a release, follow `docs/release-checklist.md`. Then bump `version` in `pyproject.toml`, commit, and push a matching tag:
+Before a release, follow `docs/release-checklist.md`. Then bump `version` in `pyproject.toml`, commit, and push the matching tag on its own:
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The `Release` workflow (`.github/workflows/release.yml`) runs the tests, builds `Galliani.exe`, runs its smoke test, and publishes the `.exe` with its checksum on GitHub Releases. Tags with a suffix, such as `v0.2.0-beta.1`, publish as pre-releases. The `CI` workflow runs the tests and evals on every push to `main` and every pull request.
+The `Release` workflow (`.github/workflows/release.yml`) runs the tests, builds `Galliani.exe`, runs its smoke test, and publishes the `.exe` with its checksum on GitHub Releases. Tags with a suffix, such as `v0.2.0-beta.1`, publish as pre-releases and never become the latest release. If a tag push does not start the workflow, run it by hand from **Actions > Release > Run workflow** with the tag name. The `CI` workflow runs the tests and evals on every push to `main` and every pull request.
 
 ## Development Workflow
 

@@ -1,10 +1,18 @@
 # Push a tag like v0.1.0 to build Galliani.exe, smoke-test it, and publish it on GitHub Releases.
-# The tag must match the version in pyproject.toml. Tags with a suffix (v0.2.0-beta.1) publish as pre-releases.
+# It can also be started by hand (Actions > Release > Run workflow) for a tag that already exists (spec 016 R1).
+# The tag must match the version in pyproject.toml. Tags with a suffix (v0.2.0-beta.1) publish as pre-releases,
+# which never become "latest", so /releases/latest/download/Galliani.exe is always the newest stable build.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, for example v0.1.0"
+        required: true
+        type: string
 
 permissions:
   contents: write  # create the release and upload its files
@@ -13,22 +21,25 @@ jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}  # passed through env, never interpolated into scripts
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # all tags, so the check can read pyproject.toml at the tag
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
 
+      # Fails before building, naming the tag and the version, if the tag is malformed, missing or mismatched.
       - name: Check the tag matches pyproject.toml
-        shell: python
-        run: |
-          import os, sys, tomllib
-          version = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
-          tag = os.environ["GITHUB_REF_NAME"]
-          base = tag.removeprefix("v").split("-")[0]
-          if base != version:
-              sys.exit(f"Tag {tag} does not match pyproject.toml version {version}")
+        id: tag
+        run: python -m scripts.release_tag "$env:TAG"
+
+      - name: Check out the tag
+        if: github.event_name == 'workflow_dispatch'
+        run: git checkout --detach "refs/tags/$env:TAG"
 
       - name: Install
         run: python -m pip install -e ".[dev,desktop,build]"
@@ -49,10 +60,12 @@ jobs:
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
           files: |
             dist/Galliani.exe
             dist/Galliani.exe.sha256
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
+          make_latest: ${{ steps.tag.outputs.prerelease == 'true' && 'false' || 'true' }}
           generate_release_notes: true
           body: |
             **Download:** `Galliani.exe` (Windows 10/11). You need your own [OpenRouter](https://openrouter.ai/keys) key. It is stored in your OS credential store and never leaves your device.
