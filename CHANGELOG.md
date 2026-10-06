@@ -8,6 +8,7 @@ This project follows spec-driven development. Changelog entries should reference
 
 ### Added
 
+- Public launch plan, Phase 1 (spec 016, Decision 0027): the Release workflow can be started by hand for an existing tag, the tag check is a tested script (`scripts/release_tag.py`) that reads the version at the tag, pre-releases never become the latest release, and the release checklist adds clean-machine, VirusTotal and false-positive steps before announcing.
 - AGPL-3.0 license, CI and a release pipeline (Decision 0026): tests and evals run on every push and pull request, and pushing a `v*` tag builds, smoke-tests and publishes `Galliani.exe` with its checksum on GitHub Releases.
 - New logo as the app icon and in-app logo (Decision 0025): the icons and favicon are generated from `assets/logo.png`, and the UI palette moves from blue and violet to the logo's graphite and silver.
 - Showcase video (Decision 0024): `video/` Remotion project. It is a 28-second greyscale, single-shot product showcase: a coding prompt is routed to Sonnet 5.5 (the Claude mascot high-fives the robot), with the model and cost always visible, savings against Opus 5.5 at the end, and the new logo.
