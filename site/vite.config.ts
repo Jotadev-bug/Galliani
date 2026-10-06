@@ -15,7 +15,8 @@ const csp: Plugin = {
 };
 
 export default defineConfig({
-  base: "/Galliani/", // served at https://jotadev-bug.github.io/Galliani/ (R5)
+  // "/" for hosts that serve the site at the root (Vercel, a custom domain); the Pages workflow sets SITE_BASE=/Galliani/.
+  base: process.env.SITE_BASE ?? "/",
   plugins: [react(), tailwindcss(), csp],
   build: {
     rollupOptions: {

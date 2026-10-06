@@ -8,7 +8,7 @@ const ALLOWED = [
   "https://github.com/Jotadev-bug/Galliani",
   "https://api.github.com", // R8, and the CSP connect-src
   "https://openrouter.ai/keys",
-  "https://jotadev-bug.github.io/Galliani/", // canonical and Open Graph URLs
+  process.env.VITE_SITE_URL ?? "https://jotadev-bug.github.io/Galliani/", // canonical and Open Graph URLs
 ];
 const MAX_VIDEO = 8 * 1024 * 1024; // R12
 const MAX_FIRST_LOAD = 500 * 1024; // R13: everything except the video
