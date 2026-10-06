@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/* Graphite and silver from the logo (Decision 0025). Dark is the default; light follows prefers-color-scheme. */
+:root {
+  --bg: #121318; --surface: #18191e; --surface-2: #1f2026; --border: #26272d; --border-strong: #35363d;
+  --text: #f4f4f5; --muted: #a2a3aa; --accent: #c9cacf; --primary-bg: #e4e4e6; --primary-fg: #121318;
+  --glow: rgba(206, 207, 208, 0.14); --good: #4ade80;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f5f6; --surface: #ffffff; --surface-2: #f2f2f4; --border: #e2e2e5; --border-strong: #cfcfd4;
+    --text: #121318; --muted: #55565f; --accent: #3d3e46; --primary-bg: #121318; --primary-fg: #ffffff;
+    --glow: rgba(18, 19, 24, 0.08); --good: #15803d;
+    color-scheme: light;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-primary: var(--primary-bg);
+  --color-on-primary: var(--primary-fg);
+  --color-good: var(--good);
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+/* Faint dot grid that fades out from the top centre. */
+.dot-grid {
+  background-image: radial-gradient(var(--border-strong) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
+}
+
+/* Silver sheen sliding across the second half of the headline. */
+.text-shine {
+  background: linear-gradient(100deg, var(--muted) 20%, var(--text) 45%, var(--muted) 70%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shine 7s ease-in-out infinite;
+}
+@keyframes shine { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0% 0; } }
+
+/* Endless model strip: two copies of the row slide left by one row's width. */
+.marquee { animation: marquee 40s linear infinite; }
+.marquee-mask { mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
+.marquee-mask:hover .marquee { animation-play-state: paused; }
+@keyframes marquee { to { transform: translateX(-50%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .text-shine, .marquee { animation: none; }
+}

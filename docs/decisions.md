@@ -244,3 +244,13 @@ Status: Accepted (2026-10-06)
 - **Tag check in `scripts/release_tag.py`.** The inline check moved to a tested script. It reads `pyproject.toml` at the tag (`git show <tag>:pyproject.toml`), not from the branch the run started on, so a manual run from `main` checks the tag it will publish, and older tags without the script can still be released. It refuses malformed tags (before calling git), missing tags and mismatched versions with a message naming the tag and the version. The tag reaches scripts only through an environment variable.
 - **Pre-releases never become latest.** The publish step sets `make_latest` from the check's `prerelease` output, so `/releases/latest/download/Galliani.exe` always serves the newest stable build.
 - The clean-machine, VirusTotal and false-positive steps are manual items in `docs/release-checklist.md` (R4).
+
+## Decision 0028: The landing page is a React app (spec 016 R6 amended), Phase 2
+
+Status: Accepted (2026-10-06)
+
+- **Stack.** At the maintainer's request, spec 016 R6 changes from plain HTML and CSS to React, Vite, Tailwind CSS and Motion, for richer components and animations. The site is still static: the Pages workflow runs `npm ci`, `npm run build` and `npm run check` in `site/`, then deploys `site/dist/`. Nothing runs on a server.
+- **No third-party code at runtime.** The JavaScript bundle, styles, images and video are all served from the site. The built pages set a CSP (`default-src 'self'`, `connect-src https://api.github.com`); the dev server does not, because Vite's hot reload needs inline scripts. Fonts are system fonts (Segoe UI on Windows). Animations follow `prefers-reduced-motion` through `MotionConfig reducedMotion="user"`.
+- **Budget.** React and Motion add about 110 KB gzipped. The home page transfers about 200 KB before the video plays (R13 allows 500 KB), and the video is re-encoded from the render to 1280x720 H.264 without audio, about 1.3 MB (R12 allows 8 MB). `site/scripts/check-site.mjs` enforces both, plus allowed external URLs, the CSP, `lang` and `alt`, before deploying.
+- **SmartScreen step.** Until a real screenshot is taken on a clean machine, the install section shows a drawn stand-in for the SmartScreen dialog, with a text label.
+- **Illustrative demos.** The hero's app window (a prompt is typed, the router scans the models and picks one, cost and savings count up), the agent stepper and the cost bars are animations with example numbers, labelled "Example" or "Illustrative". The app shows the real model and cost for every answer. The model strip lists the models in `config/models.yaml` by name only, with no vendor logos.
