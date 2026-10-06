@@ -46,8 +46,8 @@ The work is split into phases. Each phase ships on its own.
 
 ### Phase 2: Landing page
 
-5. A static site lives in `site/` and is deployed to GitHub Pages by a workflow (`.github/workflows/pages.yml`) on every push to `main` that changes `site/`. It is served at `https://jotadev-bug.github.io/Galliani/` until a custom domain is chosen.
-6. The site is a static React app built with Vite, Tailwind CSS and Motion (amended 2026-10-06, Decision 0028). It is built in the Pages workflow and deployed as static files; nothing runs on a server. No external font or third-party script is loaded at runtime: every asset, including the JavaScript bundle, is served from the site itself. Animations respect `prefers-reduced-motion`.
+5. A static site lives in `site/` and is deployed to Vercel (free Hobby plan) by Vercel's Git integration, with `site` as the project's root directory. Pushes to `main` deploy production; other branches get preview deployments. It is served at `https://galliani.vercel.app/` until a custom domain is chosen (amended 2026-10-06, Decision 0028).
+6. The site is a static React app built with Vite, Tailwind CSS and Motion (amended 2026-10-06, Decision 0028). Vercel builds it (`site/vercel.json`) and serves it as static files; nothing runs on a server. No external font or third-party script is loaded at runtime: every asset, including the JavaScript bundle, is served from the site itself. Animations respect `prefers-reduced-motion`.
 7. The home page contains, in order:
    1. **Hero:** the logo (`assets/logo.png`), the name, a one-line pitch ("Picks the right model for every message, and shows what you saved"), a primary **Download for Windows** button that links to the R3 URL, and the current version and file size under it.
    2. **Video:** the showcase video, muted, with controls and the poster frame, not autoplaying with sound. A text summary sits next to it for people who don't play it.
@@ -94,7 +94,7 @@ The work is split into phases. Each phase ships on its own.
 
 - `.github/workflows/release.yml`: triggers `push: tags: [v*]` and `workflow_dispatch` with input `tag` (string, required, matching `^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$`).
 - Release assets: `Galliani.exe`, `Galliani.exe.sha256`, `galliani-winget-<version>.zip` (Phase 3), `Galliani.msix` (Phase 4, when enabled).
-- `.github/workflows/pages.yml`: `npm ci` and `npm run build` in `site/`, `actions/upload-pages-artifact` from `site/dist/`, then `actions/deploy-pages`, with `pages: write` and `id-token: write` permissions only.
+- `site/vercel.json`: Vite framework, build command `npm run build && npm run check`, output `dist`. Environment variable `VITE_SITE_URL` (the public URL with a trailing slash) sets the canonical and Open Graph URLs; `SITE_BASE` (default `/`) sets the path prefix.
 - `site/`: a Vite project (`package.json`, `index.html`, `privacy.html`, `src/`, `public/` for the logo, favicon, share image, video, poster and SmartScreen screenshot). `npm run build` writes the deployable site to `site/dist/`.
 - `packaging/winget/<version>/`: `<Id>.yaml`, `<Id>.installer.yaml`, `<Id>.locale.en-US.yaml`.
 - `packaging/msix/`: `AppxManifest.xml` template, identity config, generated visual assets.
@@ -104,12 +104,12 @@ The work is split into phases. Each phase ships on its own.
 - A manual Release run with a tag that does not exist, or does not match `pyproject.toml`, fails before building, with a message naming the tag and the version.
 - If the smoke test fails, nothing is published (unchanged from Decision 0026).
 - If MSIX packaging fails, the `.exe` release still publishes, and the job reports the MSIX failure clearly. MSIX is not allowed to block the main download.
-- If the Pages deployment fails, the previous site stays live.
+- If the Vercel build or the site checks fail, the deployment is not promoted and the previous site stays live.
 - The site's API fallback is described in R8.
 
 ## Security
 
-- Workflows use the minimum permissions each needs (`contents: write` for releases; `pages: write` and `id-token: write` for Pages). No long-lived secrets are added in this spec.
+- Workflows use the minimum permissions each needs (`contents: write` for releases). The Vercel project must not enable Vercel Analytics, Speed Insights or any other injected script (see Non-goals). No long-lived secrets are added in this spec.
 - No signing certificate, private key or Partner Center credential is ever committed or logged. The local-test MSIX certificate is generated per run and discarded.
 - The site loads no third-party code, so it has no supply-chain or tracking exposure. It sets a strict Content Security Policy meta tag (`default-src 'self'`, plus `connect-src https://api.github.com` for R8).
 - Release notes and the site never tell users to disable SmartScreen or antivirus. They only explain the one-time "Run anyway" step for this app.
@@ -176,7 +176,7 @@ Then every smoke check passes, and a saved key survives an app restart.
 - A workflow-level test is not practical. Instead, verify R1 and R2 with a real manual run, and keep the tag/version check in a small Python script under `scripts/` with unit tests for matching, mismatching and pre-release tags.
 - Unit tests for the winget manifest generator: the fields from R15, the versioned URL, and the checksum.
 - Unit tests for the new `make_icon.py` outputs: every MSIX asset exists at the declared size.
-- Site checks run on the built `site/dist/` before deploying: HTML validity, no external URLs in `src` or `href` except the allowed links (repo, releases, OpenRouter, license), every image has `alt`, and asset sizes are within R12 and R13.
+- Site checks run on the built `site/dist/` in every Vercel build, before deploying: HTML validity, no external URLs in `src` or `href` except the allowed links (repo, releases, OpenRouter, license), every image has `alt`, and asset sizes are within R12 and R13.
 - Manual checks from the acceptance criteria for the clean-machine installs (R4, winget, MSIX).
 
 ## Evaluation
@@ -186,7 +186,7 @@ None. This spec does not change agent behavior, so `evals/` is unchanged and its
 ## Implementation Tasks
 
 - [ ] Phase 1: add `workflow_dispatch` to `release.yml`; move the tag check to `scripts/`, with tests; publish `v0.1.0`; add the clean-machine, VirusTotal and false-positive steps to `docs/release-checklist.md`.
-- [ ] Phase 2: build `site/` (home and privacy pages, styles, assets); re-encode the video to at most 8 MB; make the share image and SmartScreen screenshot; add `pages.yml`; enable Pages in the repo settings (source: GitHub Actions); add CI site checks; link the site from the README.
+- [ ] Phase 2: build `site/` (home and privacy pages, styles, assets); re-encode the video to at most 8 MB; make the share image and SmartScreen screenshot; connect the Vercel project (root directory `site`); run the site checks in the Vercel build; link the site from the README.
 - [ ] Phase 3: manifest generator script with tests; attach the manifest zip in `release.yml`; document the submission; submit the first pull request to `microsoft/winget-pkgs`; add `winget install` to the site.
 - [ ] Phase 4: reserve the name in Partner Center; add one-folder build, MSIX assets, manifest template and `makeappx` step; test locally with a self-signed certificate; document the Store steps; submit.
 - [ ] Phase 5 (optional): packaging changes and the trusted-publishing PyPI job.
@@ -199,7 +199,7 @@ Depends on `012-desktop-ui` (the app being shipped) and Decisions 0025 (logo and
 ## Open Questions
 
 1. **winget package identifier.** It is usually `Publisher.App`, for example `Jotadev.Galliani`. Which publisher name should be used? The same name should appear in Partner Center.
-2. **Custom domain.** Stay on `jotadev-bug.github.io/Galliani` for launch, or buy a domain first? A domain costs money, so this draft stays on GitHub Pages.
+2. **Custom domain.** Stay on `galliani.vercel.app` for launch, or buy a domain first? A domain costs money, so launch stays on the free Vercel subdomain.
 3. **Copyright holder.** The license notice says "Galliani contributors". If paid commercial licenses are planned, the maintainer should hold the copyright, and outside contributions would need a contributor agreement (to be reviewed by a lawyer). Decide before accepting outside pull requests.
 4. **Branding check.** Before wide promotion, check that the name "Galliani" is free to use as a trademark, get an opinion on how close the silver G and four-point sparkle are to Google's G and the Gemini sparkle, and confirm the video's Claude mascot follows Anthropic's brand guidelines (Decision 0024).
 5. **WebView2.** The app needs the Microsoft Edge WebView2 runtime, which ships with Windows 11 but may be missing on some Windows 10 machines. Should the app show a clear message with a download link when it is missing? That would be a small behavior change, so it needs its own requirement in `012-desktop-ui`.

@@ -8,7 +8,7 @@ const ALLOWED = [
   "https://github.com/Jotadev-bug/Galliani",
   "https://api.github.com", // R8, and the CSP connect-src
   "https://openrouter.ai/keys",
-  "https://jotadev-bug.github.io/Galliani/", // canonical and Open Graph URLs
+  process.env.VITE_SITE_URL ?? "https://galliani.vercel.app/", // canonical and Open Graph URLs
 ];
 const MAX_VIDEO = 8 * 1024 * 1024; // R12
 const MAX_FIRST_LOAD = 500 * 1024; // R13: everything except the video
@@ -25,7 +25,7 @@ for (const file of files) {
   if (/\.(mp4|webm)$/.test(rel)) {
     if (size > MAX_VIDEO) errors.push(`${rel} is ${(size / 1048576).toFixed(1)} MB, over the 8 MB limit`);
   } else if (!/^(og-image|privacy)/.test(rel) && !rel.startsWith("assets/privacy")) {
-    // GitHub Pages serves text gzipped, so count what is actually transferred.
+    // The host serves text compressed, so count what is actually transferred.
     firstLoad += /\.(html|js|css|svg)$/.test(rel) ? gzipSync(readFileSync(file)).length : size;
   }
   if (!/\.(html|js|css)$/.test(rel)) continue;
