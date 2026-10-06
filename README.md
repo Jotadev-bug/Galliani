@@ -81,7 +81,13 @@ In the desktop app (`python -m app.desktop`), switch the message box from **Chat
 
 ## Download
 
+Get it from the website: https://jotadev-bug.github.io/Galliani/
+
 Windows builds are published on [GitHub Releases](https://github.com/Jotadev-bug/Galliani/releases/latest). The direct link to the newest stable build is `https://github.com/Jotadev-bug/Galliani/releases/latest/download/Galliani.exe`. You need your own OpenRouter key, which the app keeps in your OS credential store. Builds are not code-signed yet, so on first launch Windows SmartScreen may warn: choose **More info**, then **Run anyway**. Each release lists the SHA-256 of the `.exe`.
+
+## Website
+
+The landing page lives in `site/` (React, Vite, Tailwind, Motion). `npm run dev` in `site/` serves it locally; `npm run build && npm run check` builds it and checks the size, link and accessibility rules from spec 016. Every push to `main` that changes `site/` deploys it to GitHub Pages.
 
 ## Releasing
 

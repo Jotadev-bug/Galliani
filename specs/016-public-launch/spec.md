@@ -47,7 +47,7 @@ The work is split into phases. Each phase ships on its own.
 ### Phase 2: Landing page
 
 5. A static site lives in `site/` and is deployed to GitHub Pages by a workflow (`.github/workflows/pages.yml`) on every push to `main` that changes `site/`. It is served at `https://jotadev-bug.github.io/Galliani/` until a custom domain is chosen.
-6. The site is plain HTML and CSS with at most a small amount of vanilla JavaScript. There is no build step, framework, external font, or third-party script. Every asset is served from the site itself.
+6. The site is a static React app built with Vite, Tailwind CSS and Motion (amended 2026-10-06, Decision 0028). It is built in the Pages workflow and deployed as static files; nothing runs on a server. No external font or third-party script is loaded at runtime: every asset, including the JavaScript bundle, is served from the site itself. Animations respect `prefers-reduced-motion`.
 7. The home page contains, in order:
    1. **Hero:** the logo (`assets/logo.png`), the name, a one-line pitch ("Picks the right model for every message, and shows what you saved"), a primary **Download for Windows** button that links to the R3 URL, and the current version and file size under it.
    2. **Video:** the showcase video, muted, with controls and the poster frame, not autoplaying with sound. A text summary sits next to it for people who don't play it.
@@ -94,8 +94,8 @@ The work is split into phases. Each phase ships on its own.
 
 - `.github/workflows/release.yml`: triggers `push: tags: [v*]` and `workflow_dispatch` with input `tag` (string, required, matching `^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$`).
 - Release assets: `Galliani.exe`, `Galliani.exe.sha256`, `galliani-winget-<version>.zip` (Phase 3), `Galliani.msix` (Phase 4, when enabled).
-- `.github/workflows/pages.yml`: `actions/upload-pages-artifact` from `site/`, then `actions/deploy-pages`, with `pages: write` and `id-token: write` permissions only.
-- `site/`: `index.html`, `privacy.html`, `styles.css`, optional `main.js`, `assets/` (logo, favicon, share image, video, poster, SmartScreen screenshot).
+- `.github/workflows/pages.yml`: `npm ci` and `npm run build` in `site/`, `actions/upload-pages-artifact` from `site/dist/`, then `actions/deploy-pages`, with `pages: write` and `id-token: write` permissions only.
+- `site/`: a Vite project (`package.json`, `index.html`, `privacy.html`, `src/`, `public/` for the logo, favicon, share image, video, poster and SmartScreen screenshot). `npm run build` writes the deployable site to `site/dist/`.
 - `packaging/winget/<version>/`: `<Id>.yaml`, `<Id>.installer.yaml`, `<Id>.locale.en-US.yaml`.
 - `packaging/msix/`: `AppxManifest.xml` template, identity config, generated visual assets.
 
@@ -176,7 +176,7 @@ Then every smoke check passes, and a saved key survives an app restart.
 - A workflow-level test is not practical. Instead, verify R1 and R2 with a real manual run, and keep the tag/version check in a small Python script under `scripts/` with unit tests for matching, mismatching and pre-release tags.
 - Unit tests for the winget manifest generator: the fields from R15, the versioned URL, and the checksum.
 - Unit tests for the new `make_icon.py` outputs: every MSIX asset exists at the declared size.
-- Site checks run in CI on changes to `site/`: HTML validity, no external URLs in `src` or `href` except the allowed links (repo, releases, OpenRouter, license), every image has `alt`, and asset sizes are within R12 and R13.
+- Site checks run on the built `site/dist/` before deploying: HTML validity, no external URLs in `src` or `href` except the allowed links (repo, releases, OpenRouter, license), every image has `alt`, and asset sizes are within R12 and R13.
 - Manual checks from the acceptance criteria for the clean-machine installs (R4, winget, MSIX).
 
 ## Evaluation

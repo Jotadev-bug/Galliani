@@ -4,8 +4,28 @@
     {
       "name": "galliani-ui",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "app.api", "--port", "8000"],
+      "runtimeArgs": [
+        "-m",
+        "app.api",
+        "--port",
+        "8000"
+      ],
       "port": 8000
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "site",
+        "run",
+        "preview",
+        "--",
+        "--port",
+        "4173",
+        "--strictPort"
+      ],
+      "port": 4173
     }
   ]
 }
