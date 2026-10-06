@@ -8,7 +8,7 @@ This project follows spec-driven development. Changelog entries should reference
 
 ### Added
 
-- Landing page, Phase 2 of spec 016 (Decision 0028): a React, Vite, Tailwind and Motion site in `site/` with download, video, features, install, privacy, open source and FAQ sections, a privacy page, and `.github/workflows/pages.yml` to build, check and deploy it to GitHub Pages.
+- Landing page, Phase 2 of spec 016 (Decision 0028): a React, Vite, Tailwind and Motion site in `site/` with download, video, features, install, privacy, open source and FAQ sections, and a privacy page. It is hosted on Vercel at https://galliani.vercel.app/, which builds and checks it on every push.
 - Public launch plan, Phase 1 (spec 016, Decision 0027): the Release workflow can be started by hand for an existing tag, the tag check is a tested script (`scripts/release_tag.py`) that reads the version at the tag, pre-releases never become the latest release, and the release checklist adds clean-machine, VirusTotal and false-positive steps before announcing.
 - AGPL-3.0 license, CI and a release pipeline (Decision 0026): tests and evals run on every push and pull request, and pushing a `v*` tag builds, smoke-tests and publishes `Galliani.exe` with its checksum on GitHub Releases.
 - New logo as the app icon and in-app logo (Decision 0025): the icons and favicon are generated from `assets/logo.png`, and the UI palette moves from blue and violet to the logo's graphite and silver.

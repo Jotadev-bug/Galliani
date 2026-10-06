@@ -14,8 +14,11 @@ const csp: Plugin = {
     ),
 };
 
+// Public URL (with a trailing slash) for the canonical and Open Graph tags; a host can override it.
+process.env.VITE_SITE_URL ??= "https://galliani.vercel.app/";
+
 export default defineConfig({
-  // "/" for hosts that serve the site at the root (Vercel, a custom domain); the Pages workflow sets SITE_BASE=/Galliani/.
+  // Vercel serves the site at the root; set SITE_BASE to host it under a sub-path instead.
   base: process.env.SITE_BASE ?? "/",
   plugins: [react(), tailwindcss(), csp],
   build: {
