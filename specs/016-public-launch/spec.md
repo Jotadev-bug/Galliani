@@ -185,12 +185,12 @@ None. This spec does not change agent behavior, so `evals/` is unchanged and its
 
 ## Implementation Tasks
 
-- [ ] Phase 1: add `workflow_dispatch` to `release.yml`; move the tag check to `scripts/`, with tests; publish `v0.1.0`; add the clean-machine, VirusTotal and false-positive steps to `docs/release-checklist.md`.
-- [ ] Phase 2: build `site/` (home and privacy pages, styles, assets); re-encode the video to at most 8 MB; make the share image and SmartScreen screenshot; connect the Vercel project (root directory `site`); run the site checks in the Vercel build; link the site from the README.
-- [ ] Phase 3: manifest generator script with tests; attach the manifest zip in `release.yml`; document the submission; submit the first pull request to `microsoft/winget-pkgs`; add `winget install` to the site.
+- [x] Phase 1: add `workflow_dispatch` to `release.yml`; move the tag check to `scripts/`, with tests; publish `v0.1.0`; add the clean-machine, VirusTotal and false-positive steps to `docs/release-checklist.md`.
+- [x] Phase 2 (shipped 2026-10-06; the SmartScreen screenshot is still a drawn stand-in until one is taken on a clean machine): build `site/` (home and privacy pages, styles, assets); re-encode the video to at most 8 MB; make the share image and SmartScreen screenshot; connect the Vercel project (root directory `site`); run the site checks in the Vercel build; link the site from the README.
+- [ ] Phase 3: ~~manifest generator script with tests~~ (`scripts/winget_manifest.py`, done); ~~attach the manifest zip in `release.yml`~~ (done); ~~document the submission~~ (done); `v0.1.0` manifest committed in `packaging/winget/0.1.0/` and passing `winget validate` (done); still to do: `winget install --manifest` on a clean machine, submit the first pull request to `microsoft/winget-pkgs`, add `winget install` to the site once it is merged.
 - [ ] Phase 4: reserve the name in Partner Center; add one-folder build, MSIX assets, manifest template and `makeappx` step; test locally with a self-signed certificate; document the Store steps; submit.
 - [ ] Phase 5 (optional): packaging changes and the trusted-publishing PyPI job.
-- [ ] Record the approved decisions in `docs/decisions.md` and update `CHANGELOG.md` per phase.
+- [x] Record the approved decisions in `docs/decisions.md` and update `CHANGELOG.md` per phase.
 
 ## Dependencies
 
@@ -198,7 +198,7 @@ Depends on `012-desktop-ui` (the app being shipped) and Decisions 0025 (logo and
 
 ## Open Questions
 
-1. **winget package identifier.** It is usually `Publisher.App`, for example `Jotadev.Galliani`. Which publisher name should be used? The same name should appear in Partner Center.
+1. ~~**winget package identifier.**~~ Resolved 2026-10-07: `Jotade.Galliani`, from the Partner Center publisher name "Jotade" (Decision 0029). It cannot change after the first winget-pkgs merge.
 2. **Custom domain.** Stay on `galliani.vercel.app` for launch, or buy a domain first? A domain costs money, so launch stays on the free Vercel subdomain.
 3. **Copyright holder.** The license notice says "Galliani contributors". If paid commercial licenses are planned, the maintainer should hold the copyright, and outside contributions would need a contributor agreement (to be reviewed by a lawyer). Decide before accepting outside pull requests.
 4. **Branding check.** Before wide promotion, check that the name "Galliani" is free to use as a trademark, get an opinion on how close the silver G and four-point sparkle are to Google's G and the Gemini sparkle, and confirm the video's Claude mascot follows Anthropic's brand guidelines (Decision 0024).

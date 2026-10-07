@@ -77,7 +77,35 @@ Spec 016 R4. Do not link the release anywhere until each step holds.
 2. **VirusTotal.** Upload the `.exe` to [virustotal.com](https://www.virustotal.com/gui/home/upload) and keep the report link. Add it to the release notes.
 3. **False positives.** If Microsoft Defender or another major engine flags the file, submit it as a false positive. Microsoft's portal is free: [microsoft.com/wdsi/filesubmission](https://www.microsoft.com/en-us/wdsi/filesubmission) (choose "Software developer"). For other engines, use their own false-positive form. Note each submission and its date in the release notes. Never tell users to turn off SmartScreen or their antivirus.
 
-## 7. Documentation
+## 7. winget (manual)
+
+Spec 016 R17. The Release workflow attaches `galliani-winget-<version>.zip` (the same files as `packaging/winget/<version>/`, with the new release's checksum). Do this after the release is published and R4 holds.
+
+1. Unzip the manifest into `packaging/winget/<version>/` and commit it. For an older release, regenerate it with the checksum from the release's `.sha256` file:
+
+   ```bash
+   python -m scripts.winget_manifest --tag v0.1.0 --sha256 <hash> --release-date YYYY-MM-DD --out packaging/winget/0.1.0
+   ```
+
+2. Validate it:
+
+   ```powershell
+   winget validate --manifest packaging\winget\<version>
+   ```
+
+3. On a clean machine or Windows Sandbox, allow local manifests once (`winget settings --enable LocalManifestFiles`, as administrator), then install from the folder and check the command works:
+
+   ```powershell
+   winget install --manifest packaging\winget\<version>
+   galliani
+   ```
+
+4. Fork `microsoft/winget-pkgs` and copy the three files to `manifests/j/Jotade/Galliani/<version>/` (the path follows the package identifier: its first letter, then each part). Open a pull request. Its automated checks download the `.exe`, compare the checksum and scan it; fix anything they report.
+5. Once merged, add `winget install Jotade.Galliani` to the site's Install section (spec 016 R7.4).
+
+The package identifier cannot change after the first merge. See spec 016 Open Question 1.
+
+## 8. Documentation
 
 - `CHANGELOG.md` lists the change with its spec references.
 - `docs/decisions.md` records any change to contracts, lifecycle states, or security behavior.
