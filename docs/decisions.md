@@ -255,3 +255,13 @@ Status: Accepted (2026-10-06)
 - **Budget.** React and Motion add about 110 KB gzipped. The home page transfers about 200 KB before the video plays (R13 allows 500 KB), and the video is re-encoded from the render to 1280x720 H.264 without audio, about 1.3 MB (R12 allows 8 MB). `site/scripts/check-site.mjs` enforces both, plus allowed external URLs, the CSP, `lang` and `alt`, before deploying.
 - **SmartScreen step.** Until a real screenshot is taken on a clean machine, the install section shows a drawn stand-in for the SmartScreen dialog, with a text label.
 - **Illustrative demos.** The hero's app window (a prompt is typed, the router scans the models and picks one, cost and savings count up), the agent stepper and the cost bars are animations with example numbers, labelled "Example" or "Illustrative". The app shows the real model and cost for every answer. The model strip lists the models in `config/models.yaml` by name only, with no vendor logos.
+
+## Decision 0029: winget manifest generator, Phase 3
+
+Status: Accepted (2026-10-07)
+
+- **Portable package.** `scripts/winget_manifest.py` writes the three manifest files (version, installer, default locale) for a release tag. The package is `InstallerType: portable`, points at the versioned release URL (never `latest`), carries the `.exe`'s SHA-256 and the command alias `galliani`, and uses manifest schema 1.6.0. It validates the tag, checksum, identifier and date before writing anything, and it has no network access: the checksum comes from the built `.exe` or from the release's `.sha256` file.
+- **Release workflow.** After the checksum step, `release.yml` generates the manifest from the built `.exe` and attaches `galliani-winget-<version>.zip` to the release. The workflow does not open the winget-pkgs pull request, because that needs a personal access token (deferred, per spec 016 Non-goals).
+- **Committed manifest.** `packaging/winget/0.1.0/` holds the manifest for the first release, built from the published checksum and checked with `winget validate`.
+- **Identifier.** `Jotade.Galliani`, from the maintainer's Partner Center publisher name "Jotade" (confirmed 2026-10-07). It cannot change after the first winget-pkgs merge.
+- **Publisher field.** The locale manifest uses "Galliani contributors", matching the license notice, until Open Question 3 (copyright holder) is decided.

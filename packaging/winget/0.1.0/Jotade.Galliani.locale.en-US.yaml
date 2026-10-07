@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+
+PackageIdentifier: Jotade.Galliani
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: Galliani contributors
+PublisherUrl: https://github.com/Jotadev-bug/Galliani
+PublisherSupportUrl: https://github.com/Jotadev-bug/Galliani/issues
+PrivacyUrl: https://galliani.vercel.app/privacy.html
+PackageName: Galliani
+PackageUrl: https://galliani.vercel.app/
+License: AGPL-3.0-or-later
+LicenseUrl: https://github.com/Jotadev-bug/Galliani/blob/main/LICENSE
+ShortDescription: Picks the right AI model for every message and shows what you saved.
+Description: >-
+  Galliani is a desktop app that routes each chat message to the cheapest model that can answer it,
+  and shows the model, the cost and the savings for every answer. Its Agent mode plans a task, uses
+  tools in a folder you choose, asks before writing files, and verifies the result before it finishes.
+  You bring your own OpenRouter key; it is kept in the OS credential store and nothing is collected.
+Moniker: galliani
+Tags:
+- ai
+- agent
+- llm
+- openrouter
+- router
+ReleaseNotesUrl: https://github.com/Jotadev-bug/Galliani/releases/tag/v0.1.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
