@@ -8,6 +8,7 @@ This project follows spec-driven development. Changelog entries should reference
 
 ### Added
 
+- Microsoft Store packaging scaffold, Phase 4 of spec 016 (Decision 0030): `scripts/build_msix.py` builds `Galliani.msix` from a one-folder build (`build_desktop --onedir`) with `makeappx`, `make_icon` generates the Store tiles, `packaging/msix/` holds the manifest template and the Partner Center identity file, and `--local-test` makes a package signed with a throwaway certificate for testing. The Release workflow builds the package once the identity is committed, and never lets it block the `.exe`. The release checklist documents the Store steps.
 - winget manifest generator, Phase 3 of spec 016 (Decision 0029): `scripts/winget_manifest.py` writes the portable-package manifest for a release, the Release workflow attaches it as `galliani-winget-<version>.zip`, and `packaging/winget/0.1.0/` holds the `v0.1.0` manifest. The release checklist documents the manual submission.
 
 ## 0.1.0 - 2026-10-06

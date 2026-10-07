@@ -1,0 +1,7 @@
+{
+  "_note": "Copy Identity Name and Publisher from Partner Center > Product identity once 'Galliani' is reserved (spec 016 R19). They are not secret. Leave them null until then: the Store build refuses to run with null values.",
+  "identity_name": null,
+  "publisher": null,
+  "publisher_display_name": "Jotade",
+  "display_name": "Galliani"
+}
