@@ -61,6 +61,12 @@ jobs:
       - name: Winget manifest
         run: python -m scripts.winget_manifest --tag "$env:TAG" --exe dist/Galliani.exe --zip-dir dist
 
+      # The Store package (spec 016 R18). It is skipped until packaging/msix/identity.json holds the Partner Center
+      # identity, and a failure here never blocks the .exe release (continue-on-error).
+      - name: MSIX for the Microsoft Store
+        continue-on-error: true
+        run: python -m scripts.build_msix --if-configured
+
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
@@ -69,6 +75,7 @@ jobs:
             dist/Galliani.exe
             dist/Galliani.exe.sha256
             dist/galliani-winget-*.zip
+            dist/Galliani.msix
           prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
           make_latest: ${{ steps.tag.outputs.prerelease == 'true' && 'false' || 'true' }}
           generate_release_notes: true

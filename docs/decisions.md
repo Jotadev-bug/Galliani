@@ -265,3 +265,16 @@ Status: Accepted (2026-10-07)
 - **Committed manifest.** `packaging/winget/0.1.0/` holds the manifest for the first release, built from the published checksum and checked with `winget validate`.
 - **Identifier.** `Jotade.Galliani`, from the maintainer's Partner Center publisher name "Jotade" (confirmed 2026-10-07). It cannot change after the first winget-pkgs merge.
 - **Publisher field.** The locale manifest uses "Galliani contributors", matching the license notice, until Open Question 3 (copyright holder) is decided.
+
+## Decision 0030: Microsoft Store packaging scaffold, Phase 4
+
+Status: Accepted (2026-10-07)
+
+- **One-folder build.** `scripts/build_desktop.py --onedir` builds `dist/onedir/Galliani/` for the package, which starts faster and extracts nothing to `%TEMP%` (spec 016 R20). The standalone `.exe` stays `--onefile` and its output paths are unchanged. The build still runs the app's `--smoke-test` before anything is packed.
+- **Packaging.** `scripts/build_msix.py` fills `packaging/msix/AppxManifest.template.xml` (a full-trust desktop app: `runFullTrust`, `Windows.FullTrustApplication`, x64, Windows 10 1809 or later), stages the app folder with an `Assets` folder and the manifest, and packs it with `makeappx` from the Windows SDK. The version is `pyproject.toml`'s with a fourth part of `0`, which the Store reserves.
+- **Identity is never invented (R19).** `packaging/msix/identity.json` leaves `identity_name` and `publisher` null until Partner Center issues them; `publisher_display_name` is "Jotade". A Store build with null values refuses to run and says where to find them. In CI, `--if-configured` skips the step instead, so the release workflow keeps working until the identity is committed.
+- **Signing (R18).** Store builds are left unsigned, because the Store signs them. `--local-test` uses a made-up identity (`Galliani.LocalTest`, `CN=Galliani Local Test`) and signs with a certificate created for the run and deleted from the certificate store right after signing; only its public `.cer` is written to `dist/`. The script never trusts the certificate: the checklist has the maintainer do that by hand, as administrator, and undo it afterwards.
+- **Never blocks the `.exe`.** The workflow step is `continue-on-error`, so an MSIX failure leaves the `.exe` release intact (spec 016 Error Handling).
+- **Tiles (R21).** `scripts/make_icon.py` also writes `packaging/msix/Assets/` (Square44x44, Square150x150, Wide310x150 on `#121318`, StoreLogo, at scales 100, 125, 150, 200 and 400). They are committed, like the other generated icons.
+- **Verified locally (2026-10-07).** `python -m scripts.build_msix --local-test` built the one-folder app, passed its smoke test, packed with `makeappx` and signed with the throwaway certificate, which was gone from the certificate store afterwards. `makeappx` requires the unscaled tile names the manifest declares, so `make_icon` also writes `<Name>.png` (the 200% tile). A package built in a developer environment with extra packages installed (`torch` and others) is far bigger than one built on the clean CI runner, so check the size of the first CI-built package.
+- **Not yet verified.** Installing the package and running it from inside the package (R22: the credential store, `%LOCALAPPDATA%` virtualization, the folder picker) is a manual check on a clean machine.

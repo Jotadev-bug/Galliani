@@ -105,7 +105,49 @@ Spec 016 R17. The Release workflow attaches `galliani-winget-<version>.zip` (the
 
 The package identifier cannot change after the first merge. See spec 016 Open Question 1.
 
-## 8. Documentation
+## 8. Microsoft Store (manual)
+
+Spec 016 R18-R23. The Store build is `Galliani.msix`; the Store signs it, so it is submitted unsigned. Do this once after R4 holds for the same version.
+
+**Once, in Partner Center** (your individual developer account is already verified):
+
+1. **Reserve the name.** Apps and games > New product > MSIX or PWA app > reserve "Galliani".
+2. **Copy the identity.** Product management > Product identity. Copy *Package/Identity/Name* and *Package/Identity/Publisher* (it looks like `CN=xxxxxxxx-xxxx-...`) into `packaging/msix/identity.json` (`identity_name`, `publisher`). They are not secret. `publisher_display_name` must equal *Package/Properties/PublisherDisplayName* (currently "Jotade"). Commit the file.
+
+**For each release:**
+
+1. **Build.** Pushing the tag builds `Galliani.msix` in the Release workflow once the identity is committed (a failure there never blocks the `.exe`). To build by hand: `python -m scripts.build_msix`.
+2. **Test it locally first** (R22). Build a test package with a throwaway identity and certificate, trust that certificate, install the package and run it:
+
+   ```powershell
+   python -m scripts.build_msix --local-test
+   # As administrator, trust the throwaway certificate (undo it afterwards, see below):
+   Import-Certificate -FilePath dist\Galliani.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+   Add-AppxPackage dist\Galliani.msix
+   ```
+
+   Start **Galliani (local test)** from the Start menu. Check that the window opens, a key you add survives closing and reopening the app, the folder picker works, and an agent task completes. Then remove it:
+
+   ```powershell
+   Get-AppxPackage Galliani.LocalTest | Remove-AppxPackage
+   # As administrator:
+   Get-ChildItem Cert:\LocalMachine\TrustedPeople | Where-Object Subject -eq 'CN=Galliani Local Test' | Remove-Item
+   ```
+
+   The throwaway certificate is created for each run, deleted from the certificate store right after signing, and never committed or published. Never trust it on a machine you do not own.
+3. **Create the submission.** In Partner Center, start a submission for Galliani and fill in:
+   - Pricing: free.
+   - Properties: category (Productivity or Developer tools), and the privacy policy URL `https://galliani.vercel.app/privacy.html`.
+   - Age rating questionnaire (no user-generated content shared between users, no purchases).
+   - Store listing: the description and short description from the site, at least one 1366x768 or larger screenshot of the app (take real ones), and the logo tiles from `packaging/msix/Assets/`.
+   - Packages: upload `Galliani.msix` (from the release assets, or built locally with the same command).
+   - Notes for certification: it is a desktop app that needs the user's own OpenRouter key; say so, and give a throwaway test key if the testers ask.
+4. **Submit** for certification and watch the Partner Center dashboard. Fix whatever the report names and resubmit.
+5. Once live, add the Store link to the site's Install section and the README.
+
+Increase `version` in `pyproject.toml` for every new submission: the Store rejects a package version it has already seen.
+
+## 9. Documentation
 
 - `CHANGELOG.md` lists the change with its spec references.
 - `docs/decisions.md` records any change to contracts, lifecycle states, or security behavior.
