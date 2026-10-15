@@ -60,7 +60,13 @@ class RedactingFilter(logging.Filter):
 
     def __init__(self, secrets: Iterable[str]):
         super().__init__()
-        self._secrets = sorted({s for s in secrets if s}, key=len, reverse=True)  # the URL before the token
+        self._secrets: list[str] = []
+        self.add(*secrets)
+
+    def add(self, *secrets: str) -> None:
+        """Add secrets known only later (the window URL once the port is chosen). Swapped in one step, so a
+        record filtered meanwhile on another thread sees the old or the new list, never a partial one."""
+        self._secrets = sorted({s for s in (*self._secrets, *secrets) if s}, key=len, reverse=True)  # URL first
 
     def scrub(self, text: str) -> str:
         for secret in self._secrets:
@@ -127,14 +133,26 @@ def _log_thread_exception(args: threading.ExceptHookArgs) -> None:
         LOG.error("Uncaught exception in thread %s.", name, exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
 
 
+def pywebview_level(debug: bool) -> int:
+    """pywebview's own rule, which its skipped logger setup would have applied: a valid `PYWEBVIEW_LOG` level
+    name wins; otherwise `--debug` means DEBUG and the default is INFO. An invalid name falls back to INFO,
+    as in pywebview. Every record still reaches desktop.log only through the redacting filter."""
+    name = os.environ.get("PYWEBVIEW_LOG")
+    if name:  # any non-empty value counts as set, as in pywebview; it is not stripped
+        return logging.getLevelNamesMapping().get(name.upper(), logging.INFO)
+    return logging.DEBUG if debug else logging.INFO
+
+
 @contextmanager
-def desktop_log(path: Path, secrets: Iterable[str], *, windowed: bool) -> Iterator[logging.Handler]:
+def desktop_log(path: Path, secrets: Iterable[str], *, windowed: bool,
+                debug: bool = False) -> Iterator[logging.Handler]:
     """R13: route everything bound for desktop.log through one handler with the redacting filter.
 
-    `secrets` are the app token and window URL of this launch. In the windowed build stdout and stderr
-    become log records too, and uncaught thread exceptions are logged, so no path writes around the filter.
-    pywebview gets a NullHandler first, so it does not add its own stderr handler; its records reach
-    desktop.log through the root handler only. Everything is restored on exit.
+    `secrets` are the app token and window URL of this launch (more can be added through the handler's
+    `RedactingFilter.add`). In the windowed build stdout and stderr become log records too, and uncaught
+    thread exceptions are logged, so no path writes around the filter. pywebview gets a NullHandler first,
+    so it does not add its own stderr handler; its records reach desktop.log through the root handler only,
+    at the level pywebview itself would use (`pywebview_level`). Everything is restored on exit.
     """
     handler = logging.FileHandler(path, encoding="utf-8", delay=True)
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%dT%H:%M:%SZ")
@@ -143,9 +161,9 @@ def desktop_log(path: Path, secrets: Iterable[str], *, windowed: bool) -> Iterat
     handler.addFilter(RedactingFilter(secrets))
     root, pywebview, null = logging.getLogger(), logging.getLogger("pywebview"), logging.NullHandler()
     levels = {logger: logger.level for logger in (LOG, pywebview)}
-    for logger, level in levels.items():
-        if level == logging.NOTSET:
-            logger.setLevel(logging.INFO)
+    if LOG.level == logging.NOTSET:
+        LOG.setLevel(logging.INFO)
+    pywebview.setLevel(pywebview_level(debug))
     pywebview.addHandler(null)
     root.addHandler(handler)
     streams, thread_hook = (sys.stdout, sys.stderr), threading.excepthook
@@ -197,13 +215,27 @@ def start_server(port: int):
     from app.api.routes import app
 
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", log_config=None))
-    threading.Thread(target=server.run, daemon=True, name="api").start()
+    server.thread = threading.Thread(target=server.run, daemon=True, name="api")  # joined by stop_server
+    server.thread.start()
     deadline = time.monotonic() + 20
     while not server.started:
         if time.monotonic() > deadline:
+            server.should_exit = True  # never leave a half-started server running
             raise RuntimeError("The local server did not start within 20 s.")
         time.sleep(0.05)
     return server
+
+
+def stop_server(server, timeout: float = 3.0) -> None:
+    """Ask uvicorn to stop and wait briefly, so its shutdown lines still reach desktop.log (R13)."""
+    server.should_exit = True
+    thread = getattr(server, "thread", None)
+    if thread is not None:
+        thread.join(timeout)
+
+
+def _redactor(handler: logging.Handler) -> RedactingFilter:
+    return next(f for f in handler.filters if isinstance(f, RedactingFilter))
 
 
 def _agent_runtime_builds() -> bool:
@@ -259,10 +291,8 @@ def main(argv: list[str] | None = None, hooks: WindowHooks | None = None) -> int
     os.environ["ROUTER_APP_TOKEN"] = token
     os.environ.setdefault("ROUTER_LOG_PATH", str(data / "requests.jsonl"))
 
-    port = free_port()
-    base = f"http://127.0.0.1:{port}"
-    url = f"{base}/?token={token}"
     bridge = DesktopBridge()
+    base = url = ""  # set once the port is chosen, inside desktop_log
 
     def open_window() -> None:  # imports pywebview only after the R7 check has decided (launch_window)
         import webview
@@ -276,9 +306,14 @@ def main(argv: list[str] | None = None, hooks: WindowHooks | None = None) -> int
         return bridge._window is not None and bridge._window.events.shown.is_set()
 
     # Windowed build (no console): output goes to desktop.log too, always through the redacting filter (R13).
-    with desktop_log(data / "desktop.log", (url, base, token), windowed=sys.stdout is None):
+    # The log starts before anything that can fail (free_port too), and the token is a secret from the start.
+    with desktop_log(data / "desktop.log", (token,), windowed=sys.stdout is None, debug=args.debug) as log:
         server = None
         try:
+            port = free_port()
+            base = f"http://127.0.0.1:{port}"
+            url = f"{base}/?token={token}"
+            _redactor(log).add(url, base)
             server = start_server(port)
             if args.smoke_test:
                 return smoke_test(base, token)
@@ -289,7 +324,7 @@ def main(argv: list[str] | None = None, hooks: WindowHooks | None = None) -> int
             raise
         finally:
             if server is not None:
-                server.should_exit = True
+                stop_server(server)  # inside desktop_log: late uvicorn lines are still filtered and kept
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ Used by Task State (002 security), observability (011 R4-R5) and provider adapte
 
 from __future__ import annotations
 
+import functools
 import re
 from typing import Any
 
@@ -25,6 +26,21 @@ HIDDEN_REASONING_KEYS = frozenset({
     "redacted_thinking",
 })
 
+# Left boundary for `sk-` and Stripe keys (spec 012 Security, Decision 0032). Not after an ASCII letter or
+# digit, so words ending in "sk"/"rk" ("task-runner-...", "network_test_...") are not keys, except directly
+# after an escape, where a real key still starts: a URL escape `%XX` or double-encoded `%25XX`, a string
+# escape `\n \r \t \f \v \b \0`, a hex escape `\xNN`, a Unicode escape `\uXXXX`, or an ANSI colour code (SGR,
+# `ESC[...m`, parameters separated by `;` or `:`) whose ESC is the raw character or is written `\x1b`,
+# `\033`, `\u001b` or `\e` (hex digits in either case). Python's lookbehinds are fixed-width, so the SGR one
+# is listed per parameter length, up to 24 characters (`1;38;2;255;255;255` is 18); a longer one is not a
+# boundary. Accepted trade-off: a key glued to a letter or digit is not masked.
+_SGR_ESCAPES = (r"\x1b", r"\\(?:x1[bB]|033)", r"\\u001[bB]", r"\\e")  # each alternative group has one width
+_LEFT_BOUNDARY = "(?:" + "|".join([
+    r"(?<![A-Za-z0-9])", r"(?<=%[0-9A-Fa-f]{2})", r"(?<=%25[0-9A-Fa-f]{2})", r"(?<=\\[nrtfvb0])",
+    r"(?<=\\x[0-9A-Fa-f]{2})", r"(?<=\\u[0-9A-Fa-f]{4})",
+    *(rf"(?<={esc}\[[0-9;:]{{{n}}}m)" for esc in _SGR_ESCAPES for n in range(25)),
+]) + ")"
+
 
 class RedactionPolicy(BaseModel):
     """Spec 011 `RedactionPolicy`: field_patterns, sensitivity_labels, action."""
@@ -35,12 +51,8 @@ class RedactionPolicy(BaseModel):
         r"^authorization$", r"^credentials?$", r".*private[_-]?key.*", r"^(set[_-])?cookie$",
     ])
     value_patterns: list[str] = Field(default_factory=lambda: [
-        # Word boundary on the left, so words ending in "sk" ("task-runner-...", "disk-...") are not keys,
-        # except directly after an escape, where a real key still starts (spec 012 Security, Decision 0032):
-        # a URL escape `%XX` or double-encoded `%25XX`, a string escape `\n \r \t \f \v \b \0`, a hex escape
-        # `\xNN` or a Unicode escape `\uXXXX`. Accepted trade-off: a key glued to a letter or digit is not masked.
-        r"(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2})|(?<=%25[0-9A-Fa-f]{2})|(?<=\\[nrtfvb0])"
-        r"|(?<=\\x[0-9A-Fa-f]{2})|(?<=\\u[0-9A-Fa-f]{4}))sk-[A-Za-z0-9_\-]{16,}",
+        # The lookahead comes first, so the left boundary's lookbehinds run only where a key could start.
+        rf"(?=sk-){_LEFT_BOUNDARY}sk-[A-Za-z0-9_\-]{{16,}}",
         r"(?i:bearer)\s+[A-Za-z0-9._\-]{16,}",
         r"AKIA[0-9A-Z]{16}",
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
@@ -50,15 +62,23 @@ class RedactionPolicy(BaseModel):
         r"AIza[0-9A-Za-z_\-]{35}",
         r"xox[abprs]-[A-Za-z0-9-]{10,}",
         r"glpat-[A-Za-z0-9_\-]{20,}",
-        r"[sr]k_(?:live|test)_[A-Za-z0-9]{16,}",
+        rf"(?=[sr]k_){_LEFT_BOUNDARY}[sr]k_(?:live|test)_[A-Za-z0-9]{{16,}}",  # same left boundary as sk-
     ])
     sensitivity_labels: list[str] = Field(default_factory=lambda: ["sensitive"])
     action: str = "redact"
 
     def _field_re(self) -> re.Pattern[str]:
-        return re.compile("|".join(f"(?:{p})" for p in self.field_patterns), re.IGNORECASE)
+        return _joined(tuple(self.field_patterns), re.IGNORECASE)
+
     def _value_re(self) -> re.Pattern[str]:
-        return re.compile("|".join(f"(?:{p})" for p in self.value_patterns))
+        return _joined(tuple(self.value_patterns), 0)
+
+
+@functools.lru_cache(maxsize=64)
+def _joined(patterns: tuple[str, ...], flags: int) -> re.Pattern[str]:
+    """One compiled alternation per pattern list, cached: keyed by the patterns, so editing a policy's
+    lists takes effect on the next call."""
+    return re.compile("|".join(f"(?:{p})" for p in patterns), flags)
 
 
 DEFAULT_POLICY = RedactionPolicy()

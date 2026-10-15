@@ -10,6 +10,8 @@ Amendment to R7, R8 and R10 (pywebview's exact rule, the legacy-engine path, the
 
 Amendment "Local API request guard" (requirements 16-19): **Approved (2026-10-15, Decision 0032 Accepted).** It writes down the contract already implemented in `app/api/routes.py` and pinned by `tests/core/test_security_review.py`.
 
+**Proposed amendment "WebView2 installed but fails to initialize" (R20, its acceptance criteria, tests, tasks and Open Question 8): Proposed 2026-10-15, NOT approved.** It closes the QA gap recorded in `docs/security.md` (WebView2 check). Nothing under R20 may be implemented until the user approves it (Decision 0031, proposed amendment bullet). It changes no approved text: R9, R12 (and its text), R13's existing cases and R14 stay as they are.
+
 Requirements 1-5 remain approved and unchanged.
 
         ## Goal
@@ -93,6 +95,31 @@ Found during the core-engineer implementation review and checked against pywebvi
 - **Rejected alternatives.** Rewording the twice-approved R9 text (it is true on every path where R9 is shown once the rule is mirrored); replacing pywebview's private `_set_ie_mode` with a no-op before the probe (removes the writes, but patches a private function and fails silently if pywebview renames it).
 - **R9, R11, R12, R14, R15 and the R9 and R12 texts are unchanged.** R13 only gained the sentence on pywebview's logger and tracebacks.
 
+### Proposed amendment: WebView2 installed but fails to initialize (R20, Proposed 2026-10-15, NOT approved)
+
+> **Status: Proposed.** Not approved; the user decides (Open Question 8). Until then the gap below is a known limitation, as recorded in `docs/security.md`.
+
+Background, checked against pywebview 6.2.1 (read-only): R12 fires only when "creating or starting the window raises an error". When WebView2 is registered (R7 passes) and pywebview picks `edgechromium` (R8 passes) but the runtime is damaged, the WebView2 control reports `CoreWebView2InitializationCompleted` with `IsSuccess` false. pywebview's handler (`webview/platforms/edgechromium.py` `EdgeChrome.on_webview_ready`, lines 267-273) only calls `logger.error('WebView2 initialization failed with exception:\n ' + ...)` on the `pywebview` logger and returns. Nothing raises, no page is loaded, and the window's `loaded` event never fires. The user gets an empty window. When they close it, the exit code is 0, and they never see the R12 box. Two pywebview facts limit the options: the window's `shown` event fires on the WinForms `Form.Shown` event whether or not WebView2 started (`webview/platforms/winforms.py` `on_shown`, lines 367-369). The `loaded` event fires only after a navigation completes and pywebview's script is injected (`webview/util.py` `inject_pywebview`, lines 229-238).
+
+20. **WebView2 that fails to initialize (Proposed).** On Windows, after R7 reports "present" and R8 confirms `edgechromium`, the launcher must detect pywebview's report that WebView2 failed to initialize and handle it like a window start failure (R12).
+    - **Signal.** The signal is a record from the `pywebview` logger at level ERROR whose unformatted message (`record.msg`, before any formatting or redaction) starts with `WebView2 initialization failed`. That is the exact prefix pywebview 6.2.1 logs in `EdgeChrome.on_webview_ready` when `IsSuccess` is false. No other record, level or logger counts.
+    - **Watcher.** The launcher attaches one watcher handler to the `pywebview` logger just before it creates the window. It removes the handler when `open_window` returns or raises. The handler only sets a flag. It stores, copies, formats and writes nothing. The record still reaches `desktop.log` only through the R13 redacting handler, exactly as today.
+    - **Only before the page is up.** The signal counts only while the window's `loaded` event is not set. A matching record after `loaded` is ignored.
+    - **No timeout.** The decision depends only on the failure report, never on elapsed time. A slow start, however long, never shows the box.
+    - **What happens.** When the flag is set, the launcher closes the pywebview window, outside the logging call, so no empty window is left behind the box. That close is not a user close and does not lead to exit code 0. Once `webview.start` has returned, the launcher shows the R12 box with the R12 text unchanged. It writes one R13 line with the new case `webview2_init_failed`, the detected version, the answer, and `error=WebView2InitializationFailed`. The exception detail is already in `desktop.log`, redacted, through pywebview's own record. Then it stops the server and exits with code 4. Yes and No behave as in R10 and R11. If the user closed the empty window before the flag was set, the exit is unchanged (0). If the flag was set before the user closed it, the R12 box is still shown.
+    - **Nothing new leaves or changes the PC.** There is no network request, no process started by Galliani, no registry write, no file other than `desktop.log`, and no telemetry. The R10 URL opens only on Yes.
+    - **Pinned to pywebview's text.** A unit test reads the source text of the installed `webview/platforms/edgechromium.py` without importing it. The test fails unless `on_webview_ready` still contains a `logger.error(` call whose string starts with `WebView2 initialization failed`. Its failure message says to re-check R20. Together with the `pywebview>=6.2,<7` pin (R7), any pywebview upgrade that rewords or removes the report fails CI instead of silently bringing back the empty window.
+    - **Known limitation that remains.** A WebView2 start that never reports anything, a hang, is not detected. The window stays empty, as today (Open Question 8 b).
+
+#### Why R20 reads this way (Proposed)
+
+- **(a) Events with a bounded timeout. Rejected as the primary signal.** `shown` cannot tell success from failure, because it fires on `Form.Shown` either way. `loaded` is a correct success signal, but only a timeout can turn its absence into a failure. The first WebView2 start on a slow machine can take many seconds: it creates the profile folder under the user data folder, starts the `msedgewebview2` processes, and antivirus scans them. Sleep or resume during start-up, or a debugger, stretches that further. A timeout short enough to help (5-10 s) would close a working app and tell the user their WebView2 "may be damaged". That is the worst outcome: a false alarm that also stops a working app. A timeout long enough to be safe (60 s or more) arrives after the user has already closed the empty window. The false-positive risk is high and grows on exactly the machines (old, slow, Windows 10) this amendment serves.
+- **(b) The pywebview log record. Recommended.** It is a positive report made by WebView2 itself (`IsSuccess` false), delivered within the same start-up. It has no time element, so a slow machine can never trigger it. It needs no private pywebview attribute and no .NET types in the launcher. It uses only the logger that R13 already filters. The cost is depending on a log string, not an API. The source-text pin test and the `<7` pin turn a silent drift into a failing test.
+  - **False-positive risk: low.** It needs WebView2 to report a real initialization failure. A failure with a cause other than a damaged install, for example a locked or unwritable profile folder, low memory, or a group policy that blocks the runtime, also shows the R12 box. Its hedged text ("may be damaged or out of date ... often helps") is still more useful than an empty window, and the exact cause is in `desktop.log`.
+  - **False-negative risk.** A hang that never reports (R20 known limitation).
+- **(c) Accept as a known limitation. Rejected, kept as the fallback.** R12 already names "may be damaged" as its case, and an empty window with exit code 0 is exactly what the WebView2 amendment set out to remove. If the user rejects (b), `docs/security.md` keeps the current note, and R12 should be reworded to say it covers only errors that pywebview raises.
+- **(d) Subscribe to `CoreWebView2InitializationCompleted` directly. Rejected.** This would go through `window.native` and pywebview's private `browser.webview` attribute, and would add .NET types to the launcher. The handler must also be attached before the control's own asynchronous start completes, which is a race. If pywebview renames the attribute, it fails silently. This is the same reason `_set_ie_mode` patching was rejected in the R7/R8/R10 amendment.
+
 ### Local API request guard (amendment, Approved 2026-10-15, Decision 0032)
 
 The desktop window and the browser-served UI both talk to the same local HTTP API (`app/api/routes.py`, with the agent routes in `galliani/web/agent_api.py`). That API can approve or deny agent writes, change the edit mode, start tasks, and save keys and memory. These requirements stop other web pages open in the user's browser from driving it (cross-site requests, SEC-5) and stop DNS rebinding (SEC-8). They apply in every mode: the desktop app (with its per-launch `X-App-Token`) and the server started without a desktop token.
@@ -122,6 +149,7 @@ The desktop window and the browser-served UI both talk to the same local HTTP AP
 - Permission denial explains that execution is blocked.
 - Failed tasks show safe error summaries and next options.
 - (WebView2 amendment) A missing or unusable WebView2 runtime shows the R9 message box instead of a blank or broken window; a window that fails to start, or pywebview still choosing the legacy engine (R8), shows the R12 message box. An unreadable registry key counts as "missing", never as a crash. If the native message box itself cannot be shown, the launcher still writes the R13 log line and exits with the same code.
+- (Proposed, R20, not approved) A WebView2 runtime that is registered but reports a failed initialization closes the empty window and shows the R12 box with exit code 4 (case `webview2_init_failed`). A start that never reports success or failure is not detected (known limitation).
 - (API guard amendment) A request refused by R16-R18 gets 403 with a JSON `detail` and nothing runs: no task starts, no approval or denial is recorded, no key, memory or edit mode changes. The UI shows a refusal as a safe error, never as success.
 
         ## Security
@@ -131,6 +159,7 @@ The desktop window and the browser-served UI both talk to the same local HTTP AP
 - Approval prompts must describe scope before the user consents.
 - (WebView2 amendment) The WebView2 check is read-only and offline (R7), and pywebview's Windows backend is not imported before it decides, so on the R9 path nothing on the PC has changed. The only registry writes in the process are pywebview's own two `FeatureControl` values on the R8 path (R10 known exception). The only network action is the user's own browser opening the fixed Microsoft URL after they select Yes (R10). The app token and window URL never reach the log or the dialogs (R13).
 - (WebView2 amendment) **Everything in `desktop.log` is redacted (R13).** The handler that writes `desktop.log` applies one filter to every record from every logger, including pywebview's own `pywebview` logger, and to the formatted traceback of any exception logged or re-raised into it (`exc_info`, `logging.exception`, an uncaught exception hook). The filter removes the exact app token and window URL of the current launch (known to the launcher) and then applies the shared redactor `galliani/redaction.py`. No code path writes to `desktop.log` around that filter.
+- (Proposed, R20, not approved) The R20 watcher on the `pywebview` logger only sets a flag. It keeps no copy of the record, writes nothing, and opens no file or connection, so it adds no path around the R13 filter. Detection is in-process only: no telemetry and no new network access.
 - **Redaction trade-offs (shared redactor `galliani/redaction.py`, used here, in Task State, events and the memory secret check; recorded 2026-10-15, Decision 0032).**
   - An `sk-` key is masked when the character before `sk-` is not a letter or digit (start of text, space, punctuation, quote), or when `sk-` directly follows an escape, where a real key still starts: a URL escape `%XX`, including a double-encoded one such as `%253D`; a string escape `\n`, `\r`, `\t`, `\f`, `\v`, `\b` or `\0`; a hex escape `\xNN`; or a Unicode escape `\uXXXX`.
   - Accepted trade-off: an `sk-` key glued directly to a letter or digit with no escape before it (for example `abcsk-...`) is not masked. Masking it would also mask ordinary words ending in "sk" (`task-runner-1234567890`, `disk-...`) and make memory refuse them.
@@ -281,6 +310,32 @@ Given a machine with or without WebView2
 When `--smoke-test` runs
 Then it prints one `INFO  webview2:` line, and its exit code depends only on the existing PASS/FAIL checks.
 
+#### WebView2 Fails to Initialize (R20, Proposed, not approved)
+
+Given the check reports "present", the renderer is `edgechromium`, and the injected window factory logs, on the `pywebview` logger at ERROR, `WebView2 initialization failed with exception:\n System.IO.FileNotFoundException ...`, with the window URL (including the app token) and an `sk-` key in the text, and then waits until the window is closed
+When the launcher runs
+Then the window close is requested exactly once, the R12 box is shown only after the window factory has returned (no empty window behind it), `desktop.log` has exactly one R13 line with case `webview2_init_failed`, the version, the answer and `error=WebView2InitializationFailed`, the log contains neither the token, nor the URL, nor the key, the server is stopped, and the exit code is 4;
+and Yes opens exactly the R10 URL once, No opens nothing, and `socket.create_connection` and `httpx`, patched to fail if called, were never called.
+
+#### No False Alarm (R20, Proposed, not approved)
+
+Given the check reports "present" and the renderer is `edgechromium`
+When the window factory (a) logs another `pywebview` ERROR (`Error occurred in script`), (b) logs the R20 text at WARNING, or on a logger other than `pywebview`, (c) logs the R20 text after the window's `loaded` event is set, or (d) sets `loaded` only after a long delay (a fake clock advanced by 300 s) with no failure record, and the user then closes the window
+Then no message box is shown, no `webview2_init_failed` line is written, and the exit code is 0;
+and after the launcher returns, the R20 watcher is no longer attached to the `pywebview` logger, in every case including when `open_window` raises.
+
+#### User Closes First (R20, Proposed, not approved)
+
+Given the failure record has not been logged
+When the user closes the empty window
+Then the exit is unchanged (0) and no box is shown. Given instead that the record was logged before the user closed the window, the R12 box is shown and the exit code is 4.
+
+#### pywebview Init-Failure Report Pin (R20, Proposed, not approved)
+
+Given the installed pywebview
+When the unit tests run
+Then a test that reads `webview/platforms/edgechromium.py` as text (without importing it) passes only if `on_webview_ready` contains a `logger.error(` call whose string starts with `WebView2 initialization failed`. Otherwise it fails with a message that says to re-check R20.
+
 ### Local API Request Guard (amendment, Approved)
 
 Each criterion names the requirements it verifies and the tests in `tests/core/test_security_review.py` that pin it. "Server mode" is the server started without a desktop token, with the agent API enabled for one folder.
@@ -336,6 +391,8 @@ Then all three reach the API (`test_the_apps_own_page_passes_the_guard`).
 - (WebView2 amendment) A golden test for the two message box titles and texts (R9, R12) and the R10 URL constant.
 - (WebView2 amendment) A log test: the `desktop.log` line for each case, with a known token in the URL, contains neither the token nor the URL.
 - (WebView2 amendment) Manual check on a Windows 10 machine or VM without the WebView2 runtime, using `Galliani.exe` from a release build: the R9 dialog, Yes, No, then install the runtime and relaunch (AC Next Launch Rechecks). Where no such machine is available, use `--simulate-missing-webview2` and record that the real-machine check is pending. This step is added to `docs/release-checklist.md`.
+- (Proposed, R20, not approved) Unit tests in `tests/test_desktop_webview2.py` for the AC "WebView2 Fails to Initialize", "No False Alarm" and "User Closes First". They use the injected window factory, message box and opener, a fake `loaded` event and a fake clock, with no real sleep. A source-text pin test in `tests/test_pywebview_pin.py` covers the AC "pywebview Init-Failure Report Pin". A golden-test update covers the new R13 case name.
+- (Proposed, R20, not approved) A manual check on Windows with WebView2 installed, run from a source checkout: `python -c "import tempfile, webview; webview.settings['WEBVIEW2_RUNTIME_PATH'] = tempfile.mkdtemp(); from app.desktop import main; raise SystemExit(main())"`. Pointing pywebview at an empty runtime folder is expected to make WebView2 report a failed initialization; the first run must confirm it. Expected result: the R12 box with no empty window behind it, exit code 4, and one `webview2_init_failed` line in `desktop.log`. This step is added to `docs/release-checklist.md`. Importing the `webview` package does not import the Windows backend, so R7's ordering holds.
 - (API guard amendment) `tests/core/test_security_review.py`, SEC-5 and SEC-8 sections and the 2026-10-15 re-review probes, as named in each acceptance criterion above. Existing API tests (`tests/test_api.py`, `tests/core/test_agent_api.py`) use a local `base_url`, and their state-changing calls send `X-Requested-With` or the desktop token.
 
         ## Evaluation
@@ -367,6 +424,10 @@ Then all three reach the API (`test_the_apps_own_page_passes_the_guard`).
 - [ ] (Security, qa-security, last) Update `docs/security.md` "Notes and limits" to the redaction trade-offs (the `sk-` word boundary is no longer open; the glued-key case is accepted) and re-review the `desktop.log` redaction and the R8 path.
 - [x] (API guard amendment) Host allowlist, custom-header rule and Origin check in `app/api/routes.py`; the app's page sends `X-Requested-With: galliani` (R16-R19, Decision 0032).
 - [ ] (API guard amendment) Document the `X-Requested-With` requirement for other API clients wherever the API is documented (R19).
+- [ ] (Proposed R20, not approved; core-engineer, step 1, only after approval) In `app/webview2.py`, add the R20 watcher (a `logging.Handler` that matches only the R20 signal and sets a `threading.Event`), the `webview2_init_failed` case, and the R12 path with exit code 4 in `launch_window`. Make the watcher and the `loaded` check injectable through `WindowHooks`. In `app/desktop.py` `open_window`: attach the watcher before `webview.create_window`, start a watcher thread that closes the window (`window.destroy()`) when the flag is set, and remove the handler in `finally`. Done when the AC "WebView2 Fails to Initialize", "No False Alarm" and "User Closes First" pass, and the existing 53 WebView2 tests still pass.
+- [ ] (Proposed R20, not approved; core-engineer or release-engineer, step 2) The source-text pin test (AC "pywebview Init-Failure Report Pin"), plus a `docs/release-checklist.md` line: "a pywebview upgrade needs an R20 re-check".
+- [ ] (Proposed R20, not approved; qa-security, step 3) Review that the watcher stores and writes nothing (Security), and that redaction still covers pywebview's own failure record. Update the `docs/security.md` WebView2 note: the "installed but fails to initialize" gap is closed for the reported case, and the hang case remains as a known limitation.
+- [ ] (Proposed R20, not approved; release-engineer, step 4) Run the manual check above on a real Windows machine and record the result. Add a CHANGELOG line.
 
         ## Dependencies
 
@@ -378,7 +439,7 @@ The API guard amendment depends on `app/api/routes.py` and `galliani/web/agent_a
 
 ## Open Questions (WebView2 amendment)
 
-All seven questions were resolved by the user on 2026-10-15 (Decision 0031) and are kept for the record.
+Questions 1-7 were resolved by the user on 2026-10-15 (Decision 0031) and are kept for the record. Question 8 (proposed R20) is open.
 
 1. **Message text.** Resolved: the R9 and R12 titles and texts exactly as written (wording revised and re-approved by the user on 2026-10-15 after the copy review: R9 now asks a question and states that nothing was sent; R12 says "often helps").
 2. **Link target.** Resolved: Microsoft's WebView2 page, `https://developer.microsoft.com/microsoft-edge/webview2/` (R10), not the direct bootstrapper link.
@@ -387,3 +448,8 @@ All seven questions were resolved by the user on 2026-10-15 (Decision 0031) and 
 5. **Default button and exit codes.** Resolved: No is the default button; exit codes 3 (runtime missing) and 4 (window failed).
 6. **Docs outside this spec's owner.** Resolved: yes to both. `docs/release-checklist.md` gains the manual Windows 10 check (release-engineer) and the site FAQ gains a WebView2 entry (ui-engineer); see Implementation Tasks.
 7. **Amendment to R7, R8, R10.** Resolved 2026-10-15 ("approve with defaults"): (a) R7 copies pywebview's rule exactly, including its first-number-only version comparison, its paths, the default view, the HKCU-before-HKLM order and stop-on-bad-value; (b) the R8 legacy-engine case shows the R12 box with exit code 4, and R10 names pywebview's two HKCU writes (`FEATURE_BROWSER_EMULATION`, `FEATURE_96DPI_PIXEL`) as a known exception; (c) pin `pywebview>=6.2,<7` with a test that fails outside that range. pywebview's Windows backend is not loaded until the check has decided. Rejected alternatives: see "Why R7, R8 and R10 read this way".
+8. **WebView2 installed but fails to initialize (R20). OPEN, to be decided by the user.** Proposed defaults:
+   - (a) Approve R20 as written: detect pywebview's own failure record, with no timeout, and show the R12 box with exit code 4 and the new R13 case `webview2_init_failed`. The alternatives are option (c), keep it as a known limitation and reword R12 to cover only raised errors, or option (a) of "Why R20 reads this way", a `loaded` timeout. The timeout is not recommended because of the false-alarm risk on slow machines.
+   - (b) Keep the hang case (WebView2 never reports) as a documented known limitation, with no timeout backstop. The alternative is an additional long `loaded` timeout of at least 120 s that only logs a warning line and shows no box.
+   - (c) Add no new public flag to simulate the failure. The manual check uses the `WEBVIEW2_RUNTIME_PATH` one-liner from a source checkout. The alternative is a `--simulate-webview2-init-failure` flag like R14, which would also work on `Galliani.exe`.
+   - (d) Keep the R12 text unchanged: its "may be damaged or out of date" already describes this case.

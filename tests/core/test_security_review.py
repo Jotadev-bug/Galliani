@@ -549,10 +549,6 @@ def test_glued_keys_and_ordinary_words_stay_unmasked(text):
     assert not contains_secret(text) and redact_text(text) == text
 
 
-@pytest.mark.xfail(strict=True, reason="qa-security 2026-10-15: a key right after an ANSI colour code ends in "
-                   "'m' (a letter), so the left boundary (Decision 0032) lets it through; the pre-0032 pattern "
-                   "masked it. Low: Galliani has no shell tool, so such text arrives only from read files or "
-                   "pages. Needs a spec 012 Security decision (owner tech-lead, then core-engineer).")
 @pytest.mark.parametrize("text", [f"\x1b[32m{KEY}\x1b[0m", f"\\x1b[0m{KEY}"])
 def test_sk_key_after_an_ansi_colour_code_is_masked(text):
     from galliani.redaction import contains_secret
@@ -560,14 +556,71 @@ def test_sk_key_after_an_ansi_colour_code_is_masked(text):
     assert contains_secret(text)
 
 
-@pytest.mark.xfail(strict=True, reason="qa-security 2026-10-15: the Stripe pattern has no left boundary, unlike "
-                   "`sk-`, so identifiers ending in 'sk'/'rk' followed by `_test_`/`_live_` are masked and memory "
-                   "refuses them. Low over-redaction. Owner core-engineer (spec 012 Security trade-off).")
+STRIPE = "sk_live_" + "Ab12" * 6
+
+
+@pytest.mark.parametrize("text", [
+    # ANSI colour codes (SGR) in every written form of ESC, with no, short and long parameter lists.
+    f"\x1b[m{KEY}", f"\x1b[1;32m{KEY}", f"\x1b[1;38;2;255;255;255m{KEY}", f"\x1b[{'0;' * 12}m{KEY}",
+    f"\\x1b[32m{KEY}", f"\\033[32m{KEY}", f"\\u001b[32m{KEY}", f"\\e[32m{KEY}",
+    f"\\x1B[32m{KEY}", f"\\u001B[32m{KEY}", f"\x1b[38:2:255:0:0m{KEY}",  # uppercase hex, `:` separators
+    f'{{"line": "\\u001b[31m{KEY}\\u001b[0m"}}',  # json.dumps of coloured output
+    f"\x1b[32m{STRIPE}", f"\\u001b[0m{STRIPE}",
+])
+def test_keys_after_ansi_colour_codes_in_every_form_are_masked(text):
+    from galliani.redaction import REDACTED, contains_secret, redact_text
+
+    out = redact_text(text)
+    assert contains_secret(text) and REDACTED in out and "abcdefghijklmnop" not in out and "Ab12Ab12" not in out
+    assert out.startswith(text[:text.index("m") + 1])  # the colour code itself is kept
+
+
+@pytest.mark.parametrize("text", [
+    # Not SGR codes: other final letters, other characters in the parameters, an unescaped `[...m`, or a
+    # parameter list longer than 24 characters. The accepted glued-key trade-off applies.
+    f"\x1b[32K{KEY}", f"\x1b[3a2m{KEY}", f"[32m{KEY}", f"x1b[32m{KEY}", f"\x1b[{'0;' * 13}m{KEY}",
+])
+def test_look_alikes_of_ansi_colour_codes_stay_unmasked(text):
+    from galliani.redaction import contains_secret, redact_text
+
+    assert not contains_secret(text) and redact_text(text) == text
+
+
 @pytest.mark.parametrize("text", ["network_test_connectivitycheck", "mask_live_previewcomponents"])
 def test_identifiers_ending_in_sk_or_rk_before_test_or_live_are_not_secrets(text):
     from galliani.redaction import contains_secret
 
     assert not contains_secret(text)
+
+
+@pytest.mark.parametrize("text", [
+    # The Stripe pattern has the same left boundary as `sk-`: glued to a letter or digit it is left alone...
+    f"a{STRIPE}", f"9{STRIPE}", "disk_test_abcdefghijklmnop1234", "fork_live_abcdefghijklmnop1234",
+])
+def test_stripe_like_text_glued_to_a_letter_or_digit_stays_unmasked(text):
+    from galliani.redaction import contains_secret, redact_text
+
+    assert not contains_secret(text) and redact_text(text) == text
+
+
+@pytest.mark.parametrize("text", [
+    # ...and after every other accepted left context it is still masked.
+    f"key={STRIPE}", f"key {STRIPE}", f"q=key%3D{STRIPE}", f"q=key%253D{STRIPE}", f"text\\n{STRIPE}",
+    f"b'\\x3d{STRIPE}'", f"\\u00e9{STRIPE}", f"my_{STRIPE}", f'"{STRIPE}"', f"(rk_test_{'Ab12' * 6})",
+])
+def test_stripe_keys_after_every_accepted_left_context_are_masked(text):
+    from galliani.redaction import contains_secret, redact_text
+
+    assert contains_secret(text) and "Ab12Ab12" not in redact_text(text)
+
+
+def test_editing_a_policy_takes_effect_despite_the_pattern_cache():
+    from galliani.redaction import REDACTED, RedactionPolicy, redact_text
+
+    policy = RedactionPolicy()
+    assert redact_text("internal-codename-zebra", policy) == "internal-codename-zebra"
+    policy.value_patterns.append(r"codename-\w+")
+    assert redact_text("internal-codename-zebra", policy) == f"internal-{REDACTED}"
 
 
 def test_the_apps_page_sends_the_guard_header_and_treats_403_as_an_error():

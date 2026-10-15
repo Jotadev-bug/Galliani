@@ -57,14 +57,15 @@ def registry(pvs: dict | None = None, dotnet: object = DOTNET_OK) -> dict:
 
 
 def reader_for(keys: dict, calls: list | None = None):
-    """The injected reader over a fake registry: read-only, and it records every call with its view."""
+    """The injected reader over a fake registry: read-only, and it records every call with its view. Like
+    `windows_registry_reader`, an absent key or value is `w.ABSENT`; a value stored as None has no data."""
     def read(hive, key_path, name, view):
         if calls is not None:
             calls.append((hive, key_path, name, view))
         key = keys.get((hive, key_path))
         if key is UNREADABLE:
             raise PermissionError("access denied")
-        return None if key is None else key.get(name)
+        return w.ABSENT if key is None else key.get(name, w.ABSENT)
 
     return read
 
@@ -296,7 +297,7 @@ def test_dotnet_boundary_is_4_6_2_exactly(release, present, offline):
 
 _ABSENT = object()
 _PV_POOL = [_ABSENT, _ABSENT, _ABSENT, UNREADABLE, "", "abc", "0.0.0.0", "85.0.564.40", "86", "86.0.0.0", V120,
-            " 120.0", "1_20.0", "+120", "120abc.0", "-1.0", "086.0", "١٢٠.0", 120, 85, b"120", ["120.0"]]
+            " 120.0", "1_20.0", "+120", "120abc.0", "-1.0", "086.0", "١٢٠.0", 120, 85, b"120", ["120.0"], None]
 _NET_POOL = [_ABSENT, UNREADABLE, DOTNET_OK, 394802, 394801, "528040", b"\x00"]
 _ALL_KEYS = [f(c) for c in w.CLIENT_KEYS for f in (hkcu, hklm_wow, hklm_native)]
 
@@ -316,8 +317,8 @@ def _random_registry(rng: random.Random) -> dict:
 def test_detection_matches_pywebview_on_random_registries(offline):
     # qa-security: a differential check beyond the hand-written table. Seeded random registries over all
     # twelve client paths, odd value types (DWORD, binary, multi-string, padded, underscored, non-ASCII
-    # digits) and .NET values; our answer must equal what the installed pywebview's own `_is_chromium()`
-    # returns. REG_NONE is excluded: see the strict xfail below.
+    # digits, an empty REG_NONE read as None) and .NET values; our answer must equal what the installed
+    # pywebview's own `_is_chromium()` returns.
     rng = random.Random(20261015)
     for _ in range(1500):
         keys, machine = _random_registry(rng), rng.choice(["AMD64", "ARM64", "x86"])
@@ -325,14 +326,10 @@ def test_detection_matches_pywebview_on_random_registries(offline):
         assert ours == (_pywebview_rule(keys, machine) is True), (machine, keys)
 
 
-@pytest.mark.xfail(strict=True, reason="qa-security: an empty REG_NONE `pv` reads as None through winreg, the "
-                   "same as an absent value, so the search continues; pywebview's str(None) -> int() stops it "
-                   "(R7 'present but not a number'). Low: R8 still refuses the legacy engine (R12, exit 4). "
-                   "Owner core-engineer.")
 def test_an_empty_reg_none_pv_stops_the_search_like_pywebview(offline):
     keys = {**registry({hklm_wow(RUNTIME): V120}), hkcu(RUNTIME): {"pv": None}}  # value present, no data
     assert _pywebview_rule(keys, "AMD64") is False
-    # windows_registry_reader returns winreg's None for this value, which is what reader_for passes on.
+    # winreg returns None for this value; windows_registry_reader passes it on (absent is w.ABSENT).
     assert detect_webview2(reader_for(keys), machine="AMD64") == MISSING
 
 
@@ -382,7 +379,7 @@ def test_real_registry_check_is_fast_and_safe(offline):
     status = detect_webview2()
     assert time.monotonic() - started < 1.0
     assert status == MISSING or (status.present and int(status.version.split(".")[0]) >= w.MIN_MAJOR)
-    assert w.windows_registry_reader("HKCU", r"SOFTWARE\Galliani-test-no-such-key", "pv", None) is None
+    assert w.windows_registry_reader("HKCU", r"SOFTWARE\Galliani-test-no-such-key", "pv", None) is w.ABSENT
 
 
 def test_non_windows_skips_the_check_and_shows_no_dialog(tmp_path, offline):
@@ -426,6 +423,18 @@ def test_native_box_flags_are_yes_no_with_no_as_default():
     # MB_YESNO 0x4, MB_DEFBUTTON2 0x100, MB_SETFOREGROUND 0x10000; MB_ICONINFORMATION 0x40, MB_ICONWARNING 0x30.
     assert w.message_box_flags(w.missing_box()) == 0x4 | 0x100 | 0x10000 | 0x40
     assert w.message_box_flags(w.failed_box("x")) == 0x4 | 0x100 | 0x10000 | 0x30
+
+
+def test_box_flags_follow_the_box_fields():
+    # The golden fields above (buttons, default, icon) are what the native box gets: change one, the flags change.
+    from dataclasses import replace
+
+    box = w.missing_box()
+    assert w.message_box_flags(replace(box, default="yes")) == 0x4 | 0x10000 | 0x40  # no MB_DEFBUTTON2
+    assert w.message_box_flags(replace(box, icon="warning")) == 0x4 | 0x100 | 0x10000 | 0x30
+    for field, value in (("default", "maybe"), ("buttons", "ok"), ("icon", "error")):
+        with pytest.raises(KeyError):
+            w.message_box_flags(replace(box, **{field: value}))
 
 
 def test_the_url_is_defined_in_exactly_one_place():
@@ -740,6 +749,99 @@ def test_pywebview_gets_no_stderr_handler_of_its_own(tmp_path):
         assert pywebview.handlers and all(isinstance(h, logging.NullHandler) for h in pywebview.handlers[len(before):])
         assert pywebview.propagate
     assert pywebview.handlers == before
+
+
+def test_an_error_before_the_port_is_chosen_reaches_desktop_log_redacted(launcher, monkeypatch):
+    # qa-security residual: free_port() used to run before desktop_log started, so in the windowed build
+    # (stdout and stderr are None) its error was recorded nowhere.
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+
+    def no_port():
+        raise OSError(f"no free port for {TOKEN} {KEY}")
+
+    monkeypatch.setattr(desktop, "free_port", no_port)
+    with pytest.raises(OSError):
+        launcher(Recorder())
+    text = assert_clean(launcher.log)
+    assert "The desktop app stopped with an error." in text and "OSError: no free port for [redacted] [redacted]" in text
+    assert launcher.servers == []
+
+
+class _SlowStoppingServer:
+    """A server thread that writes after it was asked to stop, like uvicorn during shutdown."""
+
+    def __init__(self):
+        self.should_exit = False
+        self.thread = threading.Thread(target=self._run, name="api", daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        while not self.should_exit:
+            threading.Event().wait(0.01)
+        threading.Event().wait(0.2)  # well after main() has returned from launch_window
+        logging.getLogger("uvicorn.error").error("shutdown while serving %s", URL)
+        sys.stderr.write(f"late stderr line {KEY}\n")
+
+
+def test_late_server_lines_reach_desktop_log_redacted(launcher, monkeypatch):
+    # qa-security residual: uvicorn lines written while it shuts down came after desktop_log had ended, so the
+    # windowed build lost them. main() now waits for the server thread (bounded) before the log closes.
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    servers: list[_SlowStoppingServer] = []
+    monkeypatch.setattr(desktop, "start_server", lambda _port: servers.append(_SlowStoppingServer()) or servers[-1])
+    assert launcher(Recorder()) == 0
+    (server,) = servers
+    assert server.should_exit and not server.thread.is_alive()
+    text = assert_clean(launcher.log)
+    assert "uvicorn.error: shutdown while serving [redacted]" in text
+    assert "galliani.desktop.output: late stderr line [redacted]" in text
+
+
+def test_stop_server_waits_at_most_the_timeout():
+    server = types.SimpleNamespace(should_exit=False, thread=threading.Thread(target=threading.Event().wait, daemon=True))
+    server.thread.start()
+    desktop.stop_server(server, timeout=0.05)  # a server that never stops cannot hang the exit
+    assert server.should_exit and server.thread.is_alive()
+    desktop.stop_server(types.SimpleNamespace(should_exit=False))  # no thread (tests' fake server): no error
+
+
+@pytest.mark.parametrize("env, debug, level", [
+    (None, False, logging.INFO), (None, True, logging.DEBUG), ("warning", True, logging.WARNING),
+    ("DEBUG", False, logging.DEBUG), ("bogus", True, logging.INFO), ("BASIC_FORMAT", False, logging.INFO),
+    ("", True, logging.DEBUG), (" debug", True, logging.INFO), ("debug ", False, logging.INFO),
+])
+def test_pywebview_level_follows_pywebview_log_then_debug(monkeypatch, env, debug, level):
+    # pywebview's own rule: PYWEBVIEW_LOG wins, --debug raises to DEBUG only when it is unset, an invalid name
+    # is INFO. Only level names are accepted, never other attributes of the logging module.
+    if env is None:
+        monkeypatch.delenv("PYWEBVIEW_LOG", raising=False)
+    else:
+        monkeypatch.setenv("PYWEBVIEW_LOG", env)
+    assert desktop.pywebview_level(debug) == level
+
+
+@pytest.mark.parametrize("env, argv, kept", [(None, ("--debug",), True), (None, (), False),
+                                              ("DEBUG", (), True), ("ERROR", ("--debug",), False)])
+def test_debug_and_pywebview_log_set_what_reaches_desktop_log_still_redacted(launcher, monkeypatch, env, argv, kept):
+    if env is None:
+        monkeypatch.delenv("PYWEBVIEW_LOG", raising=False)
+    else:
+        monkeypatch.setenv("PYWEBVIEW_LOG", env)
+    pywebview = logging.getLogger("pywebview")
+    before = pywebview.level
+
+    def start(**_kwargs):
+        pywebview.debug("debug detail for %s", URL)
+        pywebview.error("error for %s", TOKEN)
+
+    launcher.webview.start = start
+    assert launcher(Recorder(), *argv) == 0
+    text = assert_clean(launcher.log)
+    assert ("pywebview: debug detail for [redacted]" in text) is kept
+    assert "pywebview: error for [redacted]" in text
+    assert pywebview.level == before  # restored after the launch
 
 
 # ---------------------------------------------------------------------------------- R15 smoke test

@@ -64,9 +64,12 @@ CLIENT_PATH = "SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\{}"
 CLIENT_PATH_WOW64 = "SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{}"  # HKLM, any machine but x86
 HIVES = ("HKCU", "HKLM")  # within each client id, HKCU first
 
-# reader(hive, key_path, value_name, view) -> the value, or None when the key or value is absent. The
-# check always passes view=None (the process's default view, as pywebview); the parameter exists so tests
-# can prove that no explicit 32-bit or 64-bit view was asked for.
+# reader(hive, key_path, value_name, view) -> the value, or ABSENT when the key or value is absent. A value
+# that is present but has no data (an empty REG_NONE) reads as None, which is not ABSENT: pywebview turns it
+# into "None", whose int() fails and stops the search. The check always passes view=None (the process's
+# default view, as pywebview); the parameter exists so tests can prove that no explicit 32-bit or 64-bit
+# view was asked for.
+ABSENT = object()
 RegistryReader = Callable[[str, str, str, "int | None"], object]
 
 
@@ -99,7 +102,7 @@ def failed_box(log_path: Path | str) -> MessageBox:
 # ---------------------------------------------------------------------------------------------- detection
 
 def windows_registry_reader(hive: str, key_path: str, value_name: str, view: int | None) -> object:
-    """Read one value, read-only. Absent or unreadable keys return None."""
+    """Read one value, read-only. Absent or unreadable keys and values return ABSENT."""
     import winreg
 
     access = winreg.KEY_READ | {64: winreg.KEY_WOW64_64KEY, 32: winreg.KEY_WOW64_32KEY}.get(view, 0)
@@ -108,14 +111,14 @@ def windows_registry_reader(hive: str, key_path: str, value_name: str, view: int
         with winreg.OpenKey(root, key_path, 0, access) as key:
             return winreg.QueryValueEx(key, value_name)[0]
     except OSError:
-        return None
+        return ABSENT
 
 
 def _read(reader: RegistryReader, hive: str, key_path: str, name: str) -> object:
     try:
         return reader(hive, key_path, name, None)  # default view only
     except Exception:  # noqa: BLE001 - an unreadable key counts as absent, never a crash
-        return None
+        return ABSENT
 
 
 def _client_path(hive: str, client: str, machine: str) -> str:
@@ -137,12 +140,14 @@ def detect_webview2(reader: RegistryReader | None = None, machine: str | None = 
     for client in CLIENT_KEYS:
         for hive in HIVES:
             pv = _read(reader, hive, _client_path(hive, client, machine), "pv")
-            if pv is None:
+            if pv is ABSENT:
                 continue  # absent or unreadable: pywebview reads it as "0" and goes on
             try:
                 major = int(str(pv).split(".")[0])
             except ValueError:
-                return MISSING  # empty or not a number: pywebview's int() raises and its whole check fails
+                # empty, no data (None -> "None") or not a number: pywebview's int() raises and its whole
+                # check fails
+                return MISSING
             if major >= MIN_MAJOR:
                 return WebView2Status(True, str(pv))
     return MISSING
@@ -157,12 +162,15 @@ def current_renderer() -> str:
 
 # ------------------------------------------------------------------------------------------ message boxes
 
-_MB_YESNO, _MB_DEFBUTTON2, _MB_SETFOREGROUND, _IDYES = 0x4, 0x100, 0x10000, 6
+_MB_SETFOREGROUND, _IDYES = 0x10000, 6
+_MB_BUTTONS = {"yes_no": 0x4}  # MB_YESNO
+_MB_DEFAULTS = {"yes": 0x0, "no": 0x100}  # MB_DEFBUTTON1, MB_DEFBUTTON2 (the second button of Yes/No)
 _MB_ICONS = {"information": 0x40, "warning": 0x30}
 
 
 def message_box_flags(box: MessageBox) -> int:
-    return _MB_YESNO | _MB_DEFBUTTON2 | _MB_ICONS[box.icon] | _MB_SETFOREGROUND
+    """The Win32 flags, derived from the box fields; an unknown value raises instead of guessing."""
+    return _MB_BUTTONS[box.buttons] | _MB_DEFAULTS[box.default] | _MB_ICONS[box.icon] | _MB_SETFOREGROUND
 
 
 def native_message_box(box: MessageBox) -> bool:

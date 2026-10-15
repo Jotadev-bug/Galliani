@@ -79,6 +79,24 @@ A model plans the work, the supervisor validates the plan, cheap workers run the
 
 In the desktop app (`python -m app.desktop`), switch the message box from **Chat** to **Agent**, pick a folder, and type a task. The agent's reply shows the plan, live activity, approvals and the verified result. The **Memory** page lists what the agent remembers between tasks; it only saves a note when you approve it.
 
+## Calling the local API
+
+`python -m app.api` serves the web UI and the JSON API at `http://127.0.0.1:8000`. The API only answers on your own machine and refuses anything that looks like a web page acting on your behalf (spec 012 R16-R19, Decision 0032). If you call it from a script, `curl` or a test:
+
+- Every `POST`, `PUT`, `PATCH` and `DELETE` under `/api/` needs a non-empty `X-Requested-With` header (any value, for example `galliani`) or an `X-App-Token`. `GET`, `HEAD` and `OPTIONS` need neither.
+- The `Host` header must be `127.0.0.1`, `localhost` or `[::1]`, on any port. Any other host gets `403`.
+- If you send an `Origin` header, it must match the server's own address. A plain script does not need to send one.
+- A refused call returns `403` with a JSON `{"detail": ...}` and changes nothing.
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/route \
+  -H "X-Requested-With: galliani" \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Summarize this in one line."}], "mode": "auto"}'
+```
+
+The desktop app is stricter: every `/api/` call needs the per-launch app token, which other programs do not get.
+
 ## Download
 
 Get it from the website: https://galliani.vercel.app/

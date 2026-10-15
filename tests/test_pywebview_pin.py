@@ -7,6 +7,8 @@ import tomllib
 from importlib import metadata
 from pathlib import Path
 
+import pytest
+
 EXPECTED_SPEC = "pywebview>=6.2,<7"
 MIN_VERSION = (6, 2)
 MAX_EXCLUSIVE = (7,)
@@ -23,12 +25,33 @@ def _numeric_parts(version: str) -> tuple[int, ...]:
     return tuple(int(p) for p in match.group(0).split("."))
 
 
-def test_installed_pywebview_is_inside_the_pin() -> None:
-    version = metadata.version("pywebview")
+def _assert_inside_the_pin(version: str) -> None:
     parts = _numeric_parts(version)
     assert MIN_VERSION <= parts < MAX_EXCLUSIVE, (
         f"Installed pywebview {version} is outside >=6.2,<7. {RECHECK}"
     )
+
+
+def test_installed_pywebview_is_inside_the_pin() -> None:
+    try:
+        version = metadata.version("pywebview")
+    except metadata.PackageNotFoundError:
+        pytest.skip("pywebview is not installed (the optional `desktop` extra); install it with "
+                    "`pip install -e .[desktop]` to check the pin. An installed pywebview is always checked.")
+    _assert_inside_the_pin(version)
+
+
+@pytest.mark.parametrize("version, inside", [
+    ("6.2", True), ("6.2.1", True), ("6.99.0", True), ("6.1.9", False), ("7.0", False), ("7.0.0rc1", False),
+    ("5.4", False),
+])
+def test_the_pin_check_fails_outside_the_range(version: str, inside: bool) -> None:
+    # The skip above covers only "not installed": any installed version outside the pin still fails.
+    if inside:
+        _assert_inside_the_pin(version)
+    else:
+        with pytest.raises(AssertionError, match="outside >=6.2,<7"):
+            _assert_inside_the_pin(version)
 
 
 def test_pyproject_desktop_extra_declares_the_pin() -> None:
@@ -39,3 +62,12 @@ def test_pyproject_desktop_extra_declares_the_pin() -> None:
     assert declared == [EXPECTED_SPEC], (
         f"pyproject.toml desktop extra declares {declared}, expected [{EXPECTED_SPEC!r}]. {RECHECK}"
     )
+
+
+def test_a_missing_desktop_extra_skips_with_a_reason(monkeypatch) -> None:
+    def not_installed(_name: str) -> str:
+        raise metadata.PackageNotFoundError("pywebview")
+
+    monkeypatch.setattr(metadata, "version", not_installed)
+    with pytest.raises(pytest.skip.Exception, match="pywebview is not installed"):
+        test_installed_pywebview_is_inside_the_pin()
