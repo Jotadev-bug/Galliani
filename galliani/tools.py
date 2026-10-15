@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError
 
 from galliani.contracts import Sensitivity
 from galliani.errors import ContractError
@@ -70,6 +70,23 @@ class ToolDefinition(BaseModel):
     handler: ToolHandler = Field(exclude=True)
     # Optional exact description of this call for approval prompts (e.g. the text to be saved).
     describe: Callable[[BaseModel], str] | None = Field(default=None, exclude=True)
+    # 014 R3 / SEC-6: set only by `confined_to_workspace` (used by `Workspace.tools()`), never by a plan or
+    # a tool author's constructor call. The registry refuses `workspace_edit` without it.
+    _workspace_sandbox: bool = PrivateAttr(default=False)
+
+    @property
+    def workspace_sandboxed(self) -> bool:
+        return self._workspace_sandbox
+
+
+def confined_to_workspace(tool: ToolDefinition) -> ToolDefinition:
+    """Mark a tool whose handler enforces the workspace sandbox (path checks, links, protected names).
+
+    Only the workspace toolkit calls this. Any new caller must be reviewed against 014 R3: the tool must
+    write only inside the task's workspace and reuse `Workspace.resolve`.
+    """
+    tool._workspace_sandbox = True
+    return tool
 
 
 class ToolCall(BaseModel):
@@ -119,6 +136,9 @@ class ToolRegistry:
             raise ContractError(f"tool {tool.name} is already registered")
         if tool.workspace_edit and tool.permission_level is not PermissionLevel.write:
             raise ContractError(f"tool {tool.name}: only write-level tools may be workspace edits (014 R3)")
+        if tool.workspace_edit and not tool.workspace_sandboxed:
+            raise ContractError(f"tool {tool.name}: only tools confined to the workspace sandbox may be "
+                                "workspace edits (014 R3)")
         self._tools[tool.name] = tool
 
     def get(self, name: str) -> ToolDefinition | None:

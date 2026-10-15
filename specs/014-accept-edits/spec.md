@@ -4,6 +4,8 @@
 
 Approved for implementation (2026-10-05, see `docs/decisions.md` Decision 0022).
 
+Hardening (2026-10-15, Decision 0032 Accepted): R3 and the Security section now state the sandbox contract, the Windows path rules and the `tool_called` event metadata found necessary by the security review (SEC-1, SEC-2, SEC-3, SEC-6, SEC-7, SEC-10), plus one accepted residual risk (SEC-9). Behavior required by this spec is unchanged; these are the rules that make it hold on Windows.
+
 ## Goal
 
 Let the user opt in, per task, to letting the agent create and change files inside the task's workspace without approving each write, like the "accept edits" mode of other coding agents. Every other restricted action still asks.
@@ -25,7 +27,7 @@ Let the user opt in, per task, to letting the agent create and change files insi
    3. its scope is inside the task's workspace.
 
    Every other request is evaluated exactly as in `ask`.
-3. Only tools confined to the workspace sandbox may declare `workspace_edit`. In v0.1 these are `write_file` and `write_files`. `remember` (sensitive) and spending extensions (costly) never qualify.
+3. Only tools confined to the workspace sandbox may declare `workspace_edit`. In v0.1 these are `write_file` and `write_files`. `remember` (sensitive) and spending extensions (costly) never qualify. This is enforced, not trusted: `ToolRegistry.register` refuses a definition with `workspace_edit=True` unless it was marked by `galliani.tools.confined_to_workspace`, which only `Workspace.tools()` applies; copies of a marked definition stay marked. A new write tool must reuse `Workspace.resolve` and be reviewed against this requirement before it is marked (Decision 0032, SEC-6).
 4. Each automatic approval is recorded in Task State as a `PermissionDecision` and emitted as a `permission_decided` event. Its audit summary names the mode, for example "write_files: allowed by accept-edits mode". Nothing is approved silently.
 5. Write tools report, for each file, whether it was `created` or `overwritten`. Overwrites can happen without a prompt, so the final result must show which existing files changed.
 6. An approval prompt for an eligible request offers a third choice, "approve and accept edits for this task". It approves the pending request and switches the task to `accept_edits`.
@@ -70,7 +72,13 @@ Let the user opt in, per task, to letting the agent create and change files insi
 - 009 R3 is unchanged: destructive, external, costly, and sensitive actions always need explicit approval.
 - This is not "bypassing user confirmation for speed" (009 non-goal). The user gives the confirmation up front, for one task and one folder, and can take it back at any time.
 - Plans, tool output, workspace files, and memory cannot turn the mode on. Only a user action through the UI, API, or CLI can (000: untrusted content is data).
-- Audit summaries and events name files and the mode, never file contents.
+- Audit summaries and events name files and the mode, never file contents. The `tool_called` event metadata carries `tool`, `status`, `resource` (the permission scope), `argument_names`, `files` (artifact paths) and `error`, never the raw `arguments` (SEC-3).
+- **Path rules (Decision 0032; apply in both modes, on every platform, to reads, writes and `list_files`).**
+  - A path component is an invalid argument if it contains `: * ? " < > |` or a control character (this also refuses NTFS alternate data streams such as `.env::$DATA` or `notes.txt:hidden`), ends in a dot or a space, or names a Win32 device (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM0`-`COM9`, `LPT0`-`LPT9`, with or without an extension).
+  - Protected names (`.env*` except examples, keys, credentials, `.git/` and the other protected entries) are compared case-insensitively, after removing any `:stream` suffix and trailing dots and spaces, on the requested path and again on the fully resolved path. The resolved-path check covers symlinks, junctions, chains of links and 8.3 short names (`GIT~1`).
+  - Writes resolve the path again right before creating parent folders and right before writing, and refuse with `rejected_input` if it changed (a link swapped in). This narrows, but cannot close, a race against a concurrent local process that can already write to the workspace.
+  - **Accepted residual risk (SEC-9, user decision 2026-10-15).** A hard link inside the workspace to a protected file is not detected, because path resolution cannot see hard links. Galliani's tools cannot create links, so this needs another local process with write access to the workspace. Documented by `test_hard_link_to_env_is_read_accepted_residual_risk_sec9`; changing this needs a new decision.
+  - Tests: `tests/core/test_security_review.py` (SEC-1, SEC-2, SEC-3, SEC-6, SEC-7, SEC-10 sections and the re-review probes).
 
 ## Acceptance Criteria
 

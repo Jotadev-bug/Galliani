@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -117,13 +118,37 @@ class FetchIn(BaseModel):
 
 @dataclass
 class FixtureWorld:
-    """In-memory world the fixture tools act on. `executed` records every handler that actually ran."""
+    """World the fixture tools act on. `executed` records every handler that actually ran.
+
+    With `workspace` set, the file tools (`write_file`, `write_files`, `read_file`, `list_files`) are the
+    real workspace toolkit confined to that folder, so path checks, links and protected names are
+    exercised. Without it, `write_file` is an in-memory stand-in that is not a workspace edit (014 R3).
+    """
 
     notes: dict[str, str] = field(default_factory=dict)
     files: dict[str, str] = field(default_factory=dict)
     pages: dict[str, str] = field(default_factory=dict)
     flaky_timeouts: int = 0  # how many fetch_page calls time out before one succeeds
     executed: list[str] = field(default_factory=list)
+    workspace: Path | None = None
+
+
+WORKSPACE_FIXTURE_TOOLS = ("write_file", "write_files", "read_file", "list_files")
+
+
+def _workspace_tools(world: FixtureWorld) -> list[ToolDefinition]:
+    from galliani.workspace import Workspace  # the toolkit imports the tool system; keep this module light
+
+    def recording(name: str, handler):
+        def run(args):
+            world.executed.append(name)
+            return handler(args)
+        return run
+
+    tools = {t.name: t for t in Workspace(world.workspace).tools()}
+    # model_copy keeps the sandbox marker, so the write tools stay accept-edits eligible.
+    return [tools[name].model_copy(update={"handler": recording(name, tools[name].handler)})
+            for name in WORKSPACE_FIXTURE_TOOLS]
 
 
 def fixture_tool_registry(world: FixtureWorld) -> ToolRegistry:
@@ -149,13 +174,17 @@ def fixture_tool_registry(world: FixtureWorld) -> ToolRegistry:
             await asyncio.sleep(5)
         return {"text": world.pages.get(args.url, "")}
 
+    if world.workspace is not None:
+        file_tools = _workspace_tools(world)
+    else:
+        file_tools = [ToolDefinition(name="write_file", description="Write a file.", input_schema=WriteIn,
+                                     output_schema=WriteOut, permission_level=PermissionLevel.write,
+                                     side_effects=[SideEffect.write], handler=write_file, resource_field="path")]
     return ToolRegistry([
+        *file_tools,
         ToolDefinition(name="read_note", description="Read a note by id.", input_schema=NoteIn, output_schema=TextOut,
                        permission_level=PermissionLevel.read_only, side_effects=[SideEffect.read], handler=read_note,
                        resource_field="note_id", idempotent=True),
-        ToolDefinition(name="write_file", description="Write a file.", input_schema=WriteIn, output_schema=WriteOut,
-                       permission_level=PermissionLevel.write, side_effects=[SideEffect.write], handler=write_file,
-                       resource_field="path", workspace_edit=True),
         ToolDefinition(name="delete_file", description="Delete a file.", input_schema=PathIn, output_schema=DeleteOut,
                        permission_level=PermissionLevel.destructive, side_effects=[SideEffect.delete],
                        handler=delete_file, resource_field="path"),

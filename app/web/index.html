@@ -644,10 +644,16 @@ function keyHeaders() {
   return h;
 }
 async function api(path, body, method) {
-  const headers = { "Content-Type": "application/json", ...keyHeaders() };
+  // X-Requested-With: the server refuses state-changing /api calls without it (CSRF guard, Decision 0032).
+  const headers = { "Content-Type": "application/json", "X-Requested-With": "galliani", ...keyHeaders() };
   if (APP_TOKEN) headers["X-App-Token"] = APP_TOKEN;
   const res = await fetch(path, { method: method || (body ? "POST" : "GET"), headers, body: body ? JSON.stringify(body) : undefined });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 403) {
+    // 012 R19: a request guard refusal is an error, never success. Nothing ran.
+    const why = typeof data.detail === "string" ? ` ${data.detail}` : "";
+    throw Object.assign(new Error("Refused"), { status: 403, detail: `Galliani refused this request and did nothing.${why}` });
+  }
   if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status, detail: data.detail });
   return data;
 }

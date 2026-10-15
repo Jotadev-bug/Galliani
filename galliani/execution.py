@@ -188,9 +188,14 @@ class ExecutionEngine:
                           plan_id=request.plan_id, step_id=step.step_id, call_id=call.call_id,
                           metadata={"status": result.permission.status.value, "scope": result.permission.scope,
                                     "auto": result.permission.audit_summary.endswith("accept-edits mode")})
+        # SEC-3 / 014 Security: events name the resource and files, never argument values (file bodies,
+        # memory text). The permission scope is the tool's declared resource, already shown in prompts.
+        resource = (result.permission.scope if result.permission else None) or result.metadata.get("resource")
         self.obs.emit(EventType.tool_called, request.task_id, result.observation_summary, plan_id=request.plan_id,
                       step_id=step.step_id, call_id=call.call_id,
-                      metadata={"tool": call.tool_name, "status": result.status.value, "arguments": call.arguments,
+                      metadata={"tool": call.tool_name, "status": result.status.value, "resource": resource,
+                                "argument_names": sorted(call.arguments),
+                                "files": [a["uri"] for a in result.artifacts if "uri" in a],
                                 "error": result.error.code if result.error else None})
         tool = self.tools.registry.get(call.tool_name)
         sensitivity = tool.sensitivity if tool else Sensitivity.internal

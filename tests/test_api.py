@@ -50,7 +50,8 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(routes, "ProviderPool", fake_pool)
     monkeypatch.setattr(routes, "SINK", JsonlSink(tmp_path / "log.jsonl"))
     monkeypatch.setenv("OPENROUTER_API_KEY", "server-key")
-    client = TestClient(routes.app)
+    client = TestClient(routes.app, base_url="http://127.0.0.1")  # local Host only (SEC-8, Decision 0032)
+    client.headers["X-Requested-With"] = "galliani"  # as the app's page sends (Decision 0032)
     client.jev, client.mock, client.keys_seen, client.log = jev, mock, keys_seen, tmp_path / "log.jsonl"
     return client
 

@@ -187,7 +187,7 @@ def test_desktop_app_token_protects_the_agent_api(monkeypatch):
 
     monkeypatch.setenv("ROUTER_APP_TOKEN", "secret-token")
     monkeypatch.setenv("ROUTER_DESKTOP", "1")
-    with TestClient(routes.app) as client:
+    with TestClient(routes.app, base_url="http://127.0.0.1") as client:
         assert client.get("/api/agent/config").status_code == 403
         ok = client.get("/api/agent/config", headers={"X-App-Token": "secret-token"})
         assert ok.status_code == 200 and ok.json()["enabled"] is True

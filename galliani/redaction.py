@@ -35,10 +35,22 @@ class RedactionPolicy(BaseModel):
         r"^authorization$", r"^credentials?$", r".*private[_-]?key.*", r"^(set[_-])?cookie$",
     ])
     value_patterns: list[str] = Field(default_factory=lambda: [
-        r"sk-[A-Za-z0-9_\-]{16,}",
+        # Word boundary on the left, so words ending in "sk" ("task-runner-...", "disk-...") are not keys,
+        # except directly after an escape, where a real key still starts (spec 012 Security, Decision 0032):
+        # a URL escape `%XX` or double-encoded `%25XX`, a string escape `\n \r \t \f \v \b \0`, a hex escape
+        # `\xNN` or a Unicode escape `\uXXXX`. Accepted trade-off: a key glued to a letter or digit is not masked.
+        r"(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2})|(?<=%25[0-9A-Fa-f]{2})|(?<=\\[nrtfvb0])"
+        r"|(?<=\\x[0-9A-Fa-f]{2})|(?<=\\u[0-9A-Fa-f]{4}))sk-[A-Za-z0-9_\-]{16,}",
         r"(?i:bearer)\s+[A-Za-z0-9._\-]{16,}",
         r"AKIA[0-9A-Z]{16}",
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
+        # SEC-11: common service token formats (GitHub, Google, Slack, GitLab, Stripe live and test keys).
+        r"gh[pousr]_[A-Za-z0-9]{36,}",
+        r"github_pat_[A-Za-z0-9_]{22,}",
+        r"AIza[0-9A-Za-z_\-]{35}",
+        r"xox[abprs]-[A-Za-z0-9-]{10,}",
+        r"glpat-[A-Za-z0-9_\-]{20,}",
+        r"[sr]k_(?:live|test)_[A-Za-z0-9]{16,}",
     ])
     sensitivity_labels: list[str] = Field(default_factory=lambda: ["sensitive"])
     action: str = "redact"
