@@ -9,11 +9,15 @@ Modeled on a small product company. Six roles, one owner per area.
 | Agent | Company role | Owns | Model |
 |---|---|---|---|
 | `tech-lead` | Architect / Tech Lead | `specs/`, `docs/decisions.md`, architecture | opus |
-| `core-engineer` | Senior Backend | `galliani/`, `app/` (non-web), `config/` | sonnet |
+| `core-engineer` | Senior Backend | `galliani/`, `app/` (non-web), `config/` | opus |
 | `ui-engineer` | Senior Frontend | `app/web/`, `site/`, `video/`, `assets/` | sonnet |
-| `qa-security` | QA + Security (independent reviewer) | `tests/`, `evals/`, `docs/security.md` | sonnet |
+| `qa-security` | QA + Security (independent reviewer) | `tests/`, `evals/`, `docs/security.md` | opus |
 | `release-engineer` | DevOps / Release | `.github/`, `scripts/`, `packaging/`, `CHANGELOG.md` | sonnet |
 | `product-growth` | Product + Growth | `docs/roadmap.md`, README, pricing/licensing proposals | sonnet |
+
+Model split (user decision 2026-10-15): complex, high-judgment roles run Opus 5.5 (`tech-lead`, `core-engineer`, `qa-security`); lighter roles run Sonnet 5.5 (`ui-engineer`, `release-engineer`, `product-growth`). The main agent passes `model` explicitly when spawning.
+
+Every agent has the Skill tool and a `## Skills` section naming the skills that fit its role (user decision 2026-10-15). The main agent also names relevant skills in each brief.
 
 Definitions live in `.claude/agents/<name>.md`. Keep the roster at six; add a role only when work repeatedly has no owner.
 
