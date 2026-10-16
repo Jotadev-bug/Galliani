@@ -52,16 +52,18 @@ Delete `docs/summary.md` and `smoke.jsonl` afterwards.
 
 ## 5. Publish
 
-Bump `version` in `pyproject.toml`, commit, then push **only** the matching tag (`v0.1.0`, or `v0.2.0-beta.1` for a pre-release):
+Bump `version` in `pyproject.toml`, commit, then push **only** the matching tag (`v0.2.0`, or `v0.3.0-beta.1` for a pre-release). The 0.2.0 steps, in order, are in section 12.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-Push the tag on its own, not with `--tags` or together with a branch, so GitHub sends the tag push event that starts the `Release` workflow. If no Release run appears under **Actions** within a minute, start it by hand: **Actions > Release > Run workflow**, leave the branch on `main`, enter the tag (for example `v0.1.0`), and click **Run workflow** (spec 016 R1).
+Push the tag on its own, not with `--tags` or together with a branch, so GitHub sends the tag push event that starts the `Release` workflow. If no Release run appears under **Actions** within a minute, start it by hand: **Actions > Release > Run workflow**, leave the branch on `main`, enter the tag (for example `v0.2.0`), and click **Run workflow** (spec 016 R1).
 
-Either way the workflow refuses a tag that is malformed, missing or does not match `pyproject.toml` (`scripts/release_tag.py`), runs the tests, builds `Galliani.exe`, and fails unless the binary's `--smoke-test` passes. Check the published release has the `.exe` and its `.sha256`. Stable releases become "latest"; pre-releases never do, so `https://github.com/Jotadev-bug/Galliani/releases/latest/download/Galliani.exe` always serves the newest stable build.
+Either way the workflow refuses a tag that is malformed, missing or does not match `pyproject.toml` (`scripts/release_tag.py`), runs the tests, builds `Galliani.exe`, and fails unless the binary's `--smoke-test` passes. Check the published release has the `.exe`, its `.sha256` and the winget zip. Stable releases become "latest"; pre-releases never do, so `https://github.com/Jotadev-bug/Galliani/releases/latest/download/Galliani.exe` always serves the newest stable build.
+
+The `.exe` is **not code-signed** (user decision, 2026-10-16); a certificate comes later. Expect the SmartScreen "unknown publisher" warning and say so in the release notes.
 
 ## 6. Before announcing (manual)
 
@@ -84,7 +86,7 @@ Spec 016 R17. The Release workflow attaches `galliani-winget-<version>.zip` (the
 1. Unzip the manifest into `packaging/winget/<version>/` and commit it. For an older release, regenerate it with the checksum from the release's `.sha256` file:
 
    ```bash
-   python -m scripts.winget_manifest --tag v0.1.0 --sha256 <hash> --release-date YYYY-MM-DD --out packaging/winget/0.1.0
+   python -m scripts.winget_manifest --tag v0.2.0 --sha256 <hash> --release-date YYYY-MM-DD --out packaging/winget/0.2.0
    ```
 
 2. Validate it:
@@ -105,51 +107,13 @@ Spec 016 R17. The Release workflow attaches `galliani-winget-<version>.zip` (the
 
 The package identifier cannot change after the first merge. See spec 016 Open Question 1.
 
-## 8. Microsoft Store (manual)
+## 8. Microsoft Store (dropped)
 
-Spec 016 R18-R23. The Store build is `Galliani.msix`; the Store signs it, so it is submitted unsigned. Do this once after R4 holds for the same version.
-
-**Once, in Partner Center** (your individual developer account is already verified):
-
-1. **Reserve the name.** Apps and games > New product > MSIX or PWA app > reserve "Galliani".
-2. **Copy the identity.** Product management > Product identity. Copy *Package/Identity/Name* and *Package/Identity/Publisher* (it looks like `CN=xxxxxxxx-xxxx-...`) into `packaging/msix/identity.json` (`identity_name`, `publisher`). They are not secret. `publisher_display_name` must equal *Package/Properties/PublisherDisplayName* (currently "Jotade"). Commit the file.
-
-**For each release:**
-
-1. **Build.** Pushing the tag builds `Galliani.msix` in the Release workflow once the identity is committed (a failure there never blocks the `.exe`). To build by hand: `python -m scripts.build_msix`.
-2. **Test it locally first** (R22). Build a test package with a throwaway identity and certificate, trust that certificate, install the package and run it:
-
-   ```powershell
-   python -m scripts.build_msix --local-test
-   # As administrator, trust the throwaway certificate (undo it afterwards, see below):
-   Import-Certificate -FilePath dist\Galliani.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
-   Add-AppxPackage dist\Galliani.msix
-   ```
-
-   Start **Galliani (local test)** from the Start menu. Check that the window opens, a key you add survives closing and reopening the app, the folder picker works, and an agent task completes. Then remove it:
-
-   ```powershell
-   Get-AppxPackage Galliani.LocalTest | Remove-AppxPackage
-   # As administrator:
-   Get-ChildItem Cert:\LocalMachine\TrustedPeople | Where-Object Subject -eq 'CN=Galliani Local Test' | Remove-Item
-   ```
-
-   The throwaway certificate is created for each run, deleted from the certificate store right after signing, and never committed or published. Never trust it on a machine you do not own.
-3. **Create the submission.** In Partner Center, start a submission for Galliani and fill in:
-   - Pricing: free.
-   - Properties: category (Productivity or Developer tools), and the privacy policy URL `https://galliani.vercel.app/privacy.html`.
-   - Age rating questionnaire (no user-generated content shared between users, no purchases).
-   - Store listing: the description and short description from the site, at least one 1366x768 or larger screenshot of the app (take real ones), and the logo tiles from `packaging/msix/Assets/`.
-   - Packages: upload `Galliani.msix` (from the release assets, or built locally with the same command).
-   - Notes for certification: it is a desktop app that needs the user's own OpenRouter key; say so, and give a throwaway test key if the testers ask.
-4. **Submit** for certification and watch the Partner Center dashboard. Fix whatever the report names and resubmit.
-5. Once live, add the Store link to the site's Install section and the README.
-
-Increase `version` in `pyproject.toml` for every new submission: the Store rejects a package version it has already seen.
+Dropped on 2026-10-16 (user decision): Galliani is not published in the Microsoft Store, and there is no Partner Center step. Nothing in this checklist depends on the Store or on MSIX. `scripts/build_msix.py` and `packaging/msix/` stay in the repository, unused: `identity.json` is empty, so the Release workflow skips the MSIX build. Never invent identity values. Spec 016 R18-R23 and Phase 4 are superseded by Decision 0033 (`docs/decisions.md`).
 
 ## 9. Clean-machine test (manual)
 
-Spec 016 R4, R22; spec 012 R6-R15 (WebView2 amendment). Run on a clean Windows 10 or 11 machine, VM or Windows Sandbox, once per minor release and after any change to the launcher or packaging. Record the result (pass/fail, Windows build, date) in the release notes.
+Spec 016 R4; spec 012 R6-R15 (WebView2 amendment). Run on a clean Windows 10 or 11 machine, VM or Windows Sandbox, once per minor release and after any change to the launcher or packaging. Record the result (pass/fail, Windows build, date) in the release notes.
 
 Steps marked **USER ONLY** need your accounts, your machine or your decision; an agent must not do them.
 
@@ -158,26 +122,25 @@ Steps marked **USER ONLY** need your accounts, your machine or your decision; an
 | 1 | `Galliani.exe`: download from the release page, compare the SHA-256 with `Galliani.exe.sha256`, run it past SmartScreen | Window opens; add a key, chat once, run one agent task in a throwaway folder | You |
 | 2 | Take a SmartScreen screenshot ("Windows protected your PC", then **More info**) for the site's Install section and the release notes | Real screenshot, no personal data visible | **USER ONLY** |
 | 3 | winget from the folder: `winget validate --manifest packaging\winget\<version>`, then `winget install --manifest packaging\winget\<version>` and run `galliani` | Validation passes, install succeeds, the command starts the app; remove with `winget uninstall Jotade.Galliani` | You |
-| 4 | MSIX `--local-test`: follow section 8, step 2 (build with `python -m scripts.build_msix --local-test`, trust the throwaway certificate, `Add-AppxPackage`) | **Galliani (local test)** starts; a key survives close and reopen; folder picker and an agent task work; then remove the package and the certificate | You |
+| 4 | (Dropped: the MSIX local test no longer applies, see section 8) | - | - |
 | 5 | Windows 10 without WebView2, real machine: use a Windows 10 PC or VM that has no Edge WebView2 Runtime (check Settings > Apps for "Microsoft Edge WebView2 Runtime"), run `Galliani.exe` | The native dialog "Galliani needs Microsoft Edge WebView2" (R9) appears and no window opens. **No**: nothing opens. **Yes**: the browser opens `https://developer.microsoft.com/microsoft-edge/webview2/` only. Exit code 3 either way | You |
 | 6 | Same machine: install the Evergreen Runtime from that page, launch again | The app opens normally (R11: nothing is remembered) | You |
 | 7 | Simulation flag, any machine with WebView2: `Galliani.exe --simulate-missing-webview2`, then `echo %ERRORLEVEL%` (cmd) or `$LASTEXITCODE` (PowerShell, run as `Start-Process -Wait -PassThru`) | Same dialog as step 5, same link, exit code 3, no process left. **Depends on core-engineer implementing R14; skip and mark "pending" until the flag exists in the build under test.** If no real Windows 10 machine is available, this step replaces step 5 and the notes must say the real-machine check is pending (spec 012 manual check) | You |
 | 8 | Check the log | See below | You |
 | 9 | WebView2 installed but fails to initialize (spec 012 R20), Windows with WebView2, from a source checkout, run from the repo root: `python -c "import os, tempfile; os.environ['LOCALAPPDATA'] = tempfile.mkdtemp(prefix='galliani-r20-data-'); rt = tempfile.mkdtemp(prefix='galliani-r20-runtime-'); print('desktop.log folder:', os.path.join(os.environ['LOCALAPPDATA'], 'Galliani')); from app import desktop, webview2 as w; raise SystemExit(desktop.main([], hooks=w.WindowHooks(renderer=lambda: (__import__('webview').settings.__setitem__('WEBVIEW2_RUNTIME_PATH', rt), w.current_renderer())[1])))"`, then `$LASTEXITCODE` (PowerShell) or `echo %ERRORLEVEL%` (cmd) | The "Galliani could not open its window" box (R12) with no empty window behind it, exit code 4, and one `webview2_init_failed` line plus pywebview's own failure record, redacted, in the `desktop.log` of the folder the command printed. Nothing about the failure is printed to the console. The first run must confirm that an empty runtime folder makes WebView2 report the failure; if it does not, record that and tell the core engineer. Afterwards delete the two `galliani-r20-*` temp folders | You |
 
-**Log path.** `%LOCALAPPDATA%\Galliani\desktop.log` (`app/desktop.py`, `user_data_dir()`). For the Store package, Windows redirects `%LOCALAPPDATA%` writes of a packaged app to `%LOCALAPPDATA%\Packages\<package family name>\LocalCache\Local\Galliani\desktop.log`; check both if the first is empty. After steps 5 or 7 it holds exactly one line naming the case, the detected version or "none", and the answer (R13). It must contain neither the app token nor the window URL (`?token=` or `http://127.0.0.1`). Open it with `notepad "$env:LOCALAPPDATA\Galliani\desktop.log"`.
+**Log path.** `%LOCALAPPDATA%\Galliani\desktop.log` (`app/desktop.py`, `user_data_dir()`). After steps 5 or 7 it holds exactly one line naming the case, the detected version or "none", and the answer (R13). It must contain neither the app token nor the window URL (`?token=` or `http://127.0.0.1`). Open it with `notepad "$env:LOCALAPPDATA\Galliani\desktop.log"`.
 
 **Exit codes.** 0 normal; 1 `--smoke-test` failed; 3 WebView2 missing (R11); 4 window failed to start (R12) or WebView2 failed to initialize (R20). Confirm in PowerShell: `(Start-Process .\Galliani.exe -ArgumentList '--simulate-missing-webview2' -Wait -PassThru).ExitCode` prints `3`.
 
-**Rollback if a step fails.** Do not announce. If the release is already public, mark it as a pre-release in GitHub (Releases > Edit > "Set as a pre-release") so it stops being "latest", fix, and publish a new version. Do not delete a tag that winget or the Store may already reference.
+**Rollback if a step fails.** Do not announce. If the release is already public, mark it as a pre-release in GitHub (Releases > Edit > "Set as a pre-release") so it stops being "latest", fix, and publish a new version. Do not delete a tag that winget may already reference.
 
 **USER ONLY, summary:**
 
-- Partner Center: reserve the name "Galliani" and copy *Package/Identity/Name* and *Publisher* into `packaging/msix/identity.json`, then commit that file (section 8, "Once"). Never invent these values.
 - The SmartScreen screenshot (step 2).
-- Pushing the release tag (section 5).
-- The pull request to `microsoft/winget-pkgs` (section 7, step 4).
-- The Microsoft Store submission and its certification follow-up (section 8).
+- Pushing the release tag (section 5, section 12 step 8).
+- Publishing the GitHub release (section 12, step 10).
+- The pull request to `microsoft/winget-pkgs` (section 7, step 4; section 12, step 13).
 - Real-machine checks on hardware or VMs you control (steps 5 and 6).
 - Any False-positive submissions (section 6, step 3) from your accounts.
 
@@ -203,3 +166,29 @@ For every `0.N.0` (and any release that touches `galliani/workspace.py`, `gallia
 - `CHANGELOG.md` lists the change with its spec references.
 - `docs/decisions.md` records any change to contracts, lifecycle states, or security behavior.
 - Spec "Implementation Tasks" checkboxes reflect what shipped.
+
+## 12. Release 0.2.0, in order
+
+Unsigned `Galliani.exe` on GitHub Releases and winget; the Microsoft Store is dropped. **USER ONLY** marks an outward-facing step or one that needs your accounts or machine: an agent prepares everything else and must not do these.
+
+1. Branch `release-prep` is merged to `main` (pull request, review by you). `pyproject.toml` says `0.2.0`; `CHANGELOG.md` has the `## 0.2.0 - 2026-10-16` section.
+2. On `main`: `python -m pytest -q` passes (only the SEC-9 xfail allowed) and `python -m galliani.evaluation evals/cases` exits 0. Paste the "Quality gates" block into the 0.2.0 CHANGELOG entry (section 2) and tick the security list (section 10).
+3. Smoke run (section 4): no leak printed.
+4. Dry run of the tag check, no tag pushed: `python -m scripts.release_tag v0.2.0` exits 1 with "Tag v0.2.0 does not exist (pyproject.toml version 0.2.0)", which confirms the version; the check passes only after the tag exists.
+5. Optional rehearsal: build `python -m scripts.build_desktop` and run the clean-machine table (section 9, steps 1 and 3 to 9) on the local `dist/Galliani.exe`.
+6. `docs/release-notes-0.2.0.md` is the body you paste into the release; its "Checks" placeholders (VirusTotal link, clean-machine result) are filled in at step 12.
+7. **USER ONLY** Take the SmartScreen screenshot (section 9, step 2) for the notes and the site.
+8. **USER ONLY** Push the tag, on its own:
+
+   ```bash
+   git switch main && git pull
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+9. Watch **Actions > Release**. It must end green with `Galliani.exe`, `Galliani.exe.sha256` and `galliani-winget-0.2.0.zip` attached. A red MSIX step is expected to be skipped and never blocks the `.exe`. The release is created by the workflow as soon as it ends: if you want it hidden until the checks pass, mark it a draft in the GitHub UI immediately, or accept that it is public from that moment.
+10. **USER ONLY** Publish the release: open it under Releases, replace the body with `docs/release-notes-0.2.0.md` (fill in the placeholders), confirm it is not a pre-release and is "latest".
+11. Verify the download: run the SHA-256 check from the release notes against the published `.exe` and `.sha256`.
+12. Run section 6 (clean machine, VirusTotal, false positives) and the Windows 10 WebView2 checks (section 9, steps 5 to 9), then record the results in the release notes. If a check fails, follow "Rollback" in section 9.
+13. **USER ONLY** winget (section 7): unzip `galliani-winget-0.2.0.zip` into `packaging/winget/0.2.0/`, commit it, run `winget validate` and the local install, then open the pull request to `microsoft/winget-pkgs`.
+14. After the winget pull request merges: add `winget install Jotade.Galliani` to the site (section 7, step 5) and update `README.md` and `docs/roadmap.md` (owners other than release-engineer).

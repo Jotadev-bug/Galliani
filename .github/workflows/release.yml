@@ -1,4 +1,4 @@
-# Push a tag like v0.1.0 to build Galliani.exe, smoke-test it, and publish it on GitHub Releases.
+# Push a tag like v0.2.0 to build Galliani.exe, smoke-test it, and publish it on GitHub Releases.
 # It can also be started by hand (Actions > Release > Run workflow) for a tag that already exists (spec 016 R1).
 # The tag must match the version in pyproject.toml. Tags with a suffix (v0.2.0-beta.1) publish as pre-releases,
 # which never become "latest", so /releases/latest/download/Galliani.exe is always the newest stable build.
@@ -61,9 +61,9 @@ jobs:
       - name: Winget manifest
         run: python -m scripts.winget_manifest --tag "$env:TAG" --exe dist/Galliani.exe --zip-dir dist
 
-      # The Store package (spec 016 R18). It is skipped until packaging/msix/identity.json holds the Partner Center
-      # identity, and a failure here never blocks the .exe release (continue-on-error).
-      - name: MSIX for the Microsoft Store
+      # Optional and unused: there is no Store release (Decision 0033). It is skipped while packaging/msix/identity.json
+      # is empty, and a failure here never blocks the .exe release (continue-on-error). Kept until the user decides.
+      - name: MSIX (optional, unused; skipped without identity.json)
         continue-on-error: true
         run: python -m scripts.build_msix --if-configured
 
@@ -82,7 +82,9 @@ jobs:
           body: |
             **Download:** `Galliani.exe` (Windows 10/11). You need your own [OpenRouter](https://openrouter.ai/keys) key. It is stored in your OS credential store and never leaves your device.
 
-            **First launch:** this build is not code-signed yet, so Windows SmartScreen may show "Windows protected your PC". Click **More info**, then **Run anyway**. To check the download, compare its SHA-256 with `Galliani.exe.sha256`:
+            **First launch:** this build is not code-signed yet, so Windows SmartScreen will warn "Windows protected your PC" and name the publisher as "Unknown publisher". That means Windows does not recognize the publisher, not that a problem was found in the file. To continue, click **More info**, then **Run anyway**. Please do not turn off SmartScreen or your antivirus. A code-signing certificate is planned, which should reduce or remove this warning over time, but it is not available for this release.
+
+            **Check the download:** the SHA-256 of `Galliani.exe` is in the attached `Galliani.exe.sha256` file. Compare it with:
 
             ```powershell
             (Get-FileHash Galliani.exe -Algorithm SHA256).Hash

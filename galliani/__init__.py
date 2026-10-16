@@ -5,4 +5,4 @@ objective -> plan -> routing -> action/tool -> observation -> verification -> re
 Nothing in this package imports provider SDKs or the legacy `app` package (Decision 0009).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
