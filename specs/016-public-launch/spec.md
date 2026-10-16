@@ -26,7 +26,7 @@ Let anyone find, download and try the Galliani desktop app for free, with as lit
 - Analytics, tracking pixels, cookies, or telemetry, on the site or in the app.
 - Auto-update inside the app.
 - Automating Microsoft Store submissions (the `msstore` CLI needs an Azure AD app). The first Store submissions are manual.
-- Changing app behavior beyond what this spec names (a missing-WebView2 message is an open question, not a requirement).
+- Changing app behavior beyond what this spec names (a missing-WebView2 message is not a requirement here; it is an approved amendment to `012-desktop-ui`, R6-R15, Decision 0031).
 
 ## Requirements
 
@@ -202,5 +202,5 @@ Depends on `012-desktop-ui` (the app being shipped) and Decisions 0025 (logo and
 2. **Custom domain.** Stay on `galliani.vercel.app` for launch, or buy a domain first? A domain costs money, so launch stays on the free Vercel subdomain.
 3. **Copyright holder.** The license notice says "Galliani contributors". If paid commercial licenses are planned, the maintainer should hold the copyright, and outside contributions would need a contributor agreement (to be reviewed by a lawyer). Decide before accepting outside pull requests.
 4. **Branding check.** Before wide promotion, check that the name "Galliani" is free to use as a trademark, get an opinion on how close the silver G and four-point sparkle are to Google's G and the Gemini sparkle, and confirm the video's Claude mascot follows Anthropic's brand guidelines (Decision 0024).
-5. **WebView2.** The app needs the Microsoft Edge WebView2 runtime, which ships with Windows 11 but may be missing on some Windows 10 machines. Should the app show a clear message with a download link when it is missing? That would be a small behavior change, so it needs its own requirement in `012-desktop-ui`.
+5. **WebView2.** The app needs the Microsoft Edge WebView2 runtime, which ships with Windows 11 but may be missing on some Windows 10 machines. Should the app show a clear message with a download link when it is missing? That would be a small behavior change, so it needs its own requirement in `012-desktop-ui`. Update 2026-10-15: resolved as `012-desktop-ui` R6-R15, approved by the user (Decision 0031 Accepted).
 6. **Security review.** Should a security review of the agent's file access and accept-edits mode (spec 014) be a gate before the public announcement? This draft recommends yes, but does not make it a requirement.

@@ -11,14 +11,21 @@ Desktop mode (ROUTER_DESKTOP=1, set by app/desktop.py): the user's key lives in 
 store (/api/key), and every /api/* call must carry the per-launch ROUTER_APP_TOKEN so other local
 programs cannot use the saved key.
 
-Not production-hardened yet: no authentication or rate limiting. It binds to localhost by default;
-add both before exposing it to the internet (PROJECT.md section 27).
+In every mode, every call under /api/ except GET, HEAD and OPTIONS must carry `X-Requested-With` (or
+the desktop `X-App-Token`) and, if the browser sends an `Origin`, it must be this server's, so a web
+page open in the user's browser cannot approve agent writes or change settings (CSRF, Decision 0032).
+Every request whose `Host` (port ignored) is not 127.0.0.1, localhost or [::1] is refused, so a
+hostile name rebound to 127.0.0.1 cannot reach the API either (DNS rebinding, Decision 0032).
+
+Not production-hardened yet: no authentication or rate limiting. It binds to localhost by default and
+only answers localhost host names; add both before exposing it to the internet (PROJECT.md section 27).
 """
 
 from __future__ import annotations
 
 import os
 import secrets
+from urllib.parse import urlsplit
 
 import httpx
 from pathlib import Path
@@ -61,12 +68,58 @@ def desktop_mode() -> bool:
     return os.environ.get("ROUTER_DESKTOP") == "1"
 
 
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+CSRF_HEADERS = ("x-requested-with", "x-app-token")  # custom headers: a cross-site page cannot send them
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+
+
+def host_name(host: str) -> str:
+    """The `Host` header without its port, lower-cased: `[::1]:8000` -> `[::1]`, `localhost:80` -> `localhost`."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        name, sep, rest = host.partition("]")
+        name += sep
+    else:
+        name, sep, port = host.partition(":")
+        rest = sep + port
+    # Anything after the name must be a port: `[::1].evil` or `localhost:80.evil` stay foreign.
+    return name if not rest or (rest[0] == ":" and rest[1:].isdigit()) else host
+
+
+def foreign_host(request: Request) -> bool:
+    """SEC-8 (Decision 0032): a page on a hostile name rebound to 127.0.0.1 (DNS rebinding) is same-origin
+    with this server, so the CSRF guard cannot stop it. Its requests still carry the hostile `Host`."""
+    return host_name(request.headers.get("host", "")) not in LOCAL_HOSTS
+
+
+def cross_site(request: Request) -> bool:
+    """SEC-5 (Decision 0032): a state-changing /api call must come from our own page, not another site.
+
+    It must carry a custom header (`X-Requested-With`, or the desktop `X-App-Token`), which browsers only
+    send cross-origin after a CORS preflight this server never grants, and an `Origin`, when present, must
+    be this server's own.
+    """
+    if not any(request.headers.get(h) for h in CSRF_HEADERS):
+        return True
+    origin = request.headers.get("origin")
+    if origin is None:
+        return False
+    parsed = urlsplit(origin)
+    return parsed.scheme not in ("http", "https") or parsed.netloc.lower() != request.headers.get("host", "").lower()
+
+
 @app.middleware("http")
 async def require_app_token(request: Request, call_next):
-    token = os.environ.get("ROUTER_APP_TOKEN")
-    if token and request.url.path.startswith("/api/"):
-        if not secrets.compare_digest(request.headers.get("x-app-token", ""), token):
+    if foreign_host(request):
+        return JSONResponse({"detail": "Host not allowed: open Galliani at 127.0.0.1, localhost or [::1]."},
+                            status_code=403)
+    if request.url.path.startswith("/api/"):
+        token = os.environ.get("ROUTER_APP_TOKEN")
+        if token and not secrets.compare_digest(request.headers.get("x-app-token", ""), token):
             return JSONResponse({"detail": "Invalid app token."}, status_code=403)
+        if request.method not in SAFE_METHODS and cross_site(request):
+            return JSONResponse({"detail": "Cross-site request refused: send X-Requested-With from this app's "
+                                           "own page."}, status_code=403)
     return await call_next(request)
 
 

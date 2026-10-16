@@ -2,6 +2,12 @@
 
     python -m app.desktop                # open the app
     python -m app.desktop --smoke-test   # start the server, check it, exit (used to verify builds)
+    python -m app.desktop --simulate-missing-webview2   # show the missing-WebView2 message, then exit
+
+On Windows the launcher checks for Microsoft Edge WebView2 before opening the window (spec 012 R6-R15).
+If it is missing, a message box offers Microsoft's download page and the app exits with code 3; if the
+window fails to start, or WebView2 reports that it failed to initialize (R20), it exits with code 4.
+Details go to desktop.log in the user data folder only.
 
 Each launch picks a free localhost port and a random token. The window's URL carries the token
 and the server rejects /api calls without it, so other programs on the machine cannot use the
@@ -11,13 +17,21 @@ OpenRouter key saved in the OS credential store.
 from __future__ import annotations
 
 import argparse
+import io
+import logging
 import os
 import secrets
 import socket
 import sys
 import threading
 import time
+import traceback
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterable, Iterator
+
+from app.webview2 import LOG, PYWEBVIEW_LOGGER, WindowHooks, launch_window, smoke_line
+from galliani.redaction import REDACTED, redact_text
 
 APP_NAME = "Galliani"
 
@@ -32,6 +46,144 @@ def user_data_dir() -> Path:
     path = base / APP_NAME
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+# ------------------------------------------------------------------------------------- desktop.log (R13)
+
+class RedactingFilter(logging.Filter):
+    """The one filter on the desktop.log handler (spec 012 R13, Security).
+
+    Every record from every logger (the launcher, pywebview's `pywebview` logger, uvicorn, stray output)
+    is rendered with its traceback and stack, the exact app token and window URL of this launch are
+    removed, and the shared redactor runs. The record is then rewritten in place to that text, so no
+    formatter can bring the raw traceback back.
+    """
+
+    def __init__(self, secrets: Iterable[str]):
+        super().__init__()
+        self._secrets: list[str] = []
+        self.add(*secrets)
+
+    def add(self, *secrets: str) -> None:
+        """Add secrets known only later (the window URL once the port is chosen). Swapped in one step, so a
+        record filtered meanwhile on another thread sees the old or the new list, never a partial one."""
+        self._secrets = sorted({s for s in (*self._secrets, *secrets) if s}, key=len, reverse=True)  # URL first
+
+    def scrub(self, text: str) -> str:
+        for secret in self._secrets:
+            text = text.replace(secret, REDACTED)
+        return redact_text(text)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            parts = [record.getMessage()]
+            if record.exc_info:
+                parts.append("".join(traceback.format_exception(*record.exc_info)).rstrip())
+            elif record.exc_text:
+                parts.append(record.exc_text)
+            if record.stack_info:
+                parts.append(record.stack_info)
+            text = self.scrub("\n".join(parts))
+        except Exception:  # noqa: BLE001 - a record that cannot be rendered is never written raw
+            text = "A log record could not be formatted; it was dropped."
+        record.msg, record.args = text, None
+        record.exc_info = record.exc_text = record.stack_info = None
+        return True
+
+
+class _LogStream(io.TextIOBase):
+    """stdout and stderr of the windowed build (no console): each line becomes a log record, so print() and
+    anything written to stderr reach desktop.log only through the redacting filter."""
+
+    def __init__(self, logger: logging.Logger):
+        super().__init__()
+        self._logger, self._buffer, self._lock, self._local = logger, "", threading.Lock(), threading.local()
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, text: str) -> int:
+        if getattr(self._local, "busy", False):  # a logging error while logging: drop it, never recurse
+            return len(text)
+        with self._lock:
+            self._buffer += text
+            chunk = ""
+            if "\n" in self._buffer:
+                chunk, self._buffer = self._buffer.rsplit("\n", 1)
+        self._emit(chunk)
+        return len(text)
+
+    def flush(self) -> None:
+        with self._lock:
+            chunk, self._buffer = self._buffer, ""
+        self._emit(chunk)
+
+    def _emit(self, chunk: str) -> None:
+        if not chunk.strip():
+            return
+        self._local.busy = True
+        try:
+            self._logger.info(chunk)
+        finally:
+            self._local.busy = False
+
+
+def _log_thread_exception(args: threading.ExceptHookArgs) -> None:
+    if args.exc_type is not SystemExit:
+        name = args.thread.name if args.thread else "unknown"
+        LOG.error("Uncaught exception in thread %s.", name, exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+
+
+def pywebview_level(debug: bool) -> int:
+    """R13: the `pywebview` logger's level is set by the app alone: DEBUG with `--debug`, otherwise INFO.
+
+    `PYWEBVIEW_LOG` is ignored, whatever its value: a level above ERROR would hide the record R20 depends
+    on, and a lower one would put more pywebview detail in desktop.log than the app allows. Never return a
+    level above ERROR (R20). Every record still reaches desktop.log only through the redacting filter."""
+    return logging.DEBUG if debug else logging.INFO
+
+
+@contextmanager
+def desktop_log(path: Path, secrets: Iterable[str], *, windowed: bool,
+                debug: bool = False) -> Iterator[logging.Handler]:
+    """R13: route everything bound for desktop.log through one handler with the redacting filter.
+
+    `secrets` are the app token and window URL of this launch (more can be added through the handler's
+    `RedactingFilter.add`). In the windowed build stdout and stderr become log records too, and uncaught
+    thread exceptions are logged, so no path writes around the filter. pywebview gets a NullHandler first,
+    so its import-time setup neither adds its own stderr handler nor applies `PYWEBVIEW_LOG`; its records
+    reach desktop.log through the root handler only, at the app's level (`pywebview_level`, which ignores
+    `PYWEBVIEW_LOG`; R13, R20). Everything, including the pywebview level, is restored on exit.
+    """
+    handler = logging.FileHandler(path, encoding="utf-8", delay=True)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%dT%H:%M:%SZ")
+    formatter.converter = time.gmtime
+    handler.setFormatter(formatter)
+    handler.addFilter(RedactingFilter(secrets))
+    root, pywebview, null = logging.getLogger(), logging.getLogger(PYWEBVIEW_LOGGER), logging.NullHandler()
+    levels = {logger: logger.level for logger in (LOG, pywebview)}
+    if LOG.level == logging.NOTSET:
+        LOG.setLevel(logging.INFO)
+    pywebview.setLevel(pywebview_level(debug))
+    pywebview.addHandler(null)
+    root.addHandler(handler)
+    streams, thread_hook = (sys.stdout, sys.stderr), threading.excepthook
+    stream = _LogStream(LOG.getChild("output")) if windowed else None
+    if stream:
+        sys.stdout = sys.stderr = stream
+    threading.excepthook = _log_thread_exception
+    try:
+        yield handler
+    finally:
+        if stream:
+            stream.flush()
+        sys.stdout, sys.stderr = streams
+        threading.excepthook = thread_hook
+        root.removeHandler(handler)
+        pywebview.removeHandler(null)
+        for logger, level in levels.items():
+            logger.setLevel(level)
+        handler.close()
 
 
 class DesktopBridge:
@@ -64,13 +216,27 @@ def start_server(port: int):
     from app.api.routes import app
 
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", log_config=None))
-    threading.Thread(target=server.run, daemon=True, name="api").start()
+    server.thread = threading.Thread(target=server.run, daemon=True, name="api")  # joined by stop_server
+    server.thread.start()
     deadline = time.monotonic() + 20
     while not server.started:
         if time.monotonic() > deadline:
+            server.should_exit = True  # never leave a half-started server running
             raise RuntimeError("The local server did not start within 20 s.")
         time.sleep(0.05)
     return server
+
+
+def stop_server(server, timeout: float = 3.0) -> None:
+    """Ask uvicorn to stop and wait briefly, so its shutdown lines still reach desktop.log (R13)."""
+    server.should_exit = True
+    thread = getattr(server, "thread", None)
+    if thread is not None:
+        thread.join(timeout)
+
+
+def _redactor(handler: logging.Handler) -> RedactingFilter:
+    return next(f for f in handler.filters if isinstance(f, RedactingFilter))
 
 
 def _agent_runtime_builds() -> bool:
@@ -108,40 +274,72 @@ def smoke_test(base: str, token: str) -> int:
     }
     for name, passed in checks.items():
         print(f"{'PASS' if passed else 'FAIL'}  {name}")
+    print(smoke_line())  # R15: information only, never part of the exit code
     return 0 if all(checks.values()) else 1
 
 
-def main() -> int:
+def main(argv: list[str] | None = None, hooks: WindowHooks | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--smoke-test", action="store_true")
     p.add_argument("--debug", action="store_true", help="enable the web inspector")
-    args = p.parse_args()
+    p.add_argument("--simulate-missing-webview2", action="store_true",
+                   help="show the missing-WebView2 message on any machine, then exit with code 3 (spec 012 R14)")
+    args = p.parse_args(argv)
 
     data = user_data_dir()
-    if sys.stdout is None:  # windowed build: no console, so keep output in a log file
-        sys.stdout = sys.stderr = open(data / "desktop.log", "a", encoding="utf-8", buffering=1)
-
     token = secrets.token_urlsafe(32)
     os.environ["ROUTER_DESKTOP"] = "1"
     os.environ["ROUTER_APP_TOKEN"] = token
     os.environ.setdefault("ROUTER_LOG_PATH", str(data / "requests.jsonl"))
 
-    port = free_port()
-    server = start_server(port)
-    base = f"http://127.0.0.1:{port}"
-    try:
-        if args.smoke_test:
-            return smoke_test(base, token)
+    bridge = DesktopBridge()
+    base = url = ""  # set once the port is chosen, inside desktop_log
+
+    def open_window() -> None:  # imports pywebview only after the R7 check has decided (launch_window)
         import webview
 
-        bridge = DesktopBridge()
         bridge._window = webview.create_window(
-            APP_NAME, f"{base}/?token={token}", width=1120, height=840, min_size=(420, 560), js_api=bridge,
+            APP_NAME, url, width=1120, height=840, min_size=(420, 560), js_api=bridge,
         )
+        # webview.start only ever lowers the pywebview level to DEBUG, and only with debug=True, where
+        # pywebview_level is DEBUG already: the app's level holds while the window starts (R13, R20).
         webview.start(private_mode=False, storage_path=str(data / "webview"), debug=args.debug)
-        return 0
-    finally:
-        server.should_exit = True
+
+    def shown() -> bool:  # an error after the window appeared is not a start failure (R12)
+        return bridge._window is not None and bridge._window.events.shown.is_set()
+
+    def loaded() -> bool:  # R20: a failure report after the page loaded, or once the window is closing, is ignored
+        # ("User Closes First": the user's close aborts a WebView2 start still in progress, which reports E_ABORT)
+        if bridge._window is None:
+            return False
+        events = bridge._window.events
+        return events.loaded.is_set() or events.closing.is_set() or events.closed.is_set()
+
+    def close_window() -> None:  # R20: called from the watcher thread; pywebview marshals it to the GUI thread
+        if bridge._window is not None:
+            bridge._window.destroy()
+
+    # Windowed build (no console): output goes to desktop.log too, always through the redacting filter (R13).
+    # The log starts before anything that can fail (free_port too), and the token is a secret from the start.
+    with desktop_log(data / "desktop.log", (token,), windowed=sys.stdout is None, debug=args.debug) as log:
+        server = None
+        try:
+            port = free_port()
+            base = f"http://127.0.0.1:{port}"
+            url = f"{base}/?token={token}"
+            _redactor(log).add(url, base)
+            server = start_server(port)
+            if args.smoke_test:
+                return smoke_test(base, token)
+            return launch_window(open_window, log_path=data / "desktop.log", hooks=hooks, shown=shown,
+                                 loaded=loaded, close_window=close_window,
+                                 simulate_missing=args.simulate_missing_webview2)
+        except Exception:
+            LOG.exception("The desktop app stopped with an error.")  # redacted here, then re-raised as before
+            raise
+        finally:
+            if server is not None:
+                stop_server(server)  # inside desktop_log: late uvicorn lines are still filtered and kept
 
 
 if __name__ == "__main__":

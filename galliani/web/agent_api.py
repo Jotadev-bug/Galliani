@@ -42,7 +42,7 @@ from galliani.memory import (
     project_scope,
 )
 from galliani.observability import LifecycleEvent
-from galliani.permissions import EditMode
+from galliani.permissions import EditMode, accepts_edits
 from galliani.state import TERMINAL_STATUSES, TaskStatus
 from galliani.supervisor import StartTaskRequest, UserPolicy
 from galliani.viewmodel import EventFeedItem, TaskViewModel, build_feed, build_task_view
@@ -287,6 +287,10 @@ class AgentService:
             if action in ("approve", "deny"):
                 if state.status is not TaskStatus.waiting_for_user or state.pending_permission is None:
                     raise ContractError("there is no approval to answer")
+                # SEC-4 / 014 Error Handling: check eligibility before launching, so the caller gets 409
+                # and the prompt stays open (the supervisor checks again inside `approve`).
+                if action == "approve" and accept_edits and not accepts_edits(state.pending_permission.request):
+                    raise ContractError("accept-edits mode does not cover this action; approve or deny it")
                 coro = (supervisor.approve(task_id, accept_edits=accept_edits) if action == "approve"
                         else supervisor.deny(task_id))
             elif action == "clarify":

@@ -3,9 +3,13 @@
 - Paths are normalized and checked by the input schema, so traversal (`..`), absolute paths and drive
   letters are rejected as invalid arguments before any permission check or execution, and permission
   scopes are always clean relative paths.
+  Names Windows would rewrite (`name:stream`, trailing dots or spaces, device names such as `CON`) are
+  rejected the same way on every platform, so the checked name is the file the OS opens.
 - Symlinks that escape the root are refused at execution time.
 - Credential-like files (`.env`, keys, `.git/`) are never read or written, so secrets cannot enter
-  Task State (002 security). Env templates such as `.env.example` are ordinary project files.
+  Task State (002 security). Names are compared case-insensitively, and again on the resolved path, so
+  links, junctions and 8.3 short names (`GIT~1`) cannot reach them. Env templates such as
+  `.env.example` are ordinary project files.
 - `list_files` and `read_file` are read-only; `write_file` and `write_files` are `write` actions that
   need approval. `write_files` writes a whole set of files (e.g. a web page's HTML, CSS and JS) in one
   step and one approval, checking every path before it writes any.
@@ -14,6 +18,7 @@
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
 from pathlib import Path, PurePosixPath
 from typing import Literal
@@ -21,7 +26,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from galliani.permissions import PermissionLevel
-from galliani.tools import SideEffect, ToolDefinition, ToolInputRejected, ToolRegistry
+from galliani.tools import SideEffect, ToolDefinition, ToolInputRejected, ToolRegistry, confined_to_workspace
 
 MAX_READ_BYTES = 100_000
 MAX_WRITE_BYTES = 200_000
@@ -35,6 +40,9 @@ BLOCKED_PATTERNS = (".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*"
                     "credentials*", "secrets*")
 TEMPLATE_NAMES = {".env.example", ".env.sample", ".env.template"}  # placeholders, not secrets
 BLOCKED_DIRS = {".git", ".venv", "node_modules", "__pycache__"}
+WIN32_INVALID_CHARS = frozenset(':*?"<>|')  # `:` also opens alternate data streams (`.env::$DATA`)
+RESERVED_DEVICES = frozenset({"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+                              *(f"{p}{n}" for p in ("COM", "LPT") for n in "0123456789¹²³")})
 BUNDLE_HEADER = re.compile(r"^===\s*(?:file:\s*)?(\S(?:.*\S)?)\s*===\s*$", re.IGNORECASE)
 FENCE = re.compile(r"\A```[^\n`]*\n(.*?)\n?```\s*\Z", re.DOTALL)
 
@@ -63,6 +71,12 @@ def parse_bundle(bundle: str) -> list[tuple[str, str]]:
     return out
 
 
+def _reserved_device(part: str) -> bool:
+    """Win32 device names (`CON`, `nul.txt`, `COM1 .log`): opening them reaches a device, not a file."""
+    stem = part.split(".", 1)[0].rstrip(" ").upper()
+    return stem in RESERVED_DEVICES
+
+
 def normalize_relative(path: str) -> str:
     raw = path.strip().replace("\\", "/")
     if not raw or raw == ".":
@@ -72,6 +86,15 @@ def normalize_relative(path: str) -> str:
     parts = [p for p in PurePosixPath(raw).parts if p not in ("", ".")]
     if any(p == ".." for p in parts):
         raise ValueError("path may not leave the workspace")
+    # SEC-1: Windows strips trailing dots and spaces, splits `name:stream` and maps device names, so the
+    # name we check would not be the file the OS opens. Such names are refused on every platform.
+    for p in parts:
+        if any(c in WIN32_INVALID_CHARS or ord(c) < 32 for c in p):
+            raise ValueError("path has a character file names may not contain (: * ? \" < > |)")
+        if p.endswith((".", " ")):
+            raise ValueError("a path component may not end with a dot or a space")
+        if _reserved_device(p):
+            raise ValueError("path uses a reserved device name")
     return "/".join(parts) or "."
 
 
@@ -194,19 +217,42 @@ class Workspace:
         if not self.root.is_dir():
             raise ValueError(f"workspace {self.root} is not a directory")
 
-    def _blocked(self, rel: str) -> bool:
-        parts = rel.split("/")
+    @staticmethod
+    def _blocked(rel: str) -> bool:
+        # SEC-1: compare the name the filesystem would use: case-folded (NTFS and APFS are case-insensitive),
+        # without a `:stream` suffix or the trailing dots and spaces Win32 strips.
+        parts = [p.split(":", 1)[0].rstrip(". ").casefold() for p in rel.split("/")]
         if any(p in BLOCKED_DIRS for p in parts):
             return True
-        return parts[-1] not in TEMPLATE_NAMES and any(fnmatch.fnmatch(parts[-1], pat) for pat in BLOCKED_PATTERNS)
+        name = parts[-1]
+        return name not in TEMPLATE_NAMES and any(fnmatch.fnmatchcase(name, pat) for pat in BLOCKED_PATTERNS)
+
+    def _escapes(self, target: Path) -> str | None:
+        """Why a resolved path may not be touched, or None. SEC-2: links and 8.3 short names (`GIT~1`)
+        resolve to the real name, so protected names are checked again on the resolved path."""
+        if target == self.root:
+            return None
+        if not target.is_relative_to(self.root):
+            return "resolves outside the workspace"
+        if self._blocked(target.relative_to(self.root).as_posix()):
+            return "resolves to a protected path"
+        return None
 
     def resolve(self, rel: str) -> Path:
         if rel != "." and self._blocked(rel):
             raise ToolInputRejected(f"{rel} is a protected path")
         target = (self.root / rel).resolve()
-        if target != self.root and not target.is_relative_to(self.root):
-            raise ToolInputRejected(f"{rel} resolves outside the workspace")
+        problem = self._escapes(target)
+        if problem:
+            raise ToolInputRejected(f"{rel} {problem}")
         return target
+
+    def _recheck(self, rel: str, target: Path) -> None:
+        """SEC-7: resolve again right before writing, so a link swapped in after `resolve` is refused.
+        This narrows the window; it cannot close it against a concurrent local attacker."""
+        now = (self.root / rel).resolve()
+        if os.path.normcase(now) != os.path.normcase(target) or self._escapes(now):
+            raise ToolInputRejected(f"{rel} changed while it was being written; nothing was written")
 
     def _nearby(self, rel: str, limit: int = 10) -> str:
         """Evidence for replanning: what the closest existing folder contains (protected names hidden)."""
@@ -216,7 +262,7 @@ class Workspace:
         folder = "." if str(parent) in (".", "") else parent.as_posix()
         entries = sorted(
             p.name + ("/" if p.is_dir() else "") for p in (self.root / folder).iterdir()
-            if not self._blocked(p.name if folder == "." else f"{folder}/{p.name}")
+            if not self._blocked(p.name if folder == "." else f"{folder}/{p.name}") and not self._escapes(p.resolve())
         )
         shown = ", ".join(entries[:limit]) + (", ..." if len(entries) > limit else "")
         where = "the workspace root ('.')" if folder == "." else f"'{folder}'"
@@ -232,7 +278,7 @@ class Workspace:
             rel = item.relative_to(self.root).as_posix()
             if not item.is_file() or self._blocked(rel) or not fnmatch.fnmatch(item.name, args.pattern):
                 continue
-            if not item.resolve().is_relative_to(self.root):
+            if self._escapes(item.resolve()):  # SEC-2: links into .git or out of the root are not listed
                 continue
             if len(files) >= MAX_LIST:
                 truncated = True
@@ -277,7 +323,9 @@ class Workspace:
         if target.is_dir():
             raise ToolInputRejected(f"{args.path} is a directory")
         change = "overwritten" if target.exists() else "created"
+        self._recheck(args.path, target)  # SEC-10: before mkdir, so no folder is created through a swapped link
         target.parent.mkdir(parents=True, exist_ok=True)
+        self._recheck(args.path, target)
         target.write_text(args.content, encoding="utf-8")
         return {"path": args.path, "bytes": len(args.content.encode("utf-8")), "change": change}
 
@@ -291,7 +339,9 @@ class Workspace:
         written = []
         for f, target in zip(args.files, targets):
             change = "overwritten" if target.exists() else "created"
+            self._recheck(f.path, target)  # SEC-10: before mkdir as well
             target.parent.mkdir(parents=True, exist_ok=True)
+            self._recheck(f.path, target)
             target.write_text(f.content, encoding="utf-8")
             written.append({"path": f.path, "bytes": len(f.content.encode("utf-8")), "change": change})
         return {"paths": [f.path for f in args.files], "bytes": sum(w["bytes"] for w in written), "files": written}
@@ -312,11 +362,12 @@ class Workspace:
                            input_schema=ReadManyIn, output_schema=ReadManyOut,
                            permission_level=PermissionLevel.read_only, side_effects=[SideEffect.read],
                            handler=self.read_files, resource_field="path", idempotent=True),
-            ToolDefinition(name="write_file", description="Create or overwrite a UTF-8 text file in the workspace.",
-                           input_schema=WriteIn, output_schema=WriteOut, permission_level=PermissionLevel.write,
-                           side_effects=[SideEffect.write], handler=self.write_file, resource_field="path",
-                           artifact_field="path", workspace_edit=True),
-            ToolDefinition(name="write_files",
+            confined_to_workspace(ToolDefinition(
+                name="write_file", description="Create or overwrite a UTF-8 text file in the workspace.",
+                input_schema=WriteIn, output_schema=WriteOut, permission_level=PermissionLevel.write,
+                side_effects=[SideEffect.write], handler=self.write_file, resource_field="path",
+                artifact_field="path", workspace_edit=True)),
+            confined_to_workspace(ToolDefinition(name="write_files",
                            description="Create or overwrite several UTF-8 text files (any type: .html, .css, .js, "
                                        ".py, .json, ...) in one step. Pass `files` as [{path, content}], or pass "
                                        "`bundle`: text where each file starts with a line '=== path/to/file ===' "
@@ -326,7 +377,7 @@ class Workspace:
                            input_schema=WriteManyIn, output_schema=WriteManyOut,
                            permission_level=PermissionLevel.write, side_effects=[SideEffect.write],
                            handler=self.write_files, resource_field="folder", artifact_field="paths",
-                           describe=describe_write_many, timeout_ms=15_000, workspace_edit=True),
+                           describe=describe_write_many, timeout_ms=15_000, workspace_edit=True)),
         ]
 
     def registry(self) -> ToolRegistry:
