@@ -61,7 +61,7 @@ REGISTRY = ModelRegistry.from_yaml(CONFIG_DIR / "models.yaml")
 CONFIG = load_routing_config()
 SINK = JsonlSink(settings()["log_path"])
 
-app = FastAPI(title="Galliani", version="0.1.0")
+app = FastAPI(title="Galliani", version="0.2.0")
 
 
 def desktop_mode() -> bool:

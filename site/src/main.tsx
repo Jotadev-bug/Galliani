@@ -249,10 +249,10 @@ function SmartScreenIllustration() {
 const STEPS = [
   { title: "Download", body: <>Get <code className="font-mono">Galliani.exe</code> with the button above. It's a single file, no installer.</> },
   {
-    title: "Get past SmartScreen once",
+    title: "Expect a Windows warning",
     body: (
       <>
-        The app isn't code-signed yet, so Windows may warn on first launch. Click <b className="text-fg">More info</b>, then <b className="text-fg">Run anyway</b>. You only do this once.
+        The app is not code-signed yet, so Windows SmartScreen shows an <b className="text-fg">unknown publisher</b> warning when you first run it. That is expected, and it doesn't mean the file is damaged. Click <b className="text-fg">More info</b>, then <b className="text-fg">Run anyway</b>. Windows may ask again after you update to a new version. To check your download first, compare its SHA-256 with the checksum in the release notes (in PowerShell: <code className="font-mono">Get-FileHash .\Galliani.exe -Algorithm SHA256</code>). A code-signing certificate is planned, which should reduce or remove the warning over time.
         <SmartScreenIllustration />
       </>
     ),
@@ -350,7 +350,7 @@ function OpenSource() {
 
 const FAQ = [
   { q: "What does a typical task cost?", a: "You pay the provider directly with your own key. Most chat messages cost a fraction of a cent, and a typical agent task costs a few cents. Galliani shows the exact cost of every answer." },
-  { q: "Why does Windows warn me?", a: "Galliani isn't code-signed yet, and SmartScreen warns about new apps it hasn't seen often. Click More info, then Run anyway. You can verify the file with its SHA-256 checksum. Never turn off SmartScreen or your antivirus for it." },
+  { q: "Why does Windows warn me?", a: "Galliani is not code-signed yet, so Windows SmartScreen warns about an unknown publisher. This is expected and doesn't mean the file is damaged. To continue, click More info, then Run anyway. To check your download first, compare its SHA-256 with the checksum in the release notes on GitHub. A code-signing certificate is planned, which should reduce or remove the warning over time, since Windows also builds trust in a new certificate gradually. You never need to turn off SmartScreen or your antivirus." },
   { q: "Is there a Mac or Linux version?", a: "Not yet. The desktop app is Windows only for now." },
   { q: "Galliani says it needs WebView2. What is that?", a: "Galliani uses Microsoft Edge WebView2, a free Microsoft component, to show its window. Windows 11 already includes it, so only some Windows 10 PCs need to install it. If yours is missing it, Galliani shows a message and asks whether to open Microsoft's WebView2 page (developer.microsoft.com/microsoft-edge/webview2/) in your browser. Choose Yes, install the Evergreen Runtime there, then open Galliani again. Choose No and Galliani closes. Galliani downloads and installs nothing itself, and sends nothing anywhere. The only record is a line in a log file on your PC." },
   { q: "Which models does it use?", a: "Models from Google (Gemini), Anthropic (Claude) and OpenAI (GPT) through OpenRouter, from cheap and fast to frontier. The router picks one per message." },

@@ -56,7 +56,7 @@ galliani/
 - `specs/013-evaluation/spec.md` - quality gates and benchmark methodology.
 - `specs/014-accept-edits/spec.md` - opt-in mode that auto-approves workspace file writes.
 - `specs/015-remotion-video/spec.md` - fast Remotion explainer video for Galliani.
-- `specs/016-public-launch/spec.md` - first release, landing page, winget and Microsoft Store distribution.
+- `specs/016-public-launch/spec.md` - first release, landing page and winget distribution.
 
 ## Running the v0.1 Core
 
@@ -102,7 +102,11 @@ The desktop app is stricter: every `/api/` call needs the per-launch app token, 
 
 Get it from the website: https://galliani.vercel.app/
 
-Windows builds are published on [GitHub Releases](https://github.com/Jotadev-bug/Galliani/releases/latest). The direct link to the newest stable build is `https://github.com/Jotadev-bug/Galliani/releases/latest/download/Galliani.exe`. You need your own OpenRouter key, which the app keeps in your OS credential store. Builds are not code-signed yet, so on first launch Windows SmartScreen may warn: choose **More info**, then **Run anyway**. Each release lists the SHA-256 of the `.exe`.
+Windows builds are published on [GitHub Releases](https://github.com/Jotadev-bug/Galliani/releases/latest). The direct link to the newest stable build is `https://github.com/Jotadev-bug/Galliani/releases/latest/download/Galliani.exe`. You need your own OpenRouter key, which the app keeps in your OS credential store. 
+
+**Windows will warn about an unknown publisher.** The app is not code-signed yet, so Windows SmartScreen shows "Windows protected your PC" with an "unknown publisher" notice the first time you run it. This is expected, and it does not mean the file is damaged. To continue, choose **More info**, then **Run anyway**. A code-signing certificate is planned, which should reduce or remove the warning (Windows also builds trust in a new certificate over time). To check your download first, compare its SHA-256 with the checksum listed in the release notes on GitHub Releases. In PowerShell: `Get-FileHash .\Galliani.exe -Algorithm SHA256`.
+
+Galliani has no accounts and sends no telemetry. The only network calls are the model requests you make with your own key.
 
 ## Website
 

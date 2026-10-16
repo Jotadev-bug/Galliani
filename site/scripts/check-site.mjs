@@ -47,6 +47,13 @@ for (const f of readdirSync(srcDir).filter((f) => f.endsWith(".tsx"))) {
     if (!/\balt=/.test(tag)) errors.push(`src/${f}: <img> without alt`);
   }
 }
+// R25: the home page is rendered by React, so its text lives in the built bundle. It must say plainly that the app is unsigned.
+const bundle = files.filter((f) => /\.(html|js)$/.test(f) && !/privacy/.test(f)).map((f) => readFileSync(f, "utf8")).join("\n");
+for (const phrase of ["not code-signed", "SmartScreen", "unknown publisher", "More info", "Run anyway", "SHA-256"]) {
+  if (!bundle.includes(phrase)) errors.push(`R25: the home page no longer says "${phrase}" (unsigned-app warning)`);
+}
+if (/turn (?:off|SmartScreen off)|disable (?:SmartScreen|antivirus)/i.test(bundle.replace(/never need to turn off/gi, ""))) errors.push("R25: the home page must not tell users to disable SmartScreen or antivirus");
+if (/microsoft store/i.test(bundle)) errors.push("Decision 0033: the home page must not mention the Microsoft Store");
 if (firstLoad > MAX_FIRST_LOAD) errors.push(`home page assets are ${(firstLoad / 1024).toFixed(0)} KB, over the 500 KB limit`);
 
 console.log(`Checked ${files.length} files; first-load assets ${(firstLoad / 1024).toFixed(0)} KB transferred.`);
