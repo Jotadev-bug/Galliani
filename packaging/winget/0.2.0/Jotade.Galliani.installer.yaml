@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+
+PackageIdentifier: Jotade.Galliani
+PackageVersion: 0.2.0
+InstallerLocale: en-US
+InstallerType: portable
+Platform:
+- Windows.Desktop
+Commands:
+- galliani
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/Jotadev-bug/Galliani/releases/download/v0.2.0/Galliani.exe
+  InstallerSha256: C90526382D9461AFE85264151F38BFF468062216D1025FB1D2EC6422B17DA8B0
+ManifestType: installer
+ManifestVersion: 1.6.0
