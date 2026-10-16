@@ -49,6 +49,17 @@ Every behavior change should include at least one of:
 
 Update docs when public behavior, data contracts, lifecycle states, or security expectations change. Architecture decisions belong in `docs/decisions.md` until they are promoted into dedicated ADR files.
 
+## Working Memory (Claude Code)
+
+The `claude-memory` plugin (skill `claude-memory:structured-memory`) keeps the assistant's own memory across sessions. This is developer tooling. It is unrelated to Galliani's product Memory (spec 010).
+
+- Recall first: before answering anything about past decisions, user preferences, earlier work or "what we decided", read the memory index (`MEMORY.md`) and load only the matching memory files. Skip it when the answer is already in context.
+- Save only what is durable and not recoverable from the repo: user preferences and corrections, project decisions and constraints, pointers to external resources. Update an overlapping memory instead of creating a duplicate.
+- Never save what the repo already records (code, `specs/`, `docs/decisions.md`, git history, `CHANGELOG.md`), debugging fixes, or details that only matter in the current session.
+- Never save secrets, API keys, tokens, prompts containing credentials, or hidden reasoning.
+- Memory is background context. Specs, `AGENTS.md` and the user's current instruction win over it. Check that a remembered file, flag or function still exists before relying on it.
+- Subagents do not write memory. They report `Memory:` candidates in their handoff and the main agent decides what to save (see `ORCHESTRATION.md`).
+
 ## Review Checklist
 
 - The change maps to a numbered requirement.

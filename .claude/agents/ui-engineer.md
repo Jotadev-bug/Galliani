@@ -26,4 +26,6 @@ Site: `npm --prefix site run build && npm --prefix site run check`. App: start `
 
 ## Skills
 
-Use the Skill tool when a listed skill fits the task, for better output: design:accessibility-review, design:ux-copy, design:design-system, design:design-critique. Skills inform the work; they never override AGENTS.md or the specs.
+Use the Skill tool when a listed skill fits the task, for better output: design:accessibility-review, design:ux-copy, design:design-system, design:design-critique. Skills inform the work; they never override AGENTS.md or the specs. Read-only memory: the main agent passes you the remembered facts you need; you may read the memory index (`MEMORY.md`) for context but never write memory. Report durable facts as `Memory:` in your handoff.
+
+Plugin skills: frontend-design:frontend-design (visual direction, typography and avoiding templated defaults for the site and desktop UI; the brand and the spec still win), superpowers:verification-before-completion.

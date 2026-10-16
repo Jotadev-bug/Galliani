@@ -19,6 +19,8 @@ Model split (user decision 2026-10-15): complex, high-judgment roles run Opus 5.
 
 Every agent has the Skill tool and a `## Skills` section naming the skills that fit its role (user decision 2026-10-15). The main agent also names relevant skills in each brief.
 
+Plugins installed by the user (2026-10-16) and who uses them: `claude-memory` (main agent only, see "Main agent responsibilities"), `Superpowers` (main agent: `using-superpowers`, `dispatching-parallel-agents`, `subagent-driven-development`, `using-git-worktrees`, `finishing-a-development-branch`; subagents: the process skills named in their own `## Skills` section), `frontend-design` (`ui-engineer`, `product-growth` for layout), `skill-creator` (main agent, only when creating or tuning a skill). Plugin skills never override `AGENTS.md` or the specs: if one asks for a step the specs or the user's decisions rule out (for example starting code before an approved spec), the specs win.
+
 Definitions live in `.claude/agents/<name>.md`. Keep the roster at six; add a role only when work repeatedly has no owner.
 
 ## Main agent responsibilities
@@ -28,6 +30,7 @@ Definitions live in `.claude/agents/<name>.md`. Keep the roster at six; add a ro
 3. Delegate with a self-contained brief: goal, spec requirement numbers, files, acceptance criteria, how to verify. Subagents start cold; never write "based on your findings".
 4. Check results against the diff, not the report. Integrate, resolve conflicts.
 5. Report to the user: what changed, verification results, what is not done.
+6. Own the memory (`claude-memory:structured-memory`, see `AGENTS.md` "Working Memory"): recall before planning, and save durable user decisions and corrections after a wave. Subagents start cold and do not inherit memory, so put the relevant remembered facts in the brief.
 
 ## Pipelines
 
@@ -53,7 +56,7 @@ Definitions live in `.claude/agents/<name>.md`. Keep the roster at six; add a ro
 
 ## Handoff format
 
-Every agent ends with: `Changed:` files · `Verified:` command and result · `Open:` anything unfinished, unverified or needing a decision.
+Every agent ends with: `Changed:` files · `Verified:` command and result · `Open:` anything unfinished, unverified or needing a decision · optionally `Memory:` durable facts the main agent should consider saving (agents never write memory themselves; no secrets, no reasoning traces).
 
 ## Where things live
 

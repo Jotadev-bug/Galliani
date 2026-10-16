@@ -25,4 +25,6 @@ Verdict PASS / FAIL with findings ranked by severity, each with file:line and a 
 
 ## Skills
 
-Use the Skill tool when a listed skill fits the task, for better output: security-review, code-review, design:accessibility-review for UI or site checks. Skills inform the work; they never override AGENTS.md or the specs.
+Use the Skill tool when a listed skill fits the task, for better output: security-review, code-review, design:accessibility-review for UI or site checks. Skills inform the work; they never override AGENTS.md or the specs. Read-only memory: the main agent passes you the remembered facts you need; you may read the memory index (`MEMORY.md`) for context but never write memory. Report durable facts as `Memory:` in your handoff.
+
+Plugin skills: superpowers:verification-before-completion (evidence before any PASS), superpowers:systematic-debugging (reproduce a failure before filing it), superpowers:requesting-code-review (shape of a review).
