@@ -115,7 +115,11 @@ fixes landed (2026-10-15, Decision 0032), so the tests below are now regression 
   `X-Requested-With: galliani` (`app/web/index.html`). Contract change recorded in Decision 0032. Tests:
   `test_state_changing_calls_without_the_custom_header_are_refused`,
   `test_a_foreign_origin_is_refused_even_with_the_header`, `test_the_apps_own_page_passes_the_guard`,
-  `test_desktop_token_counts_as_the_custom_header`.
+  `test_desktop_token_counts_as_the_custom_header`. Known limitation (spec 012 R18, Error Handling): the
+  `Origin` check compares `Origin` with the request's own `Host`, so a reverse proxy that rewrites `Host`
+  (for example to `127.0.0.1:<port>`) while the browser keeps its own `Origin` gets 403 on every
+  state-changing browser call. Running the local API behind a reverse proxy is unsupported; this fails
+  closed and is documented, not fixed.
 - **SEC-4 (Low) The API swallowed the "not eligible" error of approve-and-accept-edits. Fixed.**
   `AgentService.act` checks `accepts_edits(state.pending_permission.request)` before launching the job and
   answers 409; the prompt stays open. Test: `test_api_rejects_approve_and_accept_edits_on_a_non_write_prompt`.
@@ -189,18 +193,15 @@ New findings, pinned by tests in `tests/core/test_security_review.py` (strict xf
 - Redaction (`galliani/redaction.py`) masks `sk-...`, bearer tokens, AWS access key ids, PEM private key
   headers, and GitHub, Google, Slack, GitLab and Stripe tokens, Stripe live and test keys both (SEC-11).
   Other formats are not masked. The `sk-` false positive is fixed (spec 012 Security, Decision 0032). An
-  `sk-` key is masked when the character before it is not an ASCII letter or digit, or when it directly
-  follows an escape: `%XX`, `%25XX`, `\n \r \t \f \v \b \0`, `\xNN` or `\uXXXX`. Ordinary words such as
-  `task-runner-1234567890` and `disk-...` are left alone; `test_words_ending_in_sk_are_not_secrets` is
-  now a normal test. Accepted trade-off: a key glued to a letter or digit (`abcsk-...`) is not masked.
-  Residuals found in the 2026-10-15 re-review, both Low and pinned by strict xfails in
-  `tests/core/test_security_review.py`:
-  - A key right after an ANSI colour code (`ESC[32msk-...`) is not masked, because the code ends in the
-    letter `m`. The older pattern did mask it. Galliani has no shell tool, so such text only comes from
-    files or pages the agent reads. Test: `test_sk_key_after_an_ansi_colour_code_is_masked`.
-  - The Stripe pattern has no left boundary, so identifiers such as `network_test_connectivitycheck` are
-    masked, and memory refuses them. Test:
-    `test_identifiers_ending_in_sk_or_rk_before_test_or_live_are_not_secrets`.
+  `sk-` or Stripe key is masked when the character before it is not an ASCII letter or digit, or when it
+  directly follows an escape: `%XX`, `%25XX`, `\n \r \t \f \v \b \0`, `\xNN`, `\uXXXX`, or an ANSI colour
+  code (SGR, `ESC[...m`, with ESC as the raw character or written `\x1b`, `\033`, `\u001b` or `\e`).
+  Ordinary words such as `task-runner-1234567890`, `disk-...` and `network_test_connectivitycheck` are left
+  alone. Accepted trade-off: a key glued to a letter or digit (`abcsk-...`) is not masked. The two
+  residuals of the 2026-10-15 re-review are fixed and their strict xfails are now regression tests in
+  `tests/core/test_security_review.py`: `test_sk_key_after_an_ansi_colour_code_is_masked` (a key after
+  an ANSI colour code) and `test_identifiers_ending_in_sk_or_rk_before_test_or_live_are_not_secrets` (the
+  Stripe pattern now has the same left boundary as `sk-`).
 - `desktop.log` (spec 012 R13). One `RedactingFilter` on the only `desktop.log` handler renders every
   record before the handler writes it. That includes records from every logger (`pywebview`, uvicorn,
   asyncio), tracebacks with chained causes, notes and exception groups, stack info, uncaught thread
@@ -210,27 +211,56 @@ New findings, pinned by tests in `tests/core/test_security_review.py` (strict xf
   written raw. The filter rewrites the record in place. Handlers that run after it see only the redacted
   text, without `exc_info`. Handlers that run before it (none in the app; pytest's capture handler in
   tests) see the raw record. pywebview gets a `NullHandler`, so it never adds its own stderr handler.
+  The log now starts before the port is chosen, so a `free_port()` failure is recorded, and the launcher
+  waits up to 3 s for the local server to stop inside the log, so uvicorn's shutdown lines are recorded
+  too, both redacted (tests `test_an_error_before_the_port_is_chosen_reaches_desktop_log_redacted` and
+  `test_late_server_lines_reach_desktop_log_redacted` in `tests/test_desktop_webview2.py`).
   Residuals, all accepted (Info/Low):
-  - Text written before `desktop_log` starts or after it ends is not logged at all in the windowed build,
-    because stderr is `None` there. That covers a `free_port()` failure and uvicorn lines during shutdown.
-    Nothing leaks, but nothing is recorded either.
+  - In the windowed build (stderr is `None`), only text written before `desktop_log` starts (command-line
+    parsing, creating the user data folder) or by a server thread still running after the 3 s wait is not
+    recorded. Nothing leaks, but nothing is recorded either.
   - A token that one writer splits across two stdout/stderr writes, with a flush in between, lands on two
     lines, so neither line contains the whole token and the exact-token filter misses both halves.
     Nothing in Galliani or pywebview writes like this.
   - Other secrets appear only in shapes the shared redactor knows (see above).
-  - Behavior changes from the filter: `PYWEBVIEW_LOG` is no longer honoured, because pywebview's own
-    logger setup is skipped. `--debug` still sets DEBUG. pywebview's messages no longer appear on the
-    console of `python -m app.desktop`. They go only to `desktop.log`.
+  - `PYWEBVIEW_LOG` is ignored by design (spec 012 R13, R20, Security; Decision 0031). The app sets the
+    `pywebview` logger's level itself, INFO or DEBUG with `--debug`, and restores the previous level on
+    exit. R20 depends on pywebview's ERROR record reaching the watcher, so a user value such as `CRITICAL`
+    must not be able to hide it, and a value such as `DEBUG` must not add pywebview detail to `desktop.log`
+    beyond what the app allows. pywebview's import-time setup, which would read the variable, is skipped
+    because `desktop_log` adds a `NullHandler` first. Nothing in the app or its runtime dependencies calls
+    `logging.disable`, `logging.config` (uvicorn runs with `log_config=None`) or raises that logger's level;
+    `tests/test_pywebview_pin.py` checks pywebview's own source for this, aliases included. pywebview's
+    messages do not appear on the console of `python -m app.desktop`. They go only to `desktop.log`.
 - WebView2 check (spec 012 R7, R8). The check matches pywebview 6.2.1's `_is_chromium()`. This is shown
   by the hand-written table and by a seeded differential test that runs the installed pywebview's own
-  source against 1,500 random fake registries. There is one known difference: an empty `REG_NONE` `pv`
-  reads as "absent", where pywebview stops. In that case R8 still refuses the legacy engine (R12 box, exit
-  code 4), but pywebview's two `FeatureControl` values are written first (R10 known exception). Low;
-  strict xfail `test_an_empty_reg_none_pv_stops_the_search_like_pywebview`. On the R9, R14 and
-  `--smoke-test` paths, pywebview's Windows backend is never imported. Known gap in the spec, not in the
-  code: pywebview 6.2.1 does not raise when WebView2 is installed but fails to initialize. It only logs
-  the error, which reaches the filtered `desktop.log`. In that case the user sees a blank window instead
-  of the R12 box.
+  source against 1,500 random fake registries. The empty `REG_NONE` `pv` difference is fixed: it now
+  stops the search as in pywebview (`test_an_empty_reg_none_pv_stops_the_search_like_pywebview`, no longer
+  an xfail). On the R9, R14 and `--smoke-test` paths, pywebview's Windows backend is never imported.
+- WebView2 installed but fails to initialize (spec 012 R20). The gap is closed for failures WebView2
+  reports: pywebview 6.2.1 raises nothing and only logs `WebView2 initialization failed ...` at ERROR on
+  the `pywebview` logger. A flag-only watcher on that logger matches exactly that record (logger name
+  `pywebview`, level ERROR, unformatted `record.msg` prefix, before the page's `loaded` event). It keeps,
+  copies, formats and writes nothing, so pywebview's record, which can hold paths and exception text,
+  reaches `desktop.log` only through the redacting filter (tested with the token, the window URL and an
+  `sk-` key in the record). A separate thread then closes the empty window, and the R12 box follows once
+  the window is gone, with exit code 4 and the R13 case `webview2_init_failed`. No network, registry,
+  process or file other than `desktop.log` is touched. The watcher thread's join is bounded (1 s), so a
+  pywebview close that blocks cannot hang the exit (`test_a_close_that_blocks_cannot_hang_the_exit`).
+  `tests/test_pywebview_pin.py` fails if pywebview rewords or moves the record, and the release checklist
+  requires an R20 re-check on any pywebview upgrade. Known limitation that remains: a WebView2 start that
+  never reports anything (a hang) is not detected; the window stays empty and the exit code is 0. There is
+  no timeout backstop, by decision, because a timeout would close working apps on slow machines.
+  - **R20-1 (Medium, open; owner core-engineer, spec 012 R20).** Closing the window while WebView2 is still
+    starting makes WebView2 itself report a failed initialization (`E_ABORT`), and pywebview logs the R20
+    text with the window's `closing` and `closed` events already set. Reproduced 6 of 6 times on Windows
+    11 with pywebview 6.2.1 and a fresh profile when the window was closed within about 0.3 s of being
+    shown; slower machines and first starts widen that window. The launcher then shows "Galliani could
+    not open its window ... may be damaged" and exits with code 4 after the user's own close, contrary to
+    R20 ("If the user closed the empty window before the flag was set, the exit is unchanged (0)").
+    Not a leak; a false alarm. Suggested fix: ignore the record once the window's `closing` or `closed`
+    event is set, and add that to the R20 signal text. Strict xfail
+    `test_the_report_caused_by_the_users_own_close_is_not_a_failure`.
 - The evaluation suite runs every case against a real `Workspace` in a temporary folder seeded with
   `.env`, `.git/config`, `server.key` and a folder outside the workspace; changing them or leaking their
   text counts toward the `permission_bypasses` gate (`evals/cases/v0_1_sandbox.yaml`). CI runs on Windows,

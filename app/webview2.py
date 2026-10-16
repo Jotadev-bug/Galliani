@@ -1,4 +1,4 @@
-"""Missing WebView2 on Windows: detection, the native message boxes and the exit paths (spec 012 R6-R15).
+"""Missing WebView2 on Windows: detection, the native message boxes and the exit paths (spec 012 R6-R15, R20).
 
 pywebview silently falls back to the Internet Explorer engine (MSHTML) when no usable WebView2 runtime is
 registered, and that engine cannot run the bundled UI. The launcher checks first, with the same rule as
@@ -7,17 +7,22 @@ pywebview (Decision 0031), and shows a native Yes/No message box instead of a bl
 Everything here is offline: detection only reads the registry, the message box is a Win32 call, and the
 only network action is the user's own browser opening `WEBVIEW2_URL` after they select Yes. Detection,
 the message box, the link opener and the window are injectable so tests run on any machine.
+
+R20: a WebView2 runtime that is registered but fails to initialize raises nothing in pywebview; it only logs
+an ERROR record. A flag-only watcher on the `pywebview` logger turns that record into the R12 path.
 """
 
 from __future__ import annotations
 
 import logging
 import sys
+import threading
 import webbrowser
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from platform import machine as platform_machine
-from typing import Callable
+from typing import Callable, Iterator
 
 # The launcher's logger. Its records reach desktop.log only through the redacting handler (R13).
 LOG = logging.getLogger("galliani.desktop")
@@ -26,6 +31,12 @@ WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
 
 EXIT_WEBVIEW2_MISSING = 3  # R11
 EXIT_WINDOW_FAILED = 4  # R12
+
+# R20: pywebview 6.2.1 `EdgeChrome.on_webview_ready` logs this (and raises nothing) when WebView2 reports
+# `IsSuccess` false. `tests/test_pywebview_pin.py` fails if the installed pywebview rewords it.
+PYWEBVIEW_LOGGER = "pywebview"
+INIT_FAILED_PREFIX = "WebView2 initialization failed"
+INIT_FAILED_ERROR = "WebView2InitializationFailed"  # the R13 `error=` of case webview2_init_failed
 
 MISSING_TITLE = "Galliani needs Microsoft Edge WebView2"
 MISSING_TEXT = (
@@ -180,6 +191,63 @@ def native_message_box(box: MessageBox) -> bool:
     return ctypes.windll.user32.MessageBoxW(None, box.text, box.title, message_box_flags(box)) == _IDYES
 
 
+# ------------------------------------------------------------------------------------- R20 init failure
+
+class InitFailureWatcher(logging.Handler):
+    """R20: a flag-only handler on the `pywebview` logger.
+
+    It matches only pywebview's own report that WebView2 failed to initialize (logger `pywebview`, level
+    ERROR, unformatted `record.msg` starting with `INIT_FAILED_PREFIX`) while `loaded()` is false, and then
+    sets `failed`. The launcher's `loaded()` is true once the page loaded or the window started closing
+    ("User Closes First": a record caused by the user's own close is not a failure). It keeps, copies, formats and writes nothing: the record reaches desktop.log only
+    through the redacting handler (R13). Level ERROR and no filter, so nothing else can hide the record.
+    """
+
+    def __init__(self, loaded: Callable[[], bool] = lambda: False):
+        super().__init__(logging.ERROR)
+        self.failed = threading.Event()
+        self._loaded = loaded
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if (record.name != PYWEBVIEW_LOGGER or record.levelno != logging.ERROR
+                or not isinstance(record.msg, str) or not record.msg.startswith(INIT_FAILED_PREFIX)):
+            return
+        try:
+            loaded = self._loaded()
+        except Exception:  # noqa: BLE001 - unknown counts as "not loaded": WebView2 itself reported the failure
+            loaded = False
+        if not loaded:
+            self.failed.set()
+
+
+@contextmanager
+def watch_init_failure(watcher: InitFailureWatcher, close_window: Callable[[], object]) -> Iterator[None]:
+    """R20: attach `watcher` to the `pywebview` logger for the body (the window's whole life); a thread closes
+    the window once the flag is set, outside the logging call, so no empty window stays behind the R12 box.
+    The handler is removed when the body returns or raises."""
+    logger = logging.getLogger(PYWEBVIEW_LOGGER)
+    done = threading.Event()
+
+    def close_on_failure() -> None:
+        while not done.is_set():
+            if watcher.failed.wait(0.2):  # how often `done` is checked; R20 never decides on elapsed time
+                try:
+                    close_window()
+                except Exception as exc:  # noqa: BLE001 - the user can still close it; the R12 box follows
+                    LOG.warning("The empty window could not be closed (%s).", type(exc).__name__)
+                return
+
+    thread = threading.Thread(target=close_on_failure, name="webview2-watch", daemon=True)
+    logger.addHandler(watcher)
+    try:
+        thread.start()
+        yield
+    finally:
+        logger.removeHandler(watcher)
+        done.set()
+        thread.join(1.0)  # bounded: a close still waiting on pywebview cannot hang the exit
+
+
 # ------------------------------------------------------------------------------------------------- flow
 
 @dataclass
@@ -190,14 +258,19 @@ class WindowHooks:
     renderer: Callable[[], str] = current_renderer
     ask: Callable[[MessageBox], bool] = native_message_box
     open_url: Callable[[str], object] = webbrowser.open
+    watcher: Callable[[Callable[[], bool]], InitFailureWatcher] = InitFailureWatcher  # R20
+    loaded: Callable[[], bool] | None = None  # R20 "page is up"; None: the launcher's `loaded` argument
 
 
-def log_event(case: str, version: str | None, answer: str, *, error: BaseException | None = None) -> None:
+def log_event(case: str, version: str | None, answer: str, *, error: BaseException | str | None = None) -> None:
     """R13: one line in desktop.log. It goes through the desktop.log handler, whose filter removes the app
-    token and the window URL and applies the shared redactor (`app.desktop.RedactingFilter`)."""
+    token and the window URL and applies the shared redactor (`app.desktop.RedactingFilter`). `error` is an
+    exception (its type and message) or a fixed name such as `INIT_FAILED_ERROR`."""
     line = f"{case} version={version or 'none'} answer={answer}"
-    if error is not None:
+    if isinstance(error, BaseException):
         line += f" error={type(error).__name__}: {' '.join(str(error).split())}"  # one line per case
+    elif error:
+        line += f" error={error}"
     LOG.info(line)
 
 
@@ -220,13 +293,17 @@ def _offer_download(box: MessageBox, hooks: WindowHooks) -> str:
 
 def launch_window(open_window: Callable[[], object], *, log_path: Path, hooks: WindowHooks | None = None,
                   simulate_missing: bool = False, platform: str | None = None,
-                  shown: Callable[[], bool] = lambda: False) -> int:
-    """R7-R14: check WebView2, then open the window. Returns the process exit code (0, 3 or 4).
+                  shown: Callable[[], bool] = lambda: False, loaded: Callable[[], bool] = lambda: False,
+                  close_window: Callable[[], object] = lambda: None) -> int:
+    """R7-R14, R20: check WebView2, then open the window. Returns the process exit code (0, 3 or 4).
 
     `open_window` creates and runs the pywebview window; it is only called when the runtime is usable.
     Nothing imports pywebview's Windows backend before the R7 check has decided (the renderer probe and
     `open_window` both run after it). `shown` tells whether the window was already shown: an error after
     that is not a start failure (R12) and is raised as before. `log_path` is shown in the R12 box.
+    On Windows the R20 watcher is attached while `open_window` runs: if WebView2 reports a failed
+    initialization before `loaded()`, `close_window` is called and, once `open_window` has returned, the
+    R12 box is shown with exit code 4.
     """
     hooks = hooks or WindowHooks()
     windows = (platform or sys.platform) == "win32"
@@ -243,19 +320,28 @@ def launch_window(open_window: Callable[[], object], *, log_path: Path, hooks: W
     if not status.present:  # R9 only here: pywebview's backend is not loaded, so nothing has changed
         log_event("webview2_missing", status.version, _offer_download(missing_box(), hooks))
         return EXIT_WEBVIEW2_MISSING
+    watcher = hooks.watcher(hooks.loaded or loaded)
     try:
         if windows and hooks.renderer() != "edgechromium":
             # R8: pywebview's backend import may already have written its FeatureControl values (R10), so the
             # R9 text ("Nothing ... changed") would be untrue here; R12 claims nothing about changes.
             log_event("webview2_legacy_engine", status.version, _offer_download(failed_box(log_path), hooks))
             return EXIT_WINDOW_FAILED
-        open_window()
+        with watch_init_failure(watcher, close_window) if windows else nullcontext():
+            open_window()
     except Exception as exc:  # noqa: BLE001 - R12: any failure to create or start the window
-        if shown():
+        if watcher.failed.is_set():  # R20 came first: the error is a consequence, handled as R20 below
+            LOG.error("The window stopped after WebView2 failed to initialize.", exc_info=exc)
+        elif shown():
             raise
-        LOG.error("The window failed to start.", exc_info=exc)  # the details the R12 box points to
+        else:
+            LOG.error("The window failed to start.", exc_info=exc)  # the details the R12 box points to
+            answer = _offer_download(failed_box(log_path), hooks)
+            log_event("window_start_failed", status.version, answer, error=exc)
+            return EXIT_WINDOW_FAILED
+    if watcher.failed.is_set():  # R20: the empty window is closed; pywebview's own record holds the details
         answer = _offer_download(failed_box(log_path), hooks)
-        log_event("window_start_failed", status.version, answer, error=exc)
+        log_event("webview2_init_failed", status.version, answer, error=INIT_FAILED_ERROR)
         return EXIT_WINDOW_FAILED
     return 0
 

@@ -11,10 +11,12 @@ import functools
 import importlib.util
 import random
 import logging
+import os
 import socket
 import subprocess
 import sys
 import threading
+import time
 import types
 from pathlib import Path
 
@@ -119,12 +121,30 @@ def launcher(monkeypatch, tmp_path, offline):
     servers: list[FakeServer] = []
     monkeypatch.setattr(desktop, "start_server", lambda _port: servers.append(FakeServer()) or servers[-1])
 
-    webview = types.SimpleNamespace(created=[], started=0, start_error=None, shown=False)
+    # `loaded` is the window's page-loaded event (R20); `closed` is set when the launcher destroys the window.
+    webview = types.SimpleNamespace(created=[], started=0, start_error=None, shown=False, destroyed=0,
+                                    destroy_error=None, loaded=threading.Event(), closed=threading.Event(),
+                                    watched_at_create=[], destroy_threads=[], destroy_gate=None,
+                                    destroy_entered=threading.Event(),
+                                    window_closing=threading.Event(), window_closed=threading.Event())
+
+    def destroy():
+        webview.destroyed += 1
+        webview.destroy_threads.append(threading.current_thread())
+        webview.destroy_entered.set()
+        if webview.destroy_gate is not None:  # a pywebview close that blocks (shown wait, Invoke on a dying loop)
+            webview.destroy_gate.wait(10)
+        webview.closed.set()
+        if webview.destroy_error:
+            raise webview.destroy_error
 
     def create_window(*args, **kwargs):
         webview.created.append((args, kwargs))
+        webview.watched_at_create.append(len(r20_watchers()))
         shown = types.SimpleNamespace(is_set=lambda: webview.shown)
-        return types.SimpleNamespace(events=types.SimpleNamespace(shown=shown))
+        events = types.SimpleNamespace(shown=shown, loaded=webview.loaded, closing=webview.window_closing,
+                                       closed=webview.window_closed)  # pywebview's own window events
+        return types.SimpleNamespace(events=events, destroy=destroy)
 
     def start(**_kwargs):
         webview.started += 1
@@ -135,9 +155,10 @@ def launcher(monkeypatch, tmp_path, offline):
     monkeypatch.setitem(sys.modules, "webview", webview)
 
     def run(recorder: Recorder, *argv: str) -> int:
+        run.recorder = recorder  # so a window factory can see which boxes were already shown (R20)
         return desktop.main(list(argv), hooks=recorder.hooks)
 
-    run.webview, run.servers, run.log = webview, servers, tmp_path / "desktop.log"
+    run.webview, run.servers, run.log, run.recorder = webview, servers, tmp_path / "desktop.log", None
     return run
 
 
@@ -145,11 +166,15 @@ def log_lines(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
 
 
-CASES = ("webview2_missing", "webview2_legacy_engine", "window_start_failed")
+CASES = ("webview2_missing", "webview2_legacy_engine", "window_start_failed", "webview2_init_failed")
+
+
+def r20_watchers() -> list[logging.Handler]:
+    return [h for h in logging.getLogger("pywebview").handlers if isinstance(h, w.InitFailureWatcher)]
 
 
 def case_lines(path: Path) -> list[str]:
-    """The R13 lines: those that name one of the three cases."""
+    """The R13 lines: those that name one of the four cases."""
     return [line for line in log_lines(path) if any(f" {case} version=" in line for case in CASES)]
 
 
@@ -807,41 +832,428 @@ def test_stop_server_waits_at_most_the_timeout():
     desktop.stop_server(types.SimpleNamespace(should_exit=False))  # no thread (tests' fake server): no error
 
 
-@pytest.mark.parametrize("env, debug, level", [
-    (None, False, logging.INFO), (None, True, logging.DEBUG), ("warning", True, logging.WARNING),
-    ("DEBUG", False, logging.DEBUG), ("bogus", True, logging.INFO), ("BASIC_FORMAT", False, logging.INFO),
-    ("", True, logging.DEBUG), (" debug", True, logging.INFO), ("debug ", False, logging.INFO),
-])
-def test_pywebview_level_follows_pywebview_log_then_debug(monkeypatch, env, debug, level):
-    # pywebview's own rule: PYWEBVIEW_LOG wins, --debug raises to DEBUG only when it is unset, an invalid name
-    # is INFO. Only level names are accepted, never other attributes of the logging module.
+# ------------------------------------------------------------- R13, R20, Security: PYWEBVIEW_LOG is ignored
+
+PYWEBVIEW_LOG_VALUES = [None, "CRITICAL", "ERROR", "DEBUG", "bogus", ""]
+
+
+def set_pywebview_log(monkeypatch, env: str | None) -> None:
     if env is None:
         monkeypatch.delenv("PYWEBVIEW_LOG", raising=False)
     else:
         monkeypatch.setenv("PYWEBVIEW_LOG", env)
-    assert desktop.pywebview_level(debug) == level
 
 
-@pytest.mark.parametrize("env, argv, kept", [(None, ("--debug",), True), (None, (), False),
-                                              ("DEBUG", (), True), ("ERROR", ("--debug",), False)])
-def test_debug_and_pywebview_log_set_what_reaches_desktop_log_still_redacted(launcher, monkeypatch, env, argv, kept):
-    if env is None:
-        monkeypatch.delenv("PYWEBVIEW_LOG", raising=False)
-    else:
-        monkeypatch.setenv("PYWEBVIEW_LOG", env)
+@pytest.fixture
+def pywebview_level_before():
+    """A distinctive level set before the launch (as pywebview's own import with PYWEBVIEW_LOG=CRITICAL
+    would), so the restore on exit is visible; the original level is put back afterwards."""
     pywebview = logging.getLogger("pywebview")
-    before = pywebview.level
+    original = pywebview.level
+    pywebview.setLevel(logging.CRITICAL)
+    yield logging.CRITICAL
+    pywebview.setLevel(original)
+
+
+@pytest.mark.parametrize("env", PYWEBVIEW_LOG_VALUES)
+@pytest.mark.parametrize("debug", [False, True])
+def test_pywebview_level_ignores_pywebview_log(monkeypatch, env, debug):
+    set_pywebview_log(monkeypatch, env)
+    assert desktop.pywebview_level(debug) == (logging.DEBUG if debug else logging.INFO)
+
+
+@pytest.mark.parametrize("env", PYWEBVIEW_LOG_VALUES)
+@pytest.mark.parametrize("argv", [(), ("--debug",)], ids=["no-debug", "debug"])
+def test_pywebview_log_is_ignored_while_the_window_starts(launcher, monkeypatch, pywebview_level_before, env, argv):
+    # AC "PYWEBVIEW_LOG Ignored": the app's level while the window starts, ERROR always let through to the
+    # R20 watcher (no level above ERROR, no logging.disable), and the previous level restored afterwards.
+    set_pywebview_log(monkeypatch, env)
+    pywebview, seen = logging.getLogger("pywebview"), []
 
     def start(**_kwargs):
-        pywebview.debug("debug detail for %s", URL)
-        pywebview.error("error for %s", TOKEN)
+        seen.append((pywebview.level, pywebview.isEnabledFor(logging.ERROR),
+                     logging.root.manager.disable < logging.ERROR, len(r20_watchers())))
 
     launcher.webview.start = start
     assert launcher(Recorder(), *argv) == 0
+    assert seen == [(logging.DEBUG if argv else logging.INFO, True, True, 1)]
+    assert pywebview.level == pywebview_level_before and r20_watchers() == []
+
+
+def test_pywebview_log_critical_cannot_hide_the_r20_record(launcher, monkeypatch, pywebview_level_before):
+    set_pywebview_log(monkeypatch, "CRITICAL")
+    launcher.webview.start = init_failure_start(launcher)
+    rec = Recorder()
+    assert launcher(rec) == 4 and rec.boxes == [w.failed_box(launcher.log)]
+    (line,) = case_lines(launcher.log)
+    assert " webview2_init_failed version=120.0.2210.91 answer=closed error=WebView2InitializationFailed" in line
+    assert logging.getLogger("pywebview").level == pywebview_level_before
+
+
+def test_pywebview_log_debug_adds_no_debug_detail_and_errors_stay_redacted(launcher, monkeypatch,
+                                                                          pywebview_level_before):
+    set_pywebview_log(monkeypatch, "DEBUG")
+    pywebview = logging.getLogger("pywebview")
+
+    def start(**_kwargs):
+        pywebview.debug("debug detail for %s", URL)
+        pywebview.error("error for %s at %s", TOKEN, URL)
+
+    launcher.webview.start = start
+    assert launcher(Recorder()) == 0
     text = assert_clean(launcher.log)
-    assert ("pywebview: debug detail for [redacted]" in text) is kept
-    assert "pywebview: error for [redacted]" in text
-    assert pywebview.level == before  # restored after the launch
+    assert "debug detail" not in text
+    assert "pywebview: error for [redacted] at [redacted]" in text
+
+
+def test_pywebviews_own_import_inside_desktop_log_does_not_set_the_level(tmp_path):
+    # pywebview's import-time `_setup_logger` would apply PYWEBVIEW_LOG; desktop_log's NullHandler makes it
+    # skip. A fresh interpreter, so the real `webview` package is imported for the first time inside the log.
+    pytest.importorskip("webview")
+    code = (
+        "import logging, sys\n"
+        "from pathlib import Path\n"
+        "from app.desktop import desktop_log\n"
+        "with desktop_log(Path(sys.argv[1]), (), windowed=False):\n"
+        "    import webview\n"
+        "    assert 'webview.platforms.winforms' not in sys.modules\n"
+        "    print(logging.getLogger('pywebview').level)\n"
+    )
+    env = {**os.environ, "PYWEBVIEW_LOG": "CRITICAL"}
+    out = subprocess.run([sys.executable, "-c", code, str(tmp_path / "desktop.log")], cwd=ROOT, env=env,
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.split() == [str(logging.INFO)]
+
+
+# --------------------------------------------------------------------------- R20 WebView2 fails to initialize
+
+# As pywebview 6.2.1 builds it in `EdgeChrome.on_webview_ready`: the prefix, then str(InitializationException).
+INIT_FAILURE = ("WebView2 initialization failed with exception:\n System.IO.FileNotFoundException: "
+                f"runtime not found while loading {URL} with {KEY}")
+
+
+def init_failure_start(launcher, *, wait_for_close: bool = True):
+    """The window factory of a damaged WebView2: pywebview logs its report (ERROR, `pywebview` logger, no
+    args), raises nothing, and keeps the empty window open until it is closed. It records how many boxes
+    had been shown when it returned."""
+    def start(**_kwargs):
+        logging.getLogger("pywebview").error(INIT_FAILURE)
+        if wait_for_close:
+            assert launcher.webview.closed.wait(5), "the launcher never closed the empty window"
+        launcher.webview.boxes_before_return = len(launcher.recorder.boxes)
+
+    return start
+
+
+@pytest.mark.parametrize("answer, opened, said", [(True, [WEBVIEW2_URL], "opened_download_page"),
+                                                  (False, [], "closed")])
+def test_webview2_init_failure_closes_the_window_and_shows_r12(launcher, answer, opened, said):
+    # AC "WebView2 Fails to Initialize" (R20). The `offline` fixture fails the test on
+    # socket.create_connection, httpx and subprocess calls.
+    launcher.webview.start = init_failure_start(launcher)
+    rec = Recorder(answer=answer)
+    assert launcher(rec) == 4
+    assert launcher.webview.destroyed == 1 and launcher.webview.boxes_before_return == 0  # closed once; box only after
+    assert rec.boxes == [w.failed_box(launcher.log)] and rec.opened == opened
+    assert launcher.webview.watched_at_create == [1]  # attached before create_window
+    (line,) = case_lines(launcher.log)
+    assert line.endswith(f" webview2_init_failed version=120.0.2210.91 answer={said} "
+                         "error=WebView2InitializationFailed")
+    text = assert_clean(launcher.log)
+    assert "pywebview: WebView2 initialization failed with exception:" in text  # pywebview's record, redacted
+    assert launcher.servers[0].should_exit and r20_watchers() == []
+    assert not any(t.name == "webview2-watch" and t.is_alive() for t in threading.enumerate())
+
+
+class _FakeClock:
+    def __init__(self):
+        self.now = 1_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _another_error(_launcher):
+    logging.getLogger("pywebview").error("Error occurred in script")
+
+
+def _r20_text_at_warning(_launcher):
+    logging.getLogger("pywebview").warning(INIT_FAILURE)
+
+
+def _r20_text_at_critical(_launcher):
+    logging.getLogger("pywebview").critical(INIT_FAILURE)
+
+
+def _r20_text_on_another_logger(_launcher):
+    logging.getLogger("galliani.desktop").error(INIT_FAILURE)
+
+
+def _r20_text_on_a_pywebview_child_logger(_launcher):
+    logging.getLogger("pywebview.edgechromium").error(INIT_FAILURE)
+
+
+def _r20_text_as_an_argument(_launcher):  # the unformatted message is "%s": only record.msg counts
+    logging.getLogger("pywebview").error("%s", INIT_FAILURE)
+
+
+def _r20_text_after_loaded(launcher):
+    launcher.webview.loaded.set()
+    logging.getLogger("pywebview").error(INIT_FAILURE)
+
+
+def _slow_start_then_loaded(launcher):
+    launcher.clock.now += 300  # five minutes of a slow first start: there is no timeout, so no box
+    launcher.webview.loaded.set()
+
+
+@pytest.mark.parametrize("window", [
+    _another_error, _r20_text_at_warning, _r20_text_at_critical, _r20_text_on_another_logger,
+    _r20_text_on_a_pywebview_child_logger, _r20_text_as_an_argument, _r20_text_after_loaded,
+    _slow_start_then_loaded,
+])
+def test_no_false_alarm(launcher, monkeypatch, window):
+    # AC "No False Alarm" (R20) (a)-(d): the window factory does its part, then the user closes the window.
+    launcher.clock = _FakeClock()
+    monkeypatch.setattr(time, "monotonic", launcher.clock)
+    monkeypatch.setattr(time, "time", launcher.clock)
+    attached = []
+
+    def start(**_kwargs):
+        attached.append(len(r20_watchers()))
+        window(launcher)
+
+    launcher.webview.start = start
+    rec = Recorder(answer=True)
+    assert launcher(rec) == 0
+    assert attached == [1] and rec.boxes == [] and rec.opened == [] and launcher.webview.destroyed == 0
+    assert not any(" webview2_init_failed " in line for line in log_lines(launcher.log))
+    assert r20_watchers() == []
+
+
+def test_the_watcher_is_removed_when_the_window_start_raises(launcher):
+    launcher.webview.start_error = RuntimeError("WinForms could not start")
+    assert launcher(Recorder()) == 4
+    (line,) = case_lines(launcher.log)
+    assert " window_start_failed " in line and r20_watchers() == []
+
+
+def test_an_error_after_the_r20_report_is_still_the_r20_case(launcher):
+    # The window's error comes after WebView2's own report (for example while it is being closed): the cause
+    # is the failed initialization, so the box and the line are R20's, even though the window was shown.
+    def start(**_kwargs):
+        logging.getLogger("pywebview").error(INIT_FAILURE)
+        assert launcher.webview.closed.wait(5)
+        raise RuntimeError(f"GUI loop failed after {URL}")
+
+    launcher.webview.start, launcher.webview.shown = start, True
+    rec = Recorder()
+    assert launcher(rec) == 4 and rec.boxes == [w.failed_box(launcher.log)]
+    (line,) = case_lines(launcher.log)
+    assert " webview2_init_failed version=120.0.2210.91 answer=closed error=WebView2InitializationFailed" in line
+    text = assert_clean(launcher.log)
+    assert "RuntimeError: GUI loop failed after [redacted]" in text and r20_watchers() == []
+
+
+def test_user_closes_first_without_a_report_exits_0(launcher):
+    # AC "User Closes First" (R20): the user closes the empty window before WebView2 reported anything.
+    launcher.webview.start = lambda **_kwargs: None
+    rec = Recorder()
+    assert launcher(rec) == 0 and rec.boxes == [] and case_lines(launcher.log) == []
+    assert launcher.webview.destroyed == 0 and r20_watchers() == []
+
+
+def test_report_before_the_user_closed_still_shows_r12(launcher):
+    # AC "User Closes First" (R20): the report came, then the user closed the window at once (the launcher's
+    # own close may find it gone already). The R12 box is still shown and the exit code is 4.
+    launcher.webview.start = init_failure_start(launcher, wait_for_close=False)
+    launcher.webview.destroy_error = RuntimeError("window already closed")
+    rec = Recorder()
+    assert launcher(rec) == 4 and rec.boxes == [w.failed_box(launcher.log)]
+    (line,) = case_lines(launcher.log)
+    assert " webview2_init_failed version=120.0.2210.91 answer=closed" in line
+    assert launcher.webview.destroyed <= 1 and r20_watchers() == []
+
+
+def test_the_report_caused_by_the_users_own_close_is_not_a_failure(launcher):
+    # AC "User Closes First" (R20): the user closes the window while WebView2 is still starting (a slow first
+    # start, or a quick close). Checked on Windows 11 with pywebview 6.2.1 and a fresh profile: closing within
+    # ~0.3 s of `shown` makes WebView2 report IsSuccess false with E_ABORT, and pywebview logs the R20 text
+    # with the window's `closing` and `closed` events already set. That record is a result of the user's
+    # close, not a damaged runtime: the exit stays 0 and no box is shown.
+    def start(**_kwargs):
+        launcher.webview.window_closing.set()
+        launcher.webview.window_closed.set()
+        logging.getLogger("pywebview").error(
+            "WebView2 initialization failed with exception:\n System.Runtime.InteropServices.COMException "
+            "(0x80004004): Operation aborted (Exception from HRESULT: 0x80004004 (E_ABORT))")
+
+    launcher.webview.start = start
+    rec = Recorder()
+    assert launcher(rec) == 0
+    assert rec.boxes == [] and case_lines(launcher.log) == [] and launcher.webview.destroyed == 0
+
+
+@pytest.mark.parametrize("events", [("window_closing",), ("window_closed",)])
+def test_either_close_event_alone_ignores_the_report(launcher, events):
+    # AC "User Closes First" (R20, clarified): `closing` OR `closed` is enough on its own. QA mutation guard:
+    # dropping either condition from `app.desktop.main.loaded` must fail one of these cases.
+    def start(**_kwargs):
+        for name in events:
+            getattr(launcher.webview, name).set()
+        logging.getLogger("pywebview").error(INIT_FAILURE)
+
+    launcher.webview.start = start
+    rec = Recorder()
+    assert launcher(rec) == 0
+    assert rec.boxes == [] and case_lines(launcher.log) == [] and launcher.webview.destroyed == 0
+    assert r20_watchers() == []
+
+
+def test_report_before_closing_was_set_still_shows_r12(launcher):
+    # AC "User Closes First" (R20, clarified): the record was logged before `closing`; the user closed the
+    # window afterwards. The flag is already set, so the R12 box is shown and the exit code is 4.
+    def start(**_kwargs):
+        logging.getLogger("pywebview").error(INIT_FAILURE)
+        launcher.webview.window_closing.set()
+        launcher.webview.window_closed.set()
+        assert launcher.webview.closed.wait(5), "the launcher never closed the empty window"
+
+    launcher.webview.start = start
+    rec = Recorder()
+    assert launcher(rec) == 4 and rec.boxes == [w.failed_box(launcher.log)]
+    (line,) = case_lines(launcher.log)
+    assert " webview2_init_failed version=120.0.2210.91 answer=closed error=WebView2InitializationFailed" in line
+
+
+def test_reading_the_close_events_fails_the_record_still_counts(launcher):
+    # AC "User Closes First" (R20, clarified): if reading `closing`/`closed` raises, a matching record before
+    # `loaded` still counts (R12 box, exit code 4). Uses the launcher's real `loaded` check, not a hook.
+    class Broken:
+        def is_set(self):
+            raise RuntimeError("event not readable")
+
+    real_create = launcher.webview.create_window
+
+    def create_window(*args, **kwargs):
+        window = real_create(*args, **kwargs)
+        window.events.closing = Broken()
+        window.events.closed = Broken()
+        return window
+
+    launcher.webview.create_window = create_window
+    launcher.webview.start = init_failure_start(launcher)
+    rec = Recorder()
+    assert launcher(rec) == 4 and rec.boxes == [w.failed_box(launcher.log)]
+    (line,) = case_lines(launcher.log)
+    assert " webview2_init_failed version=120.0.2210.91 answer=closed error=WebView2InitializationFailed" in line
+    assert "event not readable" not in launcher.log.read_text(encoding="utf-8")  # flag-only: nothing written
+
+
+def test_the_close_runs_outside_the_logging_call(launcher):
+    # R20 "What happens": the window is closed outside the logging call, so pywebview's GUI thread (which
+    # logged the record) is never the one that waits for its own window to close.
+    starters = []
+
+    def start(**kwargs):
+        starters.append(threading.current_thread())
+        init_failure_start(launcher)(**kwargs)
+
+    launcher.webview.start = start
+    assert launcher(Recorder()) == 4
+    assert len(launcher.webview.destroy_threads) == 1
+    assert launcher.webview.destroy_threads[0] is not starters[0]
+
+
+def test_a_close_that_blocks_cannot_hang_the_exit(launcher):
+    # QA review: pywebview's destroy() can wait up to 20 s for `shown` and then Invoke on the GUI thread. If
+    # it blocks while the user closes the window, the launcher still shows R12 and exits 4, without waiting
+    # for the close; the watcher thread is bounded by its join, not by pywebview.
+    gate = launcher.webview.destroy_gate = threading.Event()
+
+    def start(**_kwargs):
+        logging.getLogger("pywebview").error(INIT_FAILURE)
+        assert launcher.webview.destroy_entered.wait(5)  # the launcher's close is now stuck in pywebview
+        # ... and the user closes the empty window themselves: the window factory returns.
+
+    launcher.webview.start = start
+    result, rec = [], Recorder()
+    runner = threading.Thread(target=lambda: result.append(launcher(rec)), daemon=True)
+    try:
+        runner.start()
+        runner.join(5)
+        assert not runner.is_alive(), "the launcher waited for a blocked window close"
+        assert result == [4] and rec.boxes == [w.failed_box(launcher.log)] and r20_watchers() == []
+    finally:
+        gate.set()
+        runner.join(5)
+
+
+def test_the_watcher_and_loaded_check_are_injectable(launcher):
+    made = []
+
+    def watcher(loaded):
+        made.append(loaded)
+        return w.InitFailureWatcher(loaded)
+
+    def page_up() -> bool:
+        return True
+
+    launcher.webview.start = lambda **_kwargs: logging.getLogger("pywebview").error(INIT_FAILURE)
+    rec = Recorder()
+    rec.hooks.watcher, rec.hooks.loaded = watcher, page_up
+    assert launcher(rec) == 0 and made == [page_up] and rec.boxes == []  # the injected "page is up" counts
+
+
+def _record(name="pywebview", level=logging.ERROR, msg=INIT_FAILURE) -> logging.LogRecord:
+    return logging.makeLogRecord({"name": name, "levelno": level, "levelname": logging.getLevelName(level),
+                                  "msg": msg, "args": None})
+
+
+def test_the_watcher_only_sets_a_flag():
+    # R20 Security: level ERROR (or NOTSET), no filter, and it keeps nothing of the record.
+    loaded = []
+    watcher = w.InitFailureWatcher(lambda: bool(loaded))
+    assert watcher.level in (logging.NOTSET, logging.ERROR) and watcher.filters == []
+    state = dict(vars(watcher))
+    for record in (_record(level=logging.WARNING), _record(name="other"), _record(msg="Error occurred in script"),
+                   _record(msg=b"WebView2 initialization failed"), _record(level=logging.CRITICAL)):
+        watcher.handle(record)
+        assert not watcher.failed.is_set()
+    loaded.append(True)
+    watcher.handle(_record())
+    assert not watcher.failed.is_set()  # after `loaded`, ignored
+    loaded.clear()
+    record = _record()
+    watcher.handle(record)
+    assert watcher.failed.is_set()
+    assert vars(watcher).keys() == state.keys()
+    assert all(value is state[key] for key, value in vars(watcher).items())  # nothing new or replaced
+    assert record.msg == INIT_FAILURE and record.args is None  # the record is left as it came
+
+
+def test_a_loaded_check_that_raises_counts_as_not_loaded():
+    def broken() -> bool:
+        raise RuntimeError("window gone")
+
+    watcher = w.InitFailureWatcher(broken)
+    watcher.handle(_record())
+    assert watcher.failed.is_set()
+
+
+def test_off_windows_no_watcher_is_attached(tmp_path, offline):
+    seen = []
+    code = w.launch_window(lambda: seen.append(len(r20_watchers())), log_path=tmp_path / "desktop.log",
+                           hooks=Recorder().hooks, platform="darwin")
+    assert (code, seen) == (0, [0])
+
+
+def test_the_r20_line_names_a_fixed_error(caplog):
+    with caplog.at_level(logging.INFO, logger="galliani.desktop"):
+        w.log_event("webview2_init_failed", "120.0.2210.91", "closed", error=w.INIT_FAILED_ERROR)
+    assert caplog.messages == ["webview2_init_failed version=120.0.2210.91 answer=closed "
+                               "error=WebView2InitializationFailed"]
 
 
 # ---------------------------------------------------------------------------------- R15 smoke test

@@ -87,6 +87,7 @@ In the desktop app (`python -m app.desktop`), switch the message box from **Chat
 - The `Host` header must be `127.0.0.1`, `localhost` or `[::1]`, on any port. Any other host gets `403`.
 - If you send an `Origin` header, it must match the server's own address. A plain script does not need to send one.
 - A refused call returns `403` with a JSON `{"detail": ...}` and changes nothing.
+- Routing calls also need a provider key: set it in the server's environment, or send it in an `x-openrouter-key` header.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/route \

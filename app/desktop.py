@@ -6,7 +6,8 @@
 
 On Windows the launcher checks for Microsoft Edge WebView2 before opening the window (spec 012 R6-R15).
 If it is missing, a message box offers Microsoft's download page and the app exits with code 3; if the
-window fails to start, it exits with code 4. Details go to desktop.log in the user data folder only.
+window fails to start, or WebView2 reports that it failed to initialize (R20), it exits with code 4.
+Details go to desktop.log in the user data folder only.
 
 Each launch picks a free localhost port and a random token. The window's URL carries the token
 and the server rejects /api calls without it, so other programs on the machine cannot use the
@@ -29,7 +30,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from app.webview2 import LOG, WindowHooks, launch_window, smoke_line
+from app.webview2 import LOG, PYWEBVIEW_LOGGER, WindowHooks, launch_window, smoke_line
 from galliani.redaction import REDACTED, redact_text
 
 APP_NAME = "Galliani"
@@ -134,12 +135,11 @@ def _log_thread_exception(args: threading.ExceptHookArgs) -> None:
 
 
 def pywebview_level(debug: bool) -> int:
-    """pywebview's own rule, which its skipped logger setup would have applied: a valid `PYWEBVIEW_LOG` level
-    name wins; otherwise `--debug` means DEBUG and the default is INFO. An invalid name falls back to INFO,
-    as in pywebview. Every record still reaches desktop.log only through the redacting filter."""
-    name = os.environ.get("PYWEBVIEW_LOG")
-    if name:  # any non-empty value counts as set, as in pywebview; it is not stripped
-        return logging.getLevelNamesMapping().get(name.upper(), logging.INFO)
+    """R13: the `pywebview` logger's level is set by the app alone: DEBUG with `--debug`, otherwise INFO.
+
+    `PYWEBVIEW_LOG` is ignored, whatever its value: a level above ERROR would hide the record R20 depends
+    on, and a lower one would put more pywebview detail in desktop.log than the app allows. Never return a
+    level above ERROR (R20). Every record still reaches desktop.log only through the redacting filter."""
     return logging.DEBUG if debug else logging.INFO
 
 
@@ -151,15 +151,16 @@ def desktop_log(path: Path, secrets: Iterable[str], *, windowed: bool,
     `secrets` are the app token and window URL of this launch (more can be added through the handler's
     `RedactingFilter.add`). In the windowed build stdout and stderr become log records too, and uncaught
     thread exceptions are logged, so no path writes around the filter. pywebview gets a NullHandler first,
-    so it does not add its own stderr handler; its records reach desktop.log through the root handler only,
-    at the level pywebview itself would use (`pywebview_level`). Everything is restored on exit.
+    so its import-time setup neither adds its own stderr handler nor applies `PYWEBVIEW_LOG`; its records
+    reach desktop.log through the root handler only, at the app's level (`pywebview_level`, which ignores
+    `PYWEBVIEW_LOG`; R13, R20). Everything, including the pywebview level, is restored on exit.
     """
     handler = logging.FileHandler(path, encoding="utf-8", delay=True)
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%dT%H:%M:%SZ")
     formatter.converter = time.gmtime
     handler.setFormatter(formatter)
     handler.addFilter(RedactingFilter(secrets))
-    root, pywebview, null = logging.getLogger(), logging.getLogger("pywebview"), logging.NullHandler()
+    root, pywebview, null = logging.getLogger(), logging.getLogger(PYWEBVIEW_LOGGER), logging.NullHandler()
     levels = {logger: logger.level for logger in (LOG, pywebview)}
     if LOG.level == logging.NOTSET:
         LOG.setLevel(logging.INFO)
@@ -300,10 +301,23 @@ def main(argv: list[str] | None = None, hooks: WindowHooks | None = None) -> int
         bridge._window = webview.create_window(
             APP_NAME, url, width=1120, height=840, min_size=(420, 560), js_api=bridge,
         )
+        # webview.start only ever lowers the pywebview level to DEBUG, and only with debug=True, where
+        # pywebview_level is DEBUG already: the app's level holds while the window starts (R13, R20).
         webview.start(private_mode=False, storage_path=str(data / "webview"), debug=args.debug)
 
     def shown() -> bool:  # an error after the window appeared is not a start failure (R12)
         return bridge._window is not None and bridge._window.events.shown.is_set()
+
+    def loaded() -> bool:  # R20: a failure report after the page loaded, or once the window is closing, is ignored
+        # ("User Closes First": the user's close aborts a WebView2 start still in progress, which reports E_ABORT)
+        if bridge._window is None:
+            return False
+        events = bridge._window.events
+        return events.loaded.is_set() or events.closing.is_set() or events.closed.is_set()
+
+    def close_window() -> None:  # R20: called from the watcher thread; pywebview marshals it to the GUI thread
+        if bridge._window is not None:
+            bridge._window.destroy()
 
     # Windowed build (no console): output goes to desktop.log too, always through the redacting filter (R13).
     # The log starts before anything that can fail (free_port too), and the token is a secret from the start.
@@ -318,6 +332,7 @@ def main(argv: list[str] | None = None, hooks: WindowHooks | None = None) -> int
             if args.smoke_test:
                 return smoke_test(base, token)
             return launch_window(open_window, log_path=data / "desktop.log", hooks=hooks, shown=shown,
+                                 loaded=loaded, close_window=close_window,
                                  simulate_missing=args.simulate_missing_webview2)
         except Exception:
             LOG.exception("The desktop app stopped with an error.")  # redacted here, then re-raised as before
