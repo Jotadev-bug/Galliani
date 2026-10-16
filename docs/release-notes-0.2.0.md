@@ -48,5 +48,5 @@ Galliani's window uses Microsoft Edge WebView2. Windows 11 and up-to-date Window
 
 <!-- Fill in before publishing, from docs/release-checklist.md. -->
 - VirusTotal report: <link>
-- Clean-machine test (pass/fail, Windows build, date): <result>
+- Clean-machine test: Windows 10 without the WebView2 runtime passed on 2026-10-16 (tested by the maintainer; Windows build not recorded). Other machines: <result>
 - False-positive submissions, if any: <list with dates>
