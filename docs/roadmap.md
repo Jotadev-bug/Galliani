@@ -1,19 +1,26 @@
 # Galliani Roadmap
 
-Updated 2026-10-15. Items are proposals ordered by priority. Each needs an approved spec before code (`AGENTS.md`); the "Spec" column says which. Items marked **needs user decision** change a standing constraint from spec 016 and are not started until the user approves.
+Updated 2026-10-16. Items are proposals ordered by priority. Each needs an approved spec before code (`AGENTS.md`); the "Spec" column says which. Items marked **needs user decision** change a standing constraint from spec 016 and are not started until the user approves.
 
-State today: `v0.1.0` is published; landing page is live on Vercel; winget manifest generator and MSIX scaffold are done (branch `msix-phase-4`); first winget and Store submissions are still manual and pending.
+State today: `v0.1.0` is published and `0.2.0` is being prepared (cut from `main` by release-engineer). Security hardening and WebView2 handling are merged (PR #7). The landing page is live on Vercel and the winget manifest generator is done. The first winget submission is still pending (user). The `.exe` ships unsigned for now. The Microsoft Store is dropped and SignPath stays ruled out.
 
 ## Now: finish the launch (spec 016)
 
 | # | Item | Owner | Notes |
 |---|---|---|---|
-| 1 | Merge `msix-phase-4`; reserve the name in Partner Center and commit `packaging/msix/identity.json` | release-engineer + user | User does the Partner Center steps |
-| 2 | Clean-machine test: `.exe`, `winget install --manifest`, `--local-test` MSIX; replace the drawn SmartScreen stand-in with a real screenshot | release-engineer + user | |
-| 3 | Submit to `microsoft/winget-pkgs` and the Microsoft Store | user | Store signs the MSIX, so this also removes the SmartScreen warning for Store installs |
-| 4 | Security review of agent file access and accept-edits (spec 014) before wide announcement | qa-security | Open Question 6 |
-| 5 | WebView2-missing message for Windows 10 | core-engineer + ui-engineer | Needs a requirement in spec 012 first |
-| 6 | Branding check (name, logo vs. Google G/Gemini sparkle, Claude mascot in the video) | user | Open Question 4; blocks heavy promotion |
+| 1 | Clean-machine test of the `.exe` and `winget install --manifest`; replace the drawn SmartScreen stand-in with a real "unknown publisher" screenshot | release-engineer + user | The warning is expected while the app is unsigned |
+| 2 | Submit to `microsoft/winget-pkgs` | user | Pending |
+| 3 | Security review of agent file access and accept-edits (spec 014) | qa-security | Hardening merged in PR #7 |
+| 4 | WebView2-missing message for Windows 10 | core-engineer + ui-engineer | Handling merged in PR #7; manual check on a real Windows 10 machine is pending (user) |
+
+Branding (name, logo, Claude mascot) was checked by the user and is no longer a blocker.
+
+## Future: code signing (on the user's call, no date)
+
+| # | Item | Owner | Notes |
+|---|---|---|---|
+| 5 | Buy and apply a code-signing certificate | user + release-engineer | No date or vendor chosen. Removes the "unknown publisher" warning once reputation allows. SignPath stays ruled out |
+| 6 | Compare certificate options: OV vs EV, price, how fast each removes the SmartScreen warning | product-growth | Run only when the user asks. Cite sources for prices and SmartScreen behavior |
 
 ## Next: make it worth using daily (1-2 months)
 
@@ -44,15 +51,15 @@ The project is AGPL, local-first, with no accounts, server or telemetry. That is
 | Option | Effort | Fit with constraints | Notes |
 |---|---|---|---|
 | **A. Sponsorship** (GitHub Sponsors, Ko-fi) with a link on the site, README and in-app About | Hours | Fully compatible | Low revenue, zero risk. Do first. |
-| **B. Paid Microsoft Store listing or "Supporter" Store edition** (same open-source code, convenience install + auto-updates via Store) | Low once Phase 4 ships | Compatible: source stays AGPL | Common pattern; Store handles billing and updates. Confirm Store policy on charging for open-source builds. |
+| ~~B. Paid Microsoft Store edition~~ | n/a | Dropped | Superseded 2026-10-16: the Microsoft Store is no longer part of the plan. |
 | **C. Dual licensing / commercial license** for companies that cannot use AGPL | Medium | Compatible, but **needs copyright holder decision** (Open Question 3) and a contributor agreement before accepting outside PRs; lawyer review | Likely the best long-term B2B lever. Decide before taking contributions. |
 | **D. Paid support and setup for teams** (SLA, onboarding, custom routing policies) | Medium | Compatible | Needs a legal entity or freelancer setup; sells consulting more than product. |
 | **E. Optional paid hosted gateway** (managed key, bundled credits, sync) | High | **Breaks non-goals** (accounts, server, payments) | **Needs user decision.** Adds ops, privacy and compliance burden. Only if A-C show demand. |
 | **F. Pro features in a source-available build** (team policies, advanced analytics) | Medium | Conflicts with AGPL unless the owner relicenses own code | Revisit after C is settled. |
 
-Recommended sequence: A now, B at Store launch, decide C before accepting external contributions, measure interest through GitHub stars/issues and download counts from GitHub Releases (no in-app telemetry), then consider D/E.
+Recommended sequence: A now, decide C before accepting external contributions, measure interest through GitHub stars/issues and download counts from GitHub Releases (no in-app telemetry), then consider D/E.
 
-Success signals to watch without telemetry: release download counts, winget/Store installs, GitHub stars and issues, sponsor count.
+Success signals to watch without telemetry: release download counts, GitHub stars and issues, sponsor count. winget install counts may not be visible to the project (unverified), so do not rely on them.
 
 ## Maintenance cadence
 
