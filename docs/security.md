@@ -251,16 +251,25 @@ New findings, pinned by tests in `tests/core/test_security_review.py` (strict xf
   requires an R20 re-check on any pywebview upgrade. Known limitation that remains: a WebView2 start that
   never reports anything (a hang) is not detected; the window stays empty and the exit code is 0. There is
   no timeout backstop, by decision, because a timeout would close working apps on slow machines.
-  - **R20-1 (Medium, open; owner core-engineer, spec 012 R20).** Closing the window while WebView2 is still
-    starting makes WebView2 itself report a failed initialization (`E_ABORT`), and pywebview logs the R20
-    text with the window's `closing` and `closed` events already set. Reproduced 6 of 6 times on Windows
-    11 with pywebview 6.2.1 and a fresh profile when the window was closed within about 0.3 s of being
-    shown; slower machines and first starts widen that window. The launcher then shows "Galliani could
-    not open its window ... may be damaged" and exits with code 4 after the user's own close, contrary to
-    R20 ("If the user closed the empty window before the flag was set, the exit is unchanged (0)").
-    Not a leak; a false alarm. Suggested fix: ignore the record once the window's `closing` or `closed`
-    event is set, and add that to the R20 signal text. Strict xfail
-    `test_the_report_caused_by_the_users_own_close_is_not_a_failure`.
+  - **R20-1 (Medium, fixed 2026-10-16; spec 012 R20 Signal clarification, AC "User Closes First").**
+    Closing the window while WebView2 is still starting makes WebView2 itself report a failed
+    initialization (`E_ABORT`), and pywebview logs the R20 text with the window's `closing` and `closed`
+    events already set. Before the fix the launcher then showed the R12 box and exited with code 4 after
+    the user's own close (reproduced 6 of 6 times within about 0.3 s of `shown`). Fix: the launcher's
+    `loaded()` check in `app/desktop.py` is also true once `events.closing` or `events.closed` is set, so
+    the watcher ignores that record; the watcher is unchanged and still flag-only. Evidence: (1) real
+    window, pywebview 6.2.1, Windows 11, `app.desktop.main` itself with only the message box and opener
+    stubbed, fresh `LOCALAPPDATA` and WebView2 profile per run, closed 0, 0.05, 0.1 and 0.2 s after `shown`
+    (10 runs): pywebview logged the R20 text in all 10, and every run exited 0 with no box and no
+    `webview2_init_failed` line. Control: with the `closing`/`closed` condition removed, the same probe
+    gave exit 4 and the box (2 of 2), so the probe exercises the race. (2) A real failed initialization
+    (empty `WEBVIEW2_RUNTIME_PATH`) still gives the box, exit 4 and the `webview2_init_failed` line (2 of
+    2), with no token in `desktop.log`. (3) Tests: `test_the_report_caused_by_the_users_own_close_is_not_a_failure`
+    (no longer an xfail), `test_either_close_event_alone_ignores_the_report` (`closing` alone, `closed`
+    alone), `test_report_before_closing_was_set_still_shows_r12`, and
+    `test_reading_the_close_events_fails_the_record_still_counts` (if reading the events raises, the record
+    counts and nothing about the error is written). Mutation check of the condition: dropping `closing`,
+    dropping `closed`, dropping both, inverting it, or requiring `loaded` too each fails at least one test.
 - The evaluation suite runs every case against a real `Workspace` in a temporary folder seeded with
   `.env`, `.git/config`, `server.key` and a folder outside the workspace; changing them or leaking their
   text counts toward the `permission_bypasses` gate (`evals/cases/v0_1_sandbox.yaml`). CI runs on Windows,
