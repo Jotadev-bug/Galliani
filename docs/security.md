@@ -279,3 +279,73 @@ New findings, pinned by tests in `tests/core/test_security_review.py` (strict xf
 - The local API's CSRF guard alone does not stop DNS rebinding (a hostile name resolving to 127.0.0.1
   makes the page same-origin); the `Host` allowlist (SEC-8) closes it. A server started with `--host` on
   another address therefore only answers clients that use `127.0.0.1`, `localhost` or `[::1]`.
+
+## Interactive Terminal Trust Boundary (spec 017, Decision 0034)
+
+The interactive terminal (`galliani`, `python -m galliani.tui`) is a front end only. It drives the
+supervisor through its public methods, so permissions, sandboxing, memory and redaction are the ones
+described above. What it adds is a new place where untrusted text is shown: a terminal acts on control
+sequences, which a browser does not.
+
+### Trust boundary
+
+- Trusted: what the user types into the prompt. Slash commands are parsed only from that text (R34), so
+  model output, tool output, file names, memory records and questions cannot change a setting, run a
+  command or answer a prompt.
+- Untrusted: everything else that is shown, including plan steps, tool and model output, approval prompts,
+  questions, error text, memory records and route names. It comes from redacted lifecycle events and
+  `TaskState.for_display()` (R17), never from raw `TaskResult.output`.
+- Every transcript entry and every approval and question field passes `sanitize()`
+  (`galliani/tui/session.py`): `redact_text`, then removal of ESC sequences (CSI, OSC, DCS, SOS, PM, APC),
+  of C0 and C1 controls except newline and tab, of DEL, and of bidi override and isolate characters
+  (U+202A-U+202E, U+2066-U+2069). OSC 52 clipboard writes, OSC 8 links, title changes, cursor movement,
+  screen clears and right-to-left file-name spoofing are removed. An 8-bit OSC or CSI loses its
+  introducer and terminator, so what remains is printable text.
+- Text is rendered with Rich `Text` and `markup=False`, so `[bold]` or `[@click=...]` stays literal. The
+  result body is Markdown; Textual turns its links into click actions, not OSC 8 sequences, and
+  `open_links=False` means a click opens nothing. Images are not loaded.
+- Path validation (SEC-1) rejects file names with control characters before any prompt, so a file name
+  can carry only bidi characters to the approval card, and `sanitize()` removes those.
+- Plans that contain secret-like values are rejected before they run, so a key in a plan step never
+  reaches the screen.
+
+### Permissions
+
+The TUI calls `Supervisor.approve` and `deny` and nothing else; the `a` key is offered and accepted only
+when the supervisor lists `approve_and_accept_edits`, and it changes only the current task (014 R6). The
+session default edit mode is kept in memory only (014 R9). `Esc` on an approval denies. One key press
+decides at most one prompt. `tests/tui/test_security.py` runs every existing eval fixture that answers an
+approval or a question through `Session` and through the one-shot loop, and checks that both end in the
+same status, run the same tools and record the same permission decisions.
+
+### Privacy
+
+The TUI writes no transcript, history, settings, log or screenshot file. Textual's command palette and
+screenshot actions are disabled. The only files are the ones the existing stack writes: approved workspace
+edits, memory through approved `remember` calls, and the redacted `--events` log when the user asks for
+it. The TUI opens no network connection of its own. `test_security.py` checks this with a Python audit
+hook during a full Pilot session (task, approval, quit): no file is opened for writing except the approved
+workspace file, and no non-loopback socket is opened. Textual's `TEXTUAL=devtools` and `TEXTUAL_LOG` can
+send screen text to a devtools console or a log file. The app never sets them; only the user can.
+
+### Review findings (task D, 2026-10-19)
+
+Each open finding is pinned by a strict-xfail test in `tests/tui/test_security.py`. The test fails the
+suite once the fix lands, as a reminder to remove the marker.
+
+- **TUI-1 (High) Plan steps reach the terminal unsanitized. Open.** `SessionState.plan` is the raw
+  `PlanView` from `build_task_view` (`galliani/tui/session.py:427`, `:517`). `PlanPanel` and `PlanSummary`
+  render `step.purpose` and `revision_reason` (`galliani/tui/widgets.py:185`, `:211`). Rich `Text` strips
+  only BEL, BS, VT, FF and CR, so ESC survives. A model-written plan (`ModelPlanner` parses JSON, and
+  `\u001b` is valid JSON) can put OSC 52 clipboard writes, OSC 8 links, title and cursor sequences into
+  the bytes Textual writes to the terminal, both in the docked panel and in the expanded summary. The
+  transcript's plan entry is sanitized; the panel is not. Fix: build the session's `PlanView` with
+  sanitized `purpose` and `revision_reason`. Tests: `test_hostile_plan_step_purposes_are_clean_in_state`,
+  `test_screen_bytes_are_clean_for_a_hostile_plan[120|80]`.
+- **TUI-2 (Medium) A secret split by a control character is masked before it is joined.** `sanitize()`
+  redacts first and strips second (`galliani/tui/session.py:62-63`, as R18 orders it). `sk-abcd\x1b[0mefgh...`,
+  `sk-abcd‮efgh...`, a GitHub token with a BEL inside it, or an AWS key id with a NUL inside it does
+  not match the redaction pattern, and then the strip joins it back into a whole, unmasked key on screen.
+  Upstream event redaction ran on the same split text, so it missed the key too. Fix: run `redact_text`
+  again after stripping, which also needs an R18 wording change. Test:
+  `test_sanitize_masks_a_secret_split_by_control_characters`.
