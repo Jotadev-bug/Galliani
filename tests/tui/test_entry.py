@@ -1,4 +1,4 @@
-"""Spec 017 R2-R5: the `galliani` entry point. One-shot delegation, fallbacks and flag errors."""
+"""Spec 017 R2-R5 and 018 R23-R25, R27: the `galliacli` entry point. One-shot delegation, fallbacks and flag errors."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def test_one_shot_usage_errors_are_the_cli_s(monkeypatch, tmp_path):
 def test_one_shot_usage_errors_name_the_cli_program(argv, capsys):
     assert entry.main(argv) == 2
     err = capsys.readouterr().err
-    assert "usage: python -m galliani.cli" in err and "usage: galliani" not in err
+    assert "usage: python -m galliani.cli" in err and "usage: galliacli" not in err
 
 
 # ---------------------------------------------------------------------- Fallback Without Textual Or TTY
@@ -63,7 +63,7 @@ def test_fallback_when_textual_is_missing(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(session_mod, "Session", lambda *a, **k: built.append(1))
     assert entry.main(["--workspace", str(tmp_path)]) == 2
     err = capsys.readouterr().err
-    assert "Textual" in err and 'pip install "galliani[tui]"' in err and 'galliani "<objective>"' in err
+    assert "Textual" in err and 'pip install "galliani[tui]"' in err and 'galliacli "<objective>"' in err
     assert sys.modules["textual"] is None and "galliani.tui.app" not in sys.modules and built == []
 
 
@@ -72,7 +72,7 @@ def test_fallback_when_not_a_tty(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(entry, "_isatty", lambda stream: stream is sys.stdin)  # stdout redirected
     assert entry.main(["--workspace", str(tmp_path)]) == 2
     err = capsys.readouterr().err
-    assert "TTY" in err and 'galliani "<objective>"' in err and "pip install" not in err
+    assert "TTY" in err and 'galliacli "<objective>"' in err and "pip install" not in err
 
 
 def test_fallback_when_term_is_dumb(tty, monkeypatch, tmp_path, capsys):
@@ -94,7 +94,7 @@ def test_real_stdout_pipe_falls_back_without_importing_textual(tmp_path):
     proc = subprocess.run([sys.executable, "-c", code, str(tmp_path)], capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=120)
     assert proc.returncode == 2 and proc.stdout.strip() == "False False"
-    assert 'galliani "<objective>"' in proc.stderr
+    assert 'galliacli "<objective>"' in proc.stderr
 
 
 def test_textual_missing_check_does_not_import_it(monkeypatch):
@@ -156,7 +156,7 @@ def test_one_shot_flags_without_an_objective_are_usage_errors(tty, argv, needle,
 @pytest.mark.parametrize("argv", [["--theme", "blue"], ["--budget", "lots"], ["--bogus"]])
 def test_bad_flags_exit_2(tty, argv, capsys):
     assert entry.main(argv) == 2
-    assert "usage: galliani" in capsys.readouterr().err
+    assert "usage: galliacli" in capsys.readouterr().err
 
 
 def test_missing_workspace_prints_the_one_shot_message(tty, tmp_path, capsys):
