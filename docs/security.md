@@ -282,7 +282,8 @@ New findings, pinned by tests in `tests/core/test_security_review.py` (strict xf
 
 ## Interactive Terminal Trust Boundary (spec 017, Decision 0034)
 
-The interactive terminal (`galliani`, `python -m galliani.tui`) is a front end only. It drives the
+The interactive terminal (`galliacli`, `python -m galliani`, `python -m galliani.tui`; spec 018 R27 renamed
+the console script from `galliani`, which stays the desktop app's name) is a front end only. It drives the
 supervisor through its public methods, so permissions, sandboxing, memory and redaction are the ones
 described above. What it adds is a new place where untrusted text is shown: a terminal acts on control
 sequences, which a browser does not.
@@ -295,12 +296,14 @@ sequences, which a browser does not.
 - Untrusted: everything else that is shown, including plan steps, tool and model output, approval prompts,
   questions, error text, memory records and route names. It comes from redacted lifecycle events and
   `TaskState.for_display()` (R17), never from raw `TaskResult.output`.
-- Every transcript entry and every approval and question field passes `sanitize()`
-  (`galliani/tui/session.py`): `redact_text`, then removal of ESC sequences (CSI, OSC, DCS, SOS, PM, APC),
+- Every transcript entry, every approval and question field, the plan panel, the banner and every completion
+  label and summary pass `sanitize()` (`galliani/tui/commands.py`, re-exported by `galliani/tui/session.py`):
+  `redact_text`, then removal of ESC sequences (CSI, OSC, DCS, SOS, PM, APC),
   of C0 and C1 controls except newline and tab, of DEL, and of bidi override and isolate characters
   (U+202A-U+202E, U+2066-U+2069). OSC 52 clipboard writes, OSC 8 links, title changes, cursor movement,
-  screen clears and right-to-left file-name spoofing are removed. An 8-bit OSC or CSI loses its
-  introducer and terminator, so what remains is printable text.
+  screen clears and right-to-left file-name spoofing are removed, and `redact_text` runs again so a secret
+  split by a stripped character is masked once rejoined. An 8-bit OSC or CSI loses its introducer and
+  terminator, so what remains is printable text.
 - Text is rendered with Rich `Text` and `markup=False`, so `[bold]` or `[@click=...]` stays literal. The
   result body is Markdown; Textual turns its links into click actions, not OSC 8 sequences, and
   `open_links=False` means a click opens nothing. Images are not loaded.
@@ -330,10 +333,13 @@ send screen text to a devtools console or a log file. The app never sets them; o
 
 ### Review findings (task D, 2026-10-19)
 
+Both findings were fixed in the spec 017 follow-up (the plan is sanitized when the session stores it, and
+`sanitize()` redacts, strips, then redacts again); their tests now run without xfail markers.
+
 Each open finding is pinned by a strict-xfail test in `tests/tui/test_security.py`. The test fails the
 suite once the fix lands, as a reminder to remove the marker.
 
-- **TUI-1 (High) Plan steps reach the terminal unsanitized. Open.** `SessionState.plan` is the raw
+- **TUI-1 (High) Plan steps reach the terminal unsanitized. Fixed.** `SessionState.plan` is the raw
   `PlanView` from `build_task_view` (`galliani/tui/session.py:427`, `:517`). `PlanPanel` and `PlanSummary`
   render `step.purpose` and `revision_reason` (`galliani/tui/widgets.py:185`, `:211`). Rich `Text` strips
   only BEL, BS, VT, FF and CR, so ESC survives. A model-written plan (`ModelPlanner` parses JSON, and
@@ -342,10 +348,70 @@ suite once the fix lands, as a reminder to remove the marker.
   transcript's plan entry is sanitized; the panel is not. Fix: build the session's `PlanView` with
   sanitized `purpose` and `revision_reason`. Tests: `test_hostile_plan_step_purposes_are_clean_in_state`,
   `test_screen_bytes_are_clean_for_a_hostile_plan[120|80]`.
-- **TUI-2 (Medium) A secret split by a control character is masked before it is joined.** `sanitize()`
+- **TUI-2 (Medium) A secret split by a control character is masked before it is joined. Fixed.** `sanitize()`
   redacts first and strips second (`galliani/tui/session.py:62-63`, as R18 orders it). `sk-abcd\x1b[0mefgh...`,
   `sk-abcd‮efgh...`, a GitHub token with a BEL inside it, or an AWS key id with a NUL inside it does
   not match the redaction pattern, and then the strip joins it back into a whole, unmasked key on screen.
   Upstream event redaction ran on the same split text, so it missed the key too. Fix: run `redact_text`
   again after stripping, which also needs an R18 wording change. Test:
   `test_sanitize_masks_a_secret_split_by_control_characters`.
+
+### Completion, `@file` mentions and the banner (spec 018, task D review 2026-10-19)
+
+Spec 018 adds three new places where names reach the screen. None of them sends anything to a model,
+writes a file, or opens a connection: completion only shows names to the user who typed the key.
+
+- **`@file` completion** lists files only through `Workspace(root).list_files(ListIn(path=".", pattern="*"))`,
+  so protected names (`.env*`, `*.key`, `*.pem`, `id_rsa*`, `credentials*`, `secrets*`), the `.git`,
+  `.venv`, `node_modules` and `__pycache__` folders, and links or junctions that resolve outside the
+  workspace or into a protected folder are never offered, and the 200-entry cap applies. The listing runs
+  in a worker thread and is cached in process memory for 30 s per workspace; `/workspace` drops it.
+  An accepted mention is plain text (`@notes.md`): the agent still reads files only through its
+  permission-checked tools.
+- **`/workspace` folder completion** lists folders under the typed parent (workspace-relative, absolute or
+  `~`), which the user could type anyway. Names `Workspace._blocked` refuses are skipped, a typed parent
+  with a protected segment lists nothing, dot-folders appear only when the typed segment starts with `.`,
+  and the listing stops at 50 entries or 0.5 s.
+- **R21, names are never cleaned and inserted.** A candidate whose name `sanitize()` would change (ESC
+  sequences, C0/C1 controls, bidi characters, anything `redact_text` masks) is left out, so the inserted
+  text is always exactly the displayed text and a hostile file name cannot smuggle a hidden suffix into the
+  objective. Memory-id summaries are redacted as `/memory list` shows them (sensitive records read
+  `[redacted]`) and only the session's own scopes are listed.
+- **Banner.** Provider names come from `load_keys().keys()` only; no key value or fragment is shown. The
+  workspace is shown with the home folder as `~`. When the workspace is the home folder or a drive root the
+  banner adds the R25 warning; nothing about it is stored.
+- **Working line and status line** show only `SessionState` (phase label, elapsed seconds, the task cost
+  from `worker_completed` usage, `step N/M` from the plan). The rotating verbs are fixed UI strings, not
+  model output, so they reveal no reasoning.
+- **Motion and timers.** One app ticker drives all motion and runs only while a task is active or a
+  transition is in flight; idle means no app-owned timer. `GALLIANI_REDUCED_MOTION=1`, animation level
+  `none`, `NO_COLOR` and the ANSI theme give static output.
+- **Popup keys fail closed.** The popup closes when an approval card or question appears; Enter, Tab and
+  Up/Down never answer a prompt; `Esc` with the popup open only closes it.
+
+`tests/tui/test_security.py` (section "spec 018") checks the File Mention, Unsafe Name and Banner
+acceptance criteria on real files (protected names, a junction out of the workspace and one into `.git`;
+C1 and bidi names on NTFS), feeds every escape payload through the file and folder listings, checks the
+exact screen bytes with the popup open at 60 and 80 columns, checks that `y` still approves after popup use
+and that completion writes nothing and opens no connection (audit hook).
+
+Open findings from this review, each pinned by a strict-xfail test:
+
+- **TUI2-1 (Medium) A slow `@` listing keeps the process alive after quitting.** `Session._workspace_files`
+  (`galliani/tui/session.py`) runs `Workspace.list_files` through `asyncio.to_thread`. `list_files` walks and
+  sorts the whole tree (`sorted(base.rglob("*"))`) before applying the 200 cap, so in a large workspace,
+  such as the home folder the R25 warning is about, one `@` keystroke starts a walk that took more than
+  60 s here. `complete` gives up after 2 s, but the thread cannot be canceled and Python joins the default
+  executor at exit, so `/quit` hangs until the walk ends, and the walk costs CPU and memory meanwhile. Fix
+  options: a bounded, lazily-stopped walk for completion (stop at 200 matches or a deadline), or a daemon
+  thread that is abandoned on exit. Test: `test_018_a_slow_file_listing_does_not_keep_the_process_alive`.
+- **TUI2-2 (Low) Folder completion can list inside `.git` through an alias.** `_complete_folders` checks the
+  typed segments and each listed name with `Workspace._blocked`, but not the resolved folder, so
+  `/workspace GIT~1/` (an 8.3 short name) or a junction to `.git` lists `hooks/`, `refs/` and the like.
+  Only folder names are shown, to the local user, who could type the same path; `@file` is not affected
+  (it resolves every path). Fix: resolve the base and refuse it when `_escapes`-style checks find a
+  protected segment. Test: `test_018_folder_completion_never_lists_inside_git_through_an_alias`.
+- **TUI2-3 (Low, from spec 017) Tab moves focus off the approval card.** After Tab or Shift+Tab, `y`, `n`
+  and `a` do nothing until the card is focused again (`Esc` still denies). This fails closed: nothing is
+  approved. Fix: keep focus on the card while it is shown, or bind the keys at the app level while the
+  session waits. Test: `test_018_tab_on_the_approval_card_keeps_its_keys_live`.

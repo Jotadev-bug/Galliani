@@ -662,3 +662,308 @@ async def test_nothing_written_to_disk_and_no_network_during_a_full_session(work
     assert writes == []
     assert [n for n in _AUDIT["net"] if not _is_loopback(n)] == []
     assert app.return_code == 0
+
+
+# ====================================================================== spec 018 (task D): completion, banner
+
+
+def _junction(link: Path, target: Path) -> bool:
+    """A link to `target` the current user can create: a symlink, or a directory junction on Windows."""
+    try:
+        os.symlink(target, link, target_is_directory=target.is_dir())
+        return True
+    except (OSError, NotImplementedError):
+        pass
+    if sys.platform == "win32" and target.is_dir():
+        import subprocess
+
+        done = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
+        return done.returncode == 0 and link.exists()
+    return False
+
+
+async def _offered(session: Session, text: str) -> list[str]:
+    result = await session.complete(text, len(text))
+    return [] if result is None else [item.label for item in result.items]
+
+
+@pytest.fixture
+def seeded(tmp_path):
+    """Spec 018 "File Mention Hides Protected Files", plus every other protected name and escaping links."""
+    ws = tmp_path / "seeded"
+    ws.mkdir()
+    for rel in (".env", ".env.local", ".git/config", "server.key", "id_rsa", "credentials.json", "secrets.yaml",
+                "cert.pem", ".venv/lib.py", "node_modules/x/index.js", "__pycache__/m.pyc", "notes.md"):
+        (ws / rel).parent.mkdir(parents=True, exist_ok=True)
+        (ws / rel).write_text("x", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "stolen.txt").write_text("x", encoding="utf-8")
+    _junction(ws / "out_dir", outside)
+    _junction(ws / "git_dir", ws / ".git")
+    return ws
+
+
+async def test_018_file_mention_offers_only_unprotected_files_never_links_out(seeded):
+    session, _ = make_session(seeded)
+    assert await _offered(session, "@") == ["@notes.md"]
+    for typed in ("@.env", "@.git", "@server", "@id_", "@cred", "@secrets", "@.venv", "@node", "@out_dir", "@stolen",
+                  "@git_dir", "@config", "@__py"):
+        assert await _offered(session, typed) == [], typed
+
+
+async def test_018_file_mention_goes_through_workspace_list_files_only(seeded, monkeypatch):
+    """R20 and Security "No new disclosure": the only file source is `Workspace.list_files(ListIn(path='.'))`."""
+    from galliani.workspace import Workspace
+
+    calls = []
+    real = Workspace.list_files
+
+    def spy(self, args):
+        calls.append((self.root, args.path, args.pattern))
+        return real(self, args)
+
+    monkeypatch.setattr(Workspace, "list_files", spy)
+    session, _ = make_session(seeded)
+    assert await _offered(session, "@no") == ["@notes.md"]
+    assert calls == [(seeded.resolve(), ".", "*")]
+
+
+# Names with ESC cannot exist on NTFS, so the full payload set is fed through the listing functions. C1 and bidi
+# characters are valid NTFS names and are also created on disk below.
+UNSAFE_NAMES = [f"n_{kind}{payload}.md" for kind, payload in PAYLOADS.items()] + [f"{SECRET}.md", "key_" + SECRET]
+SAFE_NAMES = ["ok.md", "[bold]x[/bold]y.md", "café ünï.md"]
+
+
+def _fake_listing(monkeypatch, names: list[str]) -> None:
+    from galliani.workspace import Workspace
+
+    monkeypatch.setattr(Workspace, "list_files", lambda self, args: {"files": list(names), "truncated": False})
+
+
+def _fake_folders(monkeypatch, names: list[str]) -> None:
+    from galliani.tui import session as session_mod
+
+    monkeypatch.setattr(session_mod, "_list_folders", lambda base, typed, blocked, deadline: (list(names), False))
+
+
+async def test_018_unsafe_file_and_folder_names_are_omitted_and_safe_ones_inserted_verbatim(workspace, monkeypatch):
+    _fake_listing(monkeypatch, UNSAFE_NAMES + SAFE_NAMES)
+    _fake_folders(monkeypatch, UNSAFE_NAMES + SAFE_NAMES)
+    session, _ = make_session(workspace)
+    for text, expected in (("@", [f"@{n}" for n in SAFE_NAMES]),
+                           ("/workspace ", [f"{n}/" for n in SAFE_NAMES])):
+        result = await session.complete(text, len(text))
+        assert [i.label for i in result.items] == expected
+        for item in result.items:  # R21: inserted text is exactly what is shown, and already clean
+            assert item.insert.rstrip(" ") == item.label and sanitize(item.label) == item.label
+            assert_clean(item.label + item.summary)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="C1 and bidi file names are created on NTFS here")
+async def test_018_unsafe_names_on_disk_are_never_offered(tmp_path):
+    ws = tmp_path / "ws"
+    (ws / "sub").mkdir(parents=True)
+    hostile = ["c1\x9b31mred", "osc\x9d52;c;QzE=\x9c", "bidi‮gnp.exe", "iso⁦x⁩", SECRET]
+    for name in hostile:
+        (ws / "sub" / (name + ".md")).write_text("x", encoding="utf-8")
+        (ws / "sub" / ("d_" + name)).mkdir()
+    (ws / "sub" / "fine.md").write_text("x", encoding="utf-8")
+    (ws / "sub" / "d_fine").mkdir()
+    session, _ = make_session(ws)
+    assert await _offered(session, "@") == ["@sub/fine.md"]
+    assert await _offered(session, "/workspace sub/") == ["sub/d_fine/"]
+
+
+async def test_018_memory_id_completion_is_redacted_scoped_and_clean(workspace):
+    from galliani.memory import project_scope
+
+    store = InMemoryMemoryStore([
+        MemoryRecord(id="mem_1", content=f"mine {HOSTILE}", type="note", provenance="user"),
+        MemoryRecord(id="mem_2", content="private detail", type="note", provenance="user", sensitivity="sensitive"),
+        MemoryRecord(id="mem_3", content="other project", type="note", provenance="user",
+                     scope=project_scope("/elsewhere")),
+    ])
+    session, _ = make_session(workspace, memory=store)
+    result = await session.complete("/memory forget ", len("/memory forget "))
+    shown = " ".join(i.summary for i in result.items)
+    assert len(result.items) == 2 and "other project" not in shown and "private detail" not in shown
+    for item in result.items:
+        assert_clean(item.label + item.summary)
+
+
+# ---------------------------------------------------------------------- 018 Pilot: popup and banner screen bytes
+
+
+def _plain(app) -> str:
+    update = app.screen._compositor.render_full_update()
+    return "\n".join("".join(segment.text for segment in strip).rstrip() for strip in update.strips)
+
+
+async def _type(app, pilot, text: str) -> None:
+    app.prompt.focus()
+    app.prompt.load_text("")
+    for ch in text:
+        await pilot.press({"/": "slash", "@": "at", " ": "space"}.get(ch, ch))
+    await _settle(app, pilot)
+
+
+@needs_textual
+@pytest.mark.parametrize("width", [60, 80])
+async def test_018_screen_bytes_are_clean_with_hostile_names_in_the_popup(workspace, monkeypatch, width):
+    from galliani.tui.app import GallianiApp
+
+    _fake_listing(monkeypatch, UNSAFE_NAMES + SAFE_NAMES)
+    _fake_folders(monkeypatch, UNSAFE_NAMES + SAFE_NAMES)
+    session, _ = make_session(workspace)
+    app = GallianiApp(session)
+    async with app.run_test(size=(width, 30)) as pilot:
+        for text, first in (("@", "@ok.md"), ("/workspace ", "ok.md/")):
+            await _type(app, pilot, text)
+            assert app.popup.is_shown and app.popup.items[0].label == first
+            assert terminal_unsafe(screen_bytes(app)) == []
+            assert "[bold]x[/bold]y.md" in _plain(app)  # markup in a name is shown literally, never parsed
+            await pilot.press("escape")
+
+
+@needs_textual
+async def test_018_banner_screen_shows_provider_names_never_key_material_and_home_as_tilde(tmp_path, monkeypatch):
+    from galliani.tui import session as session_mod
+    from galliani.tui.app import GallianiApp
+
+    home = tmp_path / "home"
+    project = home / "proj"
+    project.mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    keys = {"OPENAI_API_KEY": SECRET, "ANTHROPIC_API_KEY": "sk-ant-zyxwvutsrqponmlkjihg9876"}
+    monkeypatch.setattr(session_mod, "load_keys", lambda: dict(keys))
+    for folder, wide in ((project, False), (home, True)):
+        session, _ = make_session(folder)
+        app = GallianiApp(session)
+        async with app.run_test(size=(80, 30)) as pilot:
+            await pilot.pause()
+            shown, raw = _plain(app), screen_bytes(app)
+            assert "anthropic" in shown and "openai" in shown
+            for value in keys.values():
+                assert value not in raw and value[3:11] not in raw and value[-6:] not in raw
+            assert str(home) not in shown
+            assert ("~" + os.sep + "proj") in shown if not wide else "│ ~ " in shown
+            assert ("whole home folder" in shown) is wide
+            assert terminal_unsafe(raw) == []
+
+
+@needs_textual
+async def test_018_popup_keys_never_answer_an_approval_and_y_still_approves(workspace):
+    """Approval parity after the popup and Enter changes: Enter, Tab, Up/Down do nothing on the card; y approves."""
+    from galliani.tui.app import GallianiApp
+
+    session, _ = make_session(workspace, [BASIC_PLAN])
+    app = GallianiApp(session)
+    async with app.run_test(size=(80, 40)) as pilot:
+        await _type(app, pilot, "Summarize @no")
+        assert app.popup.is_shown and app.popup.current.label == "@notes.md"
+        await pilot.press("enter")  # a file mention is only inserted (R17), never sent
+        await _settle(app, pilot)
+        assert app.prompt.text == "Summarize @notes.md" and session.state.phase is Phase.idle
+        app.prompt.load_text("Summarize the notes and save them")
+        await pilot.press("enter")
+        await _settle(app, pilot)
+        assert session.state.phase is Phase.awaiting_approval and not app.popup.display
+        # Tab moves focus off the card (finding TUI2-3, fail closed): covered by its own test below.
+        for key in ("enter", "up", "down", "slash", "at", "space"):
+            await pilot.press(key)
+            await _settle(app, pilot)
+            assert session.state.phase is Phase.awaiting_approval, key
+        assert not app.popup.display
+        await pilot.press("y")
+        await _settle(app, pilot)
+        assert session.state.phase is Phase.idle and (workspace / "summary.md").exists()
+
+
+@needs_textual
+async def test_018_completion_writes_nothing_and_uses_no_network(workspace, tmp_path, monkeypatch):
+    from galliani.tui.app import GallianiApp
+
+    (workspace / "sub").mkdir()
+    monkeypatch.chdir(tmp_path)
+    session, _ = make_session(workspace)
+    app = GallianiApp(session)
+    before = {p for p in tmp_path.rglob("*")}
+    _AUDIT["writes"].clear()
+    _AUDIT["net"].clear()
+    _AUDIT["on"].append(True)
+    try:
+        async with app.run_test(size=(80, 30)) as pilot:
+            for text in ("/", "/me", "/memory forget ", "/workspace ", "/workspace s", "@", "@no"):
+                await _type(app, pilot, text)
+            await pilot.press("escape")
+            await _settle(app, pilot)
+            assert not app.ticker.running  # R9: idle, no app-owned timer
+    finally:
+        _AUDIT["on"].clear()
+    assert {p for p in tmp_path.rglob("*")} == before
+    assert _AUDIT["writes"] == []
+    assert [n for n in _AUDIT["net"] if not _is_loopback(n)] == []
+
+
+# ---------------------------------------------------------------------- 018 findings (xfail until fixed)
+
+
+@pytest.mark.xfail(strict=True, reason="TUI2-1: a file listing still running keeps the process alive after the "
+                                       "session ends (session.py _workspace_files, asyncio.to_thread)")
+def test_018_a_slow_file_listing_does_not_keep_the_process_alive(tmp_path):
+    """Typing `@` in a huge workspace (galliacli started in the home folder, the R25 case) starts a full `rglob`
+    walk in the default executor. `Session.complete` returns after 2 s, but the walk cannot be canceled and the
+    executor is joined at exit, so quitting hangs until the walk ends (over a minute on a real home folder)."""
+    import subprocess
+    import time
+
+    (tmp_path / "ws").mkdir()
+    code = ("import asyncio, sys, time; sys.path.insert(0, r'%s'); from pathlib import Path\n"
+            "from galliani.workspace import Workspace\n"
+            "Workspace.list_files = lambda self, args: (time.sleep(30), {'files': [], 'truncated': False})[1]\n"
+            "from tests.tui.conftest import make_session\n"
+            "async def main():\n"
+            "    s, _ = make_session(Path(r'%s'))\n"
+            "    await s.complete('@', 1)\n"
+            "asyncio.run(main())\n") % (ROOT, tmp_path / "ws")
+    started = time.monotonic()
+    try:
+        subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, timeout=8)
+    except subprocess.TimeoutExpired:
+        pass
+    assert time.monotonic() - started < 7
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="8.3 short names and junctions are Windows behaviour")
+@pytest.mark.xfail(strict=True, reason="TUI2-2: /workspace folder completion checks typed names, not the resolved "
+                                       "folder, so GIT~1/ or a junction to .git lists inside .git (session.py)")
+async def test_018_folder_completion_never_lists_inside_git_through_an_alias(tmp_path):
+    ws = tmp_path / "ws"
+    (ws / ".git" / "hooks").mkdir(parents=True)
+    (ws / ".git" / "refs").mkdir()
+    linked = _junction(ws / "gitlink", ws / ".git")
+    if not (ws / "GIT~1").exists() and not linked:
+        pytest.skip("no 8.3 name and no link available")
+    session, _ = make_session(ws)
+    shown = await _offered(session, "/workspace GIT~1/") + await _offered(session, "/workspace gitlink/")
+    assert shown == []
+
+
+@needs_textual
+@pytest.mark.xfail(strict=True, reason="TUI2-3: Tab moves focus off the approval card, so y/n/a then do nothing "
+                                       "until the card is focused again (fails closed; widgets.py ApprovalCard)")
+async def test_018_tab_on_the_approval_card_keeps_its_keys_live(workspace):
+    from galliani.tui.app import GallianiApp
+
+    session, _ = make_session(workspace, [BASIC_PLAN])
+    app = GallianiApp(session)
+    async with app.run_test(size=(80, 40)) as pilot:
+        await _send(app, pilot, "Summarize the notes and save them")
+        assert session.state.phase is Phase.awaiting_approval
+        await pilot.press("tab")
+        await _settle(app, pilot)
+        assert session.state.phase is Phase.awaiting_approval  # Tab itself never answers
+        await pilot.press("y")
+        await _settle(app, pilot)
+        assert session.state.phase is Phase.idle
