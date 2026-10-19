@@ -87,6 +87,12 @@ async def test_destructive_tool_without_approval_blocks_and_does_not_run():
     assert calls == []
 
 
+async def test_blocked_summary_names_the_tool_once():
+    result = await build([]).execute(call("delete_file", path="notes/a.txt"), task_id="t")
+    assert result.observation_summary.count("delete_file:") == 1
+    assert result.observation_summary.startswith("delete_file: ")
+
+
 async def test_destructive_tool_with_approval_runs():
     calls: list[str] = []
     approval = ApprovalRecord(user_id="u", action="delete_file", scope="notes/a.txt")
