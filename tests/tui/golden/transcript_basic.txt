@@ -1,0 +1,22 @@
+notice: Galliani interactive session. Workspace: <workspace>. Edit mode: ask. Budget: $0.50 per task. Memory: on. Type an objective, or /help.
+user: Summarize notes.md into summary.md
+plan: Plan v1: plan v1 with 3 step(s)
+    s1 (tool: read_file) read the notes
+    s2 (model: text) summarize
+    s3 (tool: write_file) save summary.md
+tool [s1]: read_file succeeded
+verification [s1]: The criterion is satisfied.
+route [s2]: Selected w1: supports text; low cost, fast latency (cheapest strategy).
+verification [s2]: The criterion is satisfied.
+tool [s3]: write_file: write_file: write action requires user approval
+approval: Approval needed: Allow 'write_file' (write) on 'summary.md' limited to scope 'summary.md'? Reason: save summary.md
+    risk: write action
+    scope: summary.md
+approval: You approved.
+tool [s3]: write_file succeeded
+verification [s3]: The criterion is satisfied.
+result: Status: done - objective completed and verified: all 3 step(s) passed verification
+    Verification: pass - all 3 step(s) passed verification
+    created: summary.md
+    | Q3 spend is under plan.
+usage: Usage: 1 model call(s), 7 input / 8 output tokens, est. $0.0000 (registry prices)

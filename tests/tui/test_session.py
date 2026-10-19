@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -677,3 +679,42 @@ async def test_session_default_edit_mode_is_used_for_new_tasks(workspace, edit_m
     await session.submit("Summarize into summary.md")
     expected = Phase.awaiting_approval if edit_mode is EditMode.ask else Phase.idle
     assert session.state.phase is expected
+
+
+# ---------------------------------------------------------------------- Golden (spec 017 Tests)
+# The plain-text rendering of `entries()` for one scripted three-step run with a write approval. Ids,
+# timestamps and varying costs are not in entry text; the workspace path is replaced.
+
+GOLDEN = Path(__file__).parent / "golden" / "transcript_basic.txt"
+
+
+def render(session: Session, workspace: Path) -> str:
+    lines = []
+    for entry in session.entries():
+        step = f" [{entry.step_id}]" if entry.step_id else ""
+        lines.append(f"{entry.kind.value}{step}: {entry.text}")
+        lines += [f"    {line}" for line in entry.detail]
+        if entry.body is not None:
+            lines += [f"    | {line}" for line in entry.body.splitlines()]
+    return "\n".join(lines).replace(str(workspace.resolve()), "<workspace>") + "\n"
+
+
+async def run_basic(workspace: Path) -> str:
+    session, _ = make_session(workspace)
+    await session.submit("Summarize notes.md into summary.md")
+    await session.approve()
+    return render(session, workspace)
+
+
+async def test_basic_transcript_matches_the_golden(workspace):
+    text = await run_basic(workspace)
+    if os.environ.get("GALLIANI_UPDATE_GOLDEN") == "1":
+        GOLDEN.write_text(text, encoding="utf-8", newline="\n")
+    assert text == GOLDEN.read_text(encoding="utf-8")
+
+
+async def test_golden_rendering_is_stable(workspace, tmp_path):
+    other = tmp_path / "again"
+    other.mkdir()
+    (other / "notes.md").write_text((workspace / "notes.md").read_text(encoding="utf-8"), encoding="utf-8")
+    assert await run_basic(workspace) == await run_basic(other)
