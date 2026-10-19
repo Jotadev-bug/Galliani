@@ -47,7 +47,7 @@ Let the user work with Galliani in a terminal session, the way Claude Code works
 
 16. The transcript is an ordered list of `TranscriptEntry` (Interfaces). It holds: user turns, plan outlines (`plan_created`, `plan_revised`, with step lines), tool calls, verification results, retries and replans, approval and question records (with the answer given), notices and errors, and the final result. Default event set = `galliani.cli.SHOWN_EVENTS`; with `/events on`, every other event type is added as `verbose` entries.
 17. Entry text comes only from redacted `LifecycleEvent.public_summary` and metadata, `build_task_view` (which reads `TaskState.for_display()`), `ApprovalPrompt` fields, the clarification text, and the user's own input. Raw `TaskResult.output` and unredacted Task State are never rendered.
-18. Every entry's text passes `sanitize()`: `redact_text` from `galliani.redaction`, then removal of ESC and every C0/C1 control character except `\n` and `\t`, and of bidirectional override and isolate characters (U+202A-U+202E, U+2066-U+2069). Untrusted text is never parsed as Rich or Textual markup.
+18. Every displayed string passes `sanitize()`, in this order: (1) `redact_text` from `galliani.redaction`; (2) removal of ESC and every C0/C1 control character except `\n` and `\t`, and of bidirectional override and isolate characters (U+202A-U+202E, U+2066-U+2069); (3) `redact_text` again, so a secret split by a removed character (for example `ESC[0m`, U+202E, BEL or NUL) and rejoined by step 2 is still masked. This applies to every source shown: `TranscriptEntry` `text`, `detail` and `body`, `PendingApproval` fields, the clarification question, the status bar, and the live plan. The `PlanView` held in `SessionState.plan` is sanitized when the controller stores it (each step's `purpose` and the plan's `revision_reason`), not at render time, so the UI never receives an unsanitized plan. Untrusted text is never parsed as Rich or Textual markup.
 19. The final result entry shows status, summary, verification, files changed (`created`/`overwritten`, 014 R5), and "edits auto-approved: N" when non-zero. Its body is the result output when it is text, else `ResultView.preview`, rendered as Markdown (`markdown=True`) with links not opened and images not loaded. Bodies over 20,000 characters are cut with "(N more characters not shown)". A usage line closes each task.
 
 ### Terminal UI (`galliani/tui/app.py`, `widgets.py`, `styles.py`)
@@ -168,7 +168,7 @@ class StatusSnapshot:
 class SessionState:
     phase: Phase
     status: StatusSnapshot
-    plan: PlanView | None
+    plan: PlanView | None        # sanitized when stored (R18): step purpose, revision_reason
     pending_approval: PendingApproval | None
     question: str | None
     cleared_after: int           # entries with seq <= this are hidden (/clear)
@@ -205,7 +205,7 @@ class Session:
     def cancel(self) -> None: ...                # cooperative (R11); safe in any phase
     async def aclose(self, timeout: float = 3.0) -> None: ...   # R25 quit path; phase -> closed
 
-def sanitize(text: str) -> str: ...              # R18
+def sanitize(text: str) -> str: ...              # R18: redact, strip controls, redact again
 ```
 
 ```python
@@ -253,7 +253,7 @@ def run_app(session: Session, *, theme: Literal["dark", "light"] = "dark") -> in
 ## Security
 
 - Trust boundary: everything shown except the user's own typing is untrusted (000). It is redacted and sanitized (R18), never interpreted as markup, commands or answers (R34), and rendered Markdown opens no links and loads no images (R19).
-- Terminal escape injection (OSC 52 clipboard writes, OSC 8 links, cursor and title control) from model or file content is blocked by R18. qa-security tests it.
+- Terminal escape injection (OSC 52 clipboard writes, OSC 8 links, cursor and title control) from model or file content is blocked by R18. qa-security tests it. R18 redacts again after stripping, because stripping can rejoin a secret that a control or bidi character had split.
 - Permissions: unchanged (R33, 009, 014). `a` is offered only when the supervisor offers it. `Esc` on an approval denies (fail closed). No key sequence approves more than one prompt.
 - Privacy: R30-R32. The prompt history and transcript live in process memory only and are gone on exit. Task State is discarded with the session; Memory changes only through the existing approved `remember` tool and the user's explicit `/memory forget`.
 - Secrets: keys come only from `load_keys`; the TUI never shows, logs or asks for them. User input echoed in the transcript is redacted like everything else (R18).
@@ -333,6 +333,12 @@ Given a scripted run whose adapter returns a reasoning field and whose output co
 When the run finishes
 Then the transcript holds no reasoning text, the key is masked, no ESC character remains, and the markup text is shown literally.
 
+### Split Secret Stays Masked
+
+Given text containing an `sk-` key split by `ESC[0m`, U+202E, BEL or NUL, arriving in a result output, an approval field, a plan step `purpose` or a plan `revision_reason`
+When it is shown in the transcript, the approval card or the plan panel
+Then the rejoined key is masked and no control or bidi character remains, and `SessionState.plan` already holds the sanitized text.
+
 ### Untrusted Text Cannot Run Commands
 
 Given model output containing the line `/edit-mode accept-edits`
@@ -359,12 +365,12 @@ Then no new file exists outside the workspace files the task wrote with approval
 
 ## Tests
 
-- **Controller (A), `tests/tui/`:** `Session` with a runtime built by `build_runtime` on `MockProvider` (as `tests/core/test_cli.py` does) or on `galliani.testing` scripted adapters. Happy path and at least one failure path for: submit, approve y/n/a (eligible and ineligible), deny, clarify and cancel-by-answer, cancel while running (cooperative), quit with a task active, one-task-at-a-time, earlier-task context (R9), runtime rebuild after `/budget`, `/workspace`, `/memory off`, no keys, memory unavailable, supervisor exception -> error entry, `sanitize` (redaction, C0/C1, ESC, bidi, markup literal). `parse_command`: every command, every bad argument, `//` escape. `entry.main`: objective delegates to `galliani.cli.main`; no-objective fallbacks (Textual blocked via `sys.modules["textual"] = None`, non-TTY); flag errors.
+- **Controller (A), `tests/tui/`:** `Session` with a runtime built by `build_runtime` on `MockProvider` (as `tests/core/test_cli.py` does) or on `galliani.testing` scripted adapters. Happy path and at least one failure path for: submit, approve y/n/a (eligible and ineligible), deny, clarify and cancel-by-answer, cancel while running (cooperative), quit with a task active, one-task-at-a-time, earlier-task context (R9), runtime rebuild after `/budget`, `/workspace`, `/memory off`, no keys, memory unavailable, supervisor exception -> error entry, `sanitize` (redaction, C0/C1, ESC, bidi, markup literal, a secret split by a removed character masked after rejoining), and `state.plan` sanitized on store (step `purpose`, `revision_reason`). `parse_command`: every command, every bad argument, `//` escape. `entry.main`: objective delegates to `galliani.cli.main`; no-objective fallbacks (Textual blocked via `sys.modules["textual"] = None`, non-TTY); flag errors.
 - **Import boundary (A):** an AST scan of `galliani/` asserting `textual`/`rich` are imported only by the three R1 modules, and importing `galliani.tui.session` and `galliani.tui.entry` with Textual blocked succeeds.
 - **Golden (A):** the plain-text rendering of `entries()` (kind, text, detail, body) for one scripted three-step run with a write approval, compared with `tests/tui/golden/transcript_basic.txt`. Ids, timestamps and costs that vary are not in entry text.
 - **Pilot (B), `tests/tui/test_app_pilot.py`:** `App.run_test(size=...)` for: send objective, approval y/n/a and Esc, clarification answer and Esc, cancel with Esc and Ctrl+C, double Ctrl+C quit, history Up/Down, newline keys, each slash command's UI effect (`/clear`, `/theme`, `/events`, `/quit`), narrow widths 80 and 60, `NO_COLOR`, reduced motion (no spinner timer), command palette disabled. At least one failure path each (wrong key ignored, invalid command).
 - **CI:** CI installs the `tui` extra and sets `GALLIANI_REQUIRE_TUI=1`; with it set, Pilot tests fail instead of skipping when Textual is missing. Locally they skip via `pytest.importorskip("textual")`.
-- **Security (D):** the "No Hidden Reasoning Or Secrets", "Untrusted Text Cannot Run Commands" and "Nothing Written To Disk" criteria as tests; review of R18 against OSC 52/OSC 8/CSI payloads.
+- **Security (D):** the "No Hidden Reasoning Or Secrets", "Split Secret Stays Masked", "Untrusted Text Cannot Run Commands" and "Nothing Written To Disk" criteria as tests; review of R18 against OSC 52/OSC 8/CSI payloads.
 
 ## Evaluation
 
