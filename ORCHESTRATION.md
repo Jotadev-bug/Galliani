@@ -52,7 +52,7 @@ Definitions live in `.claude/agents/<name>.md`. Keep the roster at six; add a ro
 - **Ownership boundaries.** An agent needing a change outside its area asks the main agent to route it.
 - **Definition of done:** maps to a numbered requirement; tests cover the happy path and one failure path; `pytest` and `python -m galliani.evaluation` pass (plus site checks if `site/` changed); docs, `CHANGELOG.md` and `docs/decisions.md` updated when public behavior or contracts change; no secrets or reasoning traces leak.
 - **Outward-facing actions need the user's explicit yes:** pushing tags, publishing releases, Store or winget submissions, posting publicly, spending money. Agents prepare; the user triggers.
-- **Standing constraints** (spec 016, Decision 0033): no telemetry, no accounts, no project-run servers, AGPL-3.0; the `.exe` ships unsigned until the user buys a code-signing certificate (no date, no vendor chosen); SignPath ruled out; no Microsoft Store. The Claude Code-style CLI waits for the user's go-ahead.
+- **Standing constraints** (spec 016, Decision 0033): no telemetry, no accounts, no project-run servers, AGPL-3.0; the `.exe` ships unsigned until the user buys a code-signing certificate (no date, no vendor chosen); SignPath ruled out; no Microsoft Store..
 
 ## Handoff format
 
