@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
@@ -51,7 +52,7 @@ from galliani.tui.commands import (
 )
 from galliani.tui.entry import is_wide_workspace
 from galliani.viewmodel import STATUS_LABELS, PlanView, TaskViewModel, build_task_view
-from galliani.workspace import ListIn, Workspace
+from galliani.workspace import BLOCKED_DIRS, ListIn, Workspace
 
 MAX_BODY_CHARS = 20_000  # R19
 EARLIER_TASKS = 3  # R9, the desktop's rule (Decision 0020)
@@ -115,6 +116,47 @@ def _list_folders(base: Path, typed: str, blocked: Callable[[str], bool], deadli
                 break
             names.append(name)
     return sorted(names, key=str.casefold), truncated
+
+
+def _in_daemon_thread(work: Callable[[], object]) -> asyncio.Future:
+    """Run `work` on a daemon thread; the future gets its result. Unlike `asyncio.to_thread`, a listing still
+    running when the session ends is abandoned at exit instead of joined (a home-folder walk can take minutes)."""
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+
+    def settle(ok: bool, value) -> None:
+        if not future.done():
+            future.set_result(value) if ok else future.set_exception(value)
+
+    def run() -> None:
+        try:
+            ok, value = True, work()
+        except BaseException as e:  # noqa: BLE001 - handed to the awaiting coroutine
+            ok, value = False, e
+        try:
+            loop.call_soon_threadsafe(settle, ok, value)
+        except RuntimeError:  # the loop closed meanwhile: nobody is waiting
+            pass
+
+    # An abandoned listing that fails later must not log "exception was never retrieved" over the screen.
+    future.add_done_callback(lambda f: f.cancelled() or f.exception())
+    threading.Thread(target=run, name="galliani-listing", daemon=True).start()
+    return future
+
+
+def _folder_refused(base: Path, root: Path) -> bool:
+    """018 R19: whether the resolved folder must not be listed. Links, junctions and 8.3 short names (`GIT~1`)
+    resolve to the real name, so protected names are checked again on the resolved path. Folders outside the
+    workspace stay listable (`/workspace` chooses a new one), but never inside .git and the like."""
+    try:
+        resolved = base.resolve()
+    except (OSError, RuntimeError):
+        return True
+    if resolved == root:
+        return False
+    if resolved.is_relative_to(root):
+        return Workspace._blocked(resolved.relative_to(root).as_posix())
+    return any(part.casefold() in BLOCKED_DIRS for part in resolved.parts)
 
 
 def sanitize_plan(plan: PlanView | None) -> PlanView | None:
@@ -331,10 +373,15 @@ class Session:
         base = Path(parent).expanduser() if parent else Path()
         if not base.is_absolute():
             base = self.config.workspace / base
+        root = self.config.workspace
         deadline = time.monotonic() + LISTING_TIMEOUT
+
+        def listing() -> tuple[list[str], bool]:
+            if _folder_refused(base, root.resolve()):
+                return [], False
+            return _list_folders(base, segment, Workspace._blocked, deadline)
         try:
-            names, truncated = await asyncio.wait_for(
-                asyncio.to_thread(_list_folders, base, segment, Workspace._blocked, deadline), LISTING_TIMEOUT + 0.5)
+            names, truncated = await asyncio.wait_for(_in_daemon_thread(listing), LISTING_TIMEOUT + 0.5)
         except asyncio.TimeoutError:
             return replace(result, items=(), truncated=True)
         items = (safe_completion(f"{parent}{name}/", kind="folder") for name in names)
@@ -352,15 +399,14 @@ class Session:
 
     async def _workspace_files(self) -> tuple[list[str], bool]:
         """018 R20: the listing, cached in memory per workspace for 30 s. One listing runs at a time per workspace,
-        however fast the typing."""
+        however fast the typing, on a daemon thread so a slow one never delays exit."""
         root = self.config.workspace.resolve()
         cached = self._files
         if cached is not None and cached[0] == root and time.monotonic() - cached[1] < FILE_CACHE_SECONDS:
             return cached[2], cached[3]
         pending = self._files_pending
         if pending is None or pending[0] != root:
-            future = asyncio.ensure_future(asyncio.to_thread(
-                lambda: Workspace(root).list_files(ListIn(path=".", pattern="*"))))
+            future = _in_daemon_thread(lambda: Workspace(root).list_files(ListIn(path=".", pattern="*")))
             pending = self._files_pending = (root, future)
         try:
             listing = await asyncio.wait_for(asyncio.shield(pending[1]), FILE_LISTING_TIMEOUT)

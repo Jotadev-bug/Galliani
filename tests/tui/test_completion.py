@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import subprocess
+import sys
+import threading
 import time
 from pathlib import Path
 
@@ -239,6 +242,26 @@ async def test_never_lists_inside_a_protected_folder(tree):
         assert (await session.complete(text, len(text))).items == ()
 
 
+async def test_never_lists_inside_git_through_a_link(tree):
+    """TUI2-2: the resolved folder is checked, so a link (or junction, or 8.3 name) to .git lists nothing."""
+    link = tree / "gitlink"
+    try:
+        os.symlink(tree / ".git", link, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        if sys.platform != "win32" or subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(tree / ".git")],
+                                                     capture_output=True).returncode != 0:
+            pytest.skip("no symlink or junction available")
+    session, _ = make_session(tree)
+    assert (await session.complete("/workspace gitlink/", 19)).items == ()
+    assert "gitlink/" in labels(await session.complete("/workspace g", 12))  # the name itself is not protected
+
+
+async def test_parent_folders_outside_the_workspace_stay_listable(tree):
+    session, _ = make_session(tree)
+    text = "/workspace ../"
+    assert labels(await session.complete(text, len(text))) == ["../ws/"]
+
+
 async def test_workspace_completion_caps_at_50(tree):
     many = tree / "many"
     many.mkdir()
@@ -388,6 +411,25 @@ async def test_slow_file_listing_times_out_then_fills_the_cache(tree, monkeypatc
     gate.set()
     await asyncio.wait_for(session._files_pending[1], 5)
     assert labels(await session.complete("@", 1)) == ["@b.txt", "@notes.md"]
+
+
+async def test_a_slow_file_listing_runs_on_a_daemon_thread(tree, monkeypatch):
+    """TUI2-1: a listing still running when the session ends is abandoned at exit, never joined."""
+    started, release = threading.Event(), threading.Event()
+    seen = []
+
+    def slow(self, args):
+        seen.append(threading.current_thread().daemon)
+        started.set()
+        release.wait(5)
+        return {"files": [], "truncated": False}
+    monkeypatch.setattr(session_mod.Workspace, "list_files", slow)
+    monkeypatch.setattr(session_mod, "FILE_LISTING_TIMEOUT", 0.05)
+    session, _ = make_session(tree)
+    result = await session.complete("@", 1)
+    assert result.items == () and result.truncated and started.wait(5) and seen == [True]
+    release.set()
+    await asyncio.wait_for(session._files_pending[1], 5)
 
 
 # ---------------------------------------------------------------------- Session.complete: memory ids (R18)

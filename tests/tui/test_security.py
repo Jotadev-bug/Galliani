@@ -909,8 +909,6 @@ async def test_018_completion_writes_nothing_and_uses_no_network(workspace, tmp_
 # ---------------------------------------------------------------------- 018 findings (xfail until fixed)
 
 
-@pytest.mark.xfail(strict=True, reason="TUI2-1: a file listing still running keeps the process alive after the "
-                                       "session ends (session.py _workspace_files, asyncio.to_thread)")
 def test_018_a_slow_file_listing_does_not_keep_the_process_alive(tmp_path):
     """Typing `@` in a huge workspace (galliacli started in the home folder, the R25 case) starts a full `rglob`
     walk in the default executor. `Session.complete` returns after 2 s, but the walk cannot be canceled and the
@@ -936,8 +934,6 @@ def test_018_a_slow_file_listing_does_not_keep_the_process_alive(tmp_path):
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="8.3 short names and junctions are Windows behaviour")
-@pytest.mark.xfail(strict=True, reason="TUI2-2: /workspace folder completion checks typed names, not the resolved "
-                                       "folder, so GIT~1/ or a junction to .git lists inside .git (session.py)")
 async def test_018_folder_completion_never_lists_inside_git_through_an_alias(tmp_path):
     ws = tmp_path / "ws"
     (ws / ".git" / "hooks").mkdir(parents=True)
