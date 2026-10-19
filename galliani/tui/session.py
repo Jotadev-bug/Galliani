@@ -386,16 +386,15 @@ class Session:
             self._idle.clear()
         try:
             result = await call(supervisor)
-        except Exception as e:  # noqa: BLE001 - the controller never raises to the UI (R14)
-            if self._phase is not Phase.closed:
-                self._error(e)
-                self._recover(resume)
-        else:
             if self._phase is Phase.closed:
                 return  # returned after the quit timeout: the session is gone
             if self._cancel_requested and result.status is TaskStatus.waiting_for_user:
                 result = supervisor.cancel(result.task_id)  # paused before the checkpoint saw the cancel
             self._settle(result)
+        except Exception as e:  # noqa: BLE001 - the controller never raises to the UI (R14)
+            if self._phase is not Phase.closed:
+                self._error(e)
+                self._recover(resume)
         finally:
             if track:
                 self._idle.set()

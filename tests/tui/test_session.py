@@ -363,6 +363,21 @@ async def test_supervisor_exception_becomes_an_error_entry_and_rebuilds(workspac
     assert len(factory.builds) == 2 and "Status: done" in all_text(session)
 
 
+async def test_exception_after_a_call_returns_never_reaches_the_ui(workspace):
+    factory = ScriptedRuntimes([{"steps": [model_step("s1", refs=()), model_step("s2", refs=())]}])
+    session, _ = make_session(workspace, factory=factory)
+    supervisor = factory.runtime.supervisor
+    original = supervisor.start
+
+    async def start_then_break_view(request):
+        result = await original(request)
+        supervisor.store = None  # building the view now fails
+        return result
+    supervisor.start = start_then_break_view
+    await session.submit("go")
+    assert session.entries()[-1].kind is EntryKind.error and session.state.phase is Phase.idle
+
+
 async def test_runtime_factory_failure_is_an_error_entry(workspace):
     def factory(config, sinks, memory):
         raise OSError("disk")
