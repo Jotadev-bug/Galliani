@@ -19,21 +19,27 @@ from galliani.permissions import EditMode
 ONE_SHOT_HINT = 'To run one objective without the interactive terminal: galliani "<objective>"'
 
 
-def _parser() -> argparse.ArgumentParser:
+def _parser(*, strict: bool = True) -> argparse.ArgumentParser:
+    """The `galliani` flags. `strict=False` checks no values, so `_objective_given` only finds the positional."""
     parser = argparse.ArgumentParser(
-        prog="galliani", description="Work with the Galliani supervisor in an interactive terminal session, "
-                                     "or run one objective (same as python -m galliani.cli).")
+        prog="galliani", exit_on_error=strict, add_help=strict,
+        description="Work with the Galliani supervisor in an interactive terminal session, "
+                    "or run one objective (same as python -m galliani.cli).")
+    loose = {} if strict else {"nargs": "?"}  # a missing flag value is the one-shot's error to report
     parser.add_argument("objective", nargs="?", help="run this one objective and exit (the one-shot CLI)")
-    parser.add_argument("--workspace", default=".", help="directory the agent may read (and, with approval, write)")
-    parser.add_argument("--budget", type=float, default=DEFAULT_BUDGET_USD,
+    parser.add_argument("--workspace", **loose, default=".",
+                        help="directory the agent may read (and, with approval, write)")
+    parser.add_argument("--budget", **loose, type=float if strict else str, default=DEFAULT_BUDGET_USD,
                         help=f"estimated USD per task before asking to spend more (default {DEFAULT_BUDGET_USD}; "
                              "0 or less means no limit)")
     parser.add_argument("--no-memory", action="store_true", help="do not read or save long-term memory")
     parser.add_argument("--accept-edits", action="store_true",
                         help="write files in the workspace without asking each time (other actions still ask)")
-    parser.add_argument("--events", default=None, help="append the redacted event log to this JSON Lines file")
-    parser.add_argument("--theme", choices=("dark", "light"), default="dark", help="interactive theme (default dark)")
-    parser.add_argument("--context", default=None, help="one-shot only: reference text for the planner")
+    parser.add_argument("--events", **loose, default=None,
+                        help="append the redacted event log to this JSON Lines file")
+    parser.add_argument("--theme", **loose, choices=("dark", "light") if strict else None, default="dark",
+                        help="interactive theme (default dark)")
+    parser.add_argument("--context", **loose, default=None, help="one-shot only: reference text for the planner")
     parser.add_argument("--non-interactive", action="store_true", help="one-shot only: stop instead of asking")
     return parser
 
@@ -67,17 +73,29 @@ def _fallback_reason() -> str | None:
     return None
 
 
+def _objective_given(argv: list[str]) -> bool:
+    """R3: whether argv names an objective, found before any flag value is checked."""
+    try:
+        args, _ = _parser(strict=False).parse_known_args(argv)
+    except (argparse.ArgumentError, SystemExit):
+        return False
+    return args.objective is not None
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if _objective_given(argv):
+        from galliani.cli import main as one_shot
+
+        try:
+            return one_shot(argv)  # R3: same arguments, output, usage errors and exit code as python -m galliani.cli
+        except SystemExit as e:  # its argparse usage errors exit 2
+            return int(e.code or 0)
     parser = _parser()
     try:
         args = parser.parse_args(argv)
     except SystemExit as e:  # --help exits 0; usage errors exit 2
         return int(e.code or 0)
-    if args.objective is not None:
-        from galliani.cli import main as one_shot
-
-        return one_shot(argv)  # R3: same arguments, output and exit code as python -m galliani.cli
     if args.context is not None or args.non_interactive:
         flag = "--context" if args.context is not None else "--non-interactive"
         print(f"galliani: {flag} needs an objective. {ONE_SHOT_HINT}", file=sys.stderr)
