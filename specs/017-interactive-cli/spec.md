@@ -4,6 +4,8 @@
 
 Approved by the user (2026-10-19). Design choices: `docs/decisions.md` Decision 0034 (Accepted).
 
+Amended 2026-10-19 by user decision (Decision 0035, spec 018 R27): the terminal console script is `galliacli`, not `galliani`. The name `galliani` belongs to the desktop app (spec 016 R15 winget alias and the future R24 script). The code still uses `galliani` until spec 018 task C2 lands. The other changes spec 018 makes to this spec (R20, R22, R28, Behavior "Start") apply only once the whole of spec 018 is approved.
+
 ## Goal
 
 Let the user work with Galliani in a terminal session, the way Claude Code works: type an objective, watch the supervised task plan, run and verify, answer approvals and questions inline, then type the next objective, all in one keyboard-driven full-screen terminal UI (TUI). The supervisor, permissions, memory and observability are reused unchanged; the TUI is a new front end, not new capability.
@@ -25,10 +27,10 @@ Let the user work with Galliani in a terminal session, the way Claude Code works
 ### Entry points and packaging
 
 1. The TUI ships as an optional extra: `tui = ["textual>=8.2.8,<9"]` in `pyproject.toml` (8.2.8 released 2026-06-30, verified on PyPI 2026-10-19). Only `galliani/tui/app.py`, `galliani/tui/widgets.py` and `galliani/tui/styles.py` may import `textual` or `rich`. No other module under `galliani/` imports them, directly or transitively.
-2. Two entry points run `galliani.tui.entry:main(argv)`: `python -m galliani.tui` and the console script `galliani` (`[project.scripts] galliani = "galliani.tui.entry:main"`).
+2. Two entry points run `galliani.tui.entry:main(argv)`: `python -m galliani.tui` and the console script `galliacli` (`[project.scripts] galliacli = "galliani.tui.entry:main"`; amended, spec 018 R27). `argparse` `prog` and every usage and help string name `galliacli`.
 3. When `argv` contains an objective (a positional argument), `main` calls `galliani.cli.main(argv)` with the same arguments and returns its exit code. One-shot behavior, flags, output and exit codes are exactly those of `python -m galliani.cli`.
 4. With no objective, `main` starts an interactive session. Session flags: `--workspace` (default `.`), `--budget` (default `DEFAULT_BUDGET_USD`; `<= 0` means no limit), `--no-memory`, `--accept-edits`, `--events PATH`, `--theme dark|light` (default `dark`). `--context` and `--non-interactive` without an objective are a usage error (exit 2). A missing workspace folder prints the one-shot's message and exits 2.
-5. Fallback: if `textual` cannot be imported, or stdin or stdout is not a TTY, or `TERM=dumb`, `main` prints one message to stderr naming the cause, `pip install "galliani[tui]"` (when Textual is missing) and the one-shot form `galliani "<objective>"`, and exits 2. `textual` is imported only after these checks pass.
+5. Fallback: if `textual` cannot be imported, or stdin or stdout is not a TTY, or `TERM=dumb`, `main` prints one message to stderr naming the cause, `pip install "galliani[tui]"` (when Textual is missing) and the one-shot form `galliacli "<objective>"`, and exits 2. The extra keeps the package name: `pip install "galliani[tui]"`. `textual` is imported only after these checks pass.
 
 ### Session controller (`galliani/tui/session.py`, no Textual)
 
@@ -89,7 +91,7 @@ Let the user work with Galliani in a terminal session, the way Claude Code works
 
 ## Behavior
 
-- **Start.** `galliani` -> fallback checks (R5) -> `Session(config)` -> `run_app(session, theme=...)`. The transcript opens with one notice: workspace, edit mode, budget, memory state, and "Type an objective, or /help".
+- **Start.** `galliacli` -> fallback checks (R5) -> `Session(config)` -> `run_app(session, theme=...)`. The transcript opens with one notice: workspace, edit mode, budget, memory state, and "Type an objective, or /help".
 - **Turn.** User presses Enter -> UI calls `session.submit(text)` in a Textual worker -> a user entry is added -> `Supervisor.start` runs; events append entries and refresh the plan and status through the listener -> the call returns when the task finishes or pauses.
 - **Pause.** `state.phase` becomes `awaiting_approval` (with `pending_approval`) or `awaiting_answer` (with `question`); the UI focuses the inline card; its key calls `approve`/`deny`/`answer`/`cancel`, each awaited in a worker.
 - **Finish.** A result entry and a usage line are added; the phase returns to `idle`; focus returns to the prompt.
@@ -263,14 +265,14 @@ def run_app(session: Session, *, theme: Literal["dark", "light"] = "dark") -> in
 
 ### One-Shot Unchanged
 
-Given `galliani "Summarize notes" --workspace W`
+Given `galliacli "Summarize notes" --workspace W`
 When it runs
 Then the output and exit code equal `python -m galliani.cli "Summarize notes" --workspace W`.
 
 ### Fallback Without Textual Or TTY
 
 Given Textual is not importable, or stdout is not a TTY
-When `galliani` runs with no objective
+When `galliacli` runs with no objective
 Then it prints the R5 message to stderr, exits 2, and never imports `textual`.
 
 ### Send Objective
@@ -365,7 +367,7 @@ Then no new file exists outside the workspace files the task wrote with approval
 
 ## Tests
 
-- **Controller (A), `tests/tui/`:** `Session` with a runtime built by `build_runtime` on `MockProvider` (as `tests/core/test_cli.py` does) or on `galliani.testing` scripted adapters. Happy path and at least one failure path for: submit, approve y/n/a (eligible and ineligible), deny, clarify and cancel-by-answer, cancel while running (cooperative), quit with a task active, one-task-at-a-time, earlier-task context (R9), runtime rebuild after `/budget`, `/workspace`, `/memory off`, no keys, memory unavailable, supervisor exception -> error entry, `sanitize` (redaction, C0/C1, ESC, bidi, markup literal, a secret split by a removed character masked after rejoining), and `state.plan` sanitized on store (step `purpose`, `revision_reason`). `parse_command`: every command, every bad argument, `//` escape. `entry.main`: objective delegates to `galliani.cli.main`; no-objective fallbacks (Textual blocked via `sys.modules["textual"] = None`, non-TTY); flag errors.
+- **Controller (A), `tests/tui/`:** `Session` with a runtime built by `build_runtime` on `MockProvider` (as `tests/core/test_cli.py` does) or on `galliani.testing` scripted adapters. Happy path and at least one failure path for: submit, approve y/n/a (eligible and ineligible), deny, clarify and cancel-by-answer, cancel while running (cooperative), quit with a task active, one-task-at-a-time, earlier-task context (R9), runtime rebuild after `/budget`, `/workspace`, `/memory off`, no keys, memory unavailable, supervisor exception -> error entry, `sanitize` (redaction, C0/C1, ESC, bidi, markup literal, a secret split by a removed character masked after rejoining), and `state.plan` sanitized on store (step `purpose`, `revision_reason`). `parse_command`: every command, every bad argument, `//` escape. `entry.main`: objective delegates to `galliani.cli.main`; usage and fallback text name `galliacli`; no-objective fallbacks (Textual blocked via `sys.modules["textual"] = None`, non-TTY); flag errors.
 - **Import boundary (A):** an AST scan of `galliani/` asserting `textual`/`rich` are imported only by the three R1 modules, and importing `galliani.tui.session` and `galliani.tui.entry` with Textual blocked succeeds.
 - **Golden (A):** the plain-text rendering of `entries()` (kind, text, detail, body) for one scripted three-step run with a write approval, compared with `tests/tui/golden/transcript_basic.txt`. Ids, timestamps and costs that vary are not in entry text.
 - **Pilot (B), `tests/tui/test_app_pilot.py`:** `App.run_test(size=...)` for: send objective, approval y/n/a and Esc, clarification answer and Esc, cancel with Esc and Ctrl+C, double Ctrl+C quit, history Up/Down, newline keys, each slash command's UI effect (`/clear`, `/theme`, `/events`, `/quit`), narrow widths 80 and 60, `NO_COLOR`, reduced motion (no spinner timer), command palette disabled. At least one failure path each (wrong key ignored, invalid command).
@@ -395,5 +397,5 @@ Depends on `001-agent-core` (supervisor API), `009-permissions`, `010-memory`, `
 1. Packaging into `Galliani.exe` or a separate terminal binary (release-engineer follow-up).
 2. Streaming token output (needs a 001/006/011 amendment).
 3. SVG screenshot snapshots with `pytest-textual-snapshot` (1.1.0, January 2025, pins `syrupy==4.8.0`; compatibility with Textual 8 unverified). v1 uses the plain-text golden instead.
-4. Spec 016 R24 plans console scripts "for the desktop app and CLI". This spec takes the name `galliani` for the terminal; the desktop script, when R24 is done, needs another name (for example `galliani-desktop`). Until 016 Phase 5 adds package data, `galliani` works only from a source or editable install.
+4. Resolved 2026-10-19 by the user (Decision 0035): the desktop keeps `galliani` (016 R15 winget alias and the future 016 R24 script), and the terminal is `galliacli`. Until 016 Phase 5 adds package data, `galliacli` works only from a source or editable install.
 5. The desktop app and a TUI session can run at once and share `memory.json`; concurrent writes are last-writer-wins, as today with the one-shot CLI.

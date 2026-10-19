@@ -2,7 +2,14 @@
 
 ## Status
 
-Draft, awaiting user approval; nothing implemented. Design choices: `docs/decisions.md` Decision 0035 (Proposed). When approved, this spec amends spec 017 R20, R22, R28 and "Behavior: Start", and proposes amendments to spec 016 R15 and R24 (Open Questions 1).
+Draft, awaiting user approval of the whole spec; nothing implemented. On 2026-10-19 the user answered the four open questions (see "Settled by the user"), but has not yet approved the spec as a whole. Design choices: `docs/decisions.md` Decision 0035 (Proposed).
+
+Amendments to spec 017:
+
+- **Already applied (user decision, 2026-10-19):** the terminal console script is renamed from `galliani` to `galliacli` (017 R2, R5, Behavior "Start", acceptance criteria, tests, Open Item 4). The code still uses `galliani` until task C2 lands.
+- **Apply on approval of this spec:** 017 R20 (layout), R22 (Up/Down while the popup is open), R28 (more motion than the spinner) and Behavior "Start" (banner instead of start notice).
+
+Spec 016 needs no change. R15 (winget alias `galliani`) and R24 (console scripts for the desktop app and CLI; `pipx install galliani` starts the app) already fit: the desktop keeps `galliani`, the CLI script is `galliacli`, and the PyPI package and extra keep the name `galliani`.
 
 ## Goal
 
@@ -18,9 +25,10 @@ The supervisor, permissions, Task State, Memory and observability stay unchanged
 ## Non-goals
 
 - New colors, themes loaded from disk, or changes to the `DARK_PALETTE`, `LIGHT_PALETTE` and `_ANSI_VARIABLES` values in `galliani/tui/styles.py`.
-- `galliani -c` / `--continue`, session resume, a persistent transcript or history, or any settings or cache file (017 Non-goals stand).
+- `galliacli -c` / `--continue`, session resume, a persistent transcript or history, or any settings or cache file (017 Non-goals stand).
 - Streaming token output (017 Open Item 2).
 - Showing model "thinking". The working verbs are fixed UI strings, not model output.
+- A short alias beside `galliacli` (user decision: `galliacli` is the short, distinct name; no extra alias in v1).
 - Reading file contents for `@` mentions, or attaching files to the objective. An `@path` mention is plain text; the agent still reads files only through its registered, permission-checked tools.
 - A trust prompt with a remembered answer (that would need persistence).
 - Changing the one-shot `python -m galliani.cli`.
@@ -36,7 +44,7 @@ The supervisor, permissions, Task State, Memory and observability stay unchanged
    - The workspace as an absolute path, with the home folder shown as `~`.
    - The model line: `routing: auto` plus the names of providers that have a key (names only, never keys or key fragments), or the R15 no-key message.
    - Edit mode, budget and memory state.
-   - Three tips: `/help for commands`, `/ to complete commands` and `Esc to stop a task`, plus `@ to mention a file` when R20 is in scope.
+   - Three tips: `/help for commands`, `/ to complete commands` and `Esc to stop a task` and `@ to mention a file`.
 
    The banner is shown once. `/clear` does not show it again.
 3. **Prompt box.** The prompt is a full-width bordered box at the bottom with a `>` lead glyph. The border is `$g-border`, or `$g-accent` with a heavier border when focused, so focus still shows under `NO_COLOR`. The placeholder reads `Type an objective, or / for commands`. While a task is active the placeholder reads `Esc to stop`.
@@ -67,7 +75,7 @@ The supervisor, permissions, Task State, Memory and observability stay unchanged
 17. **Popup keys.** While the popup is open:
     - `Up`/`Down` move the selection and do not recall history.
     - `Tab` inserts the selected item.
-    - `Enter` inserts it, and also sends the line when the result is a complete command that needs nothing more (`/help`, `/clear`, `/quit`, or a finished argument).
+    - `Enter` on a command that takes no argument (`/help`, `/clear`, `/quit`) or on a finished argument inserts it and sends the line at once. On anything else (a command that takes an argument, a folder, a file) it only inserts. Settled by the user, 2026-10-19.
     - `Esc` closes the popup and does nothing else. It does not cancel a task while the popup is open.
     - Typing a space after a complete command name switches to argument completion.
 
@@ -82,25 +90,25 @@ The supervisor, permissions, Task State, Memory and observability stay unchanged
 
     No completion is offered for free values (a budget amount).
 19. **`/workspace` path completion.** Only existing directories are offered, never files. The typed prefix is resolved against the current workspace, an absolute path, or `~`. A folder whose name `Workspace._blocked` would refuse (for example `.git`) is not listed. Dot-folders are listed only when the typed segment starts with `.`. At most 50 entries. The listing runs off the UI thread and stops after 0.5 s, showing what it has with `...`.
-20. **`@file` mentions (optional, Open Questions 3).** An `@` typed at the start of the prompt or after whitespace opens file completion. Candidates come only from `Workspace(root).list_files(ListIn(path=".", pattern=...))` for the current workspace, so protected files and links that escape the workspace are never listed and the 200-entry cap applies. The listing runs off the UI thread and is cached per workspace for 30 s. The cache is dropped on `/workspace`. Accepting a candidate inserts `@<relative/path>` as plain text.
+20. **`@file` mentions (required; included in this wave by the user, 2026-10-19).** An `@` typed at the start of the prompt or after whitespace opens file completion. Candidates come only from `Workspace(root).list_files(ListIn(path=".", pattern=...))` for the current workspace, so protected files and links that escape the workspace are never listed and the 200-entry cap applies. The listing runs off the UI thread and is cached per workspace for 30 s. The cache is dropped on `/workspace`. Accepting a candidate inserts `@<relative/path>` as plain text.
 21. **Completion text is safe.** Every label and summary shown passes `sanitize()` (017 R18). A candidate whose name `sanitize()` would change (control, bidi or redacted characters) is omitted rather than inserted, so inserted text is always exactly what is displayed. Completion never runs on text the user did not type (017 R34). It is never offered in the approval card or the question field.
 
 ### D. Launch (delta over 017 R2-R5)
 
-22. **What 017 already does.** Plain `galliani` with no objective already starts a session with `--workspace .`, the current folder. This spec adds only items 23-26.
-23. **`python -m galliani`** runs `galliani.tui.entry:main` through a new `galliani/__main__.py`, with behavior identical to `galliani` and `python -m galliani.tui`.
-24. **`galliani --version`** prints `galliani <__version__>` and exits 0 without importing Textual. `-h`/`--help` is unchanged.
-25. **Wide-workspace warning.** When the resolved workspace is the user's home folder or a filesystem root, the banner adds a `$g-warn` line: "This workspace is your whole home folder (or drive). The agent can read any file in it that is not protected. Start galliani in a project folder, or use /workspace." This is a notice only. It needs no answer and stores nothing. The session still starts.
+22. **What 017 already does.** With no objective, the terminal command already starts a session with `--workspace .`, the current folder. This spec adds only items 23-27.
+23. **`python -m galliani`** runs `galliani.tui.entry:main` through a new `galliani/__main__.py`, with behavior identical to `galliacli` and `python -m galliani.tui`. The module names stay `galliani`; only the console script is renamed (R27).
+24. **`galliacli --version`** prints `galliacli <__version__>` and exits 0 without importing Textual. `-h`/`--help` is unchanged apart from the name.
+25. **Wide-workspace warning.** When the resolved workspace is the user's home folder or a filesystem root, the banner adds a `$g-warn` line: "This workspace is your whole home folder (or drive). The agent can read any file in it that is not protected. Start galliacli in a project folder, or use /workspace." This is a notice only. It needs no answer and stores nothing. The session still starts.
 26. **On PATH after install.** The docs (README "Interactive terminal" and `docs/release-checklist.md` smoke step) give the supported installs in order:
     - From a clone: `pipx install -e ".[tui]"` (recommended, because `pipx ensurepath` fixes PATH), or `pip install -e ".[tui]"` in a venv.
     - `pip install --user` on Windows: scripts go to `%APPDATA%\Python\Python3XY\Scripts`, which is not on PATH by default. The docs give the PowerShell command to add it, and say that `python -m galliani` always works.
 
     Non-editable installs still lack package data until 016 Phase 5 (017 Open Item 4), and the docs say so. No installer edits PATH by itself.
-27. **Command name.** The console script `galliani` stays the terminal UI for pip and pipx installs. Resolving the clash with the desktop app (016 R15 winget alias, 016 R24 desktop script) is Open Questions 1. No code changes for it until the user answers.
+27. **Command name (user decision, 2026-10-19).** The terminal console script is `galliacli` (`[project.scripts] galliacli = "galliani.tui.entry:main"`). `galliani` belongs to the desktop app: the winget alias (016 R15) and the future 016 R24 desktop script, neither of which is renamed. `argparse` `prog`, usage, help, the R5 fallback text (one-shot form `galliacli "<objective>"`) and all docs name `galliacli`. The PyPI package and extra keep the name `galliani` (`pip install "galliani[tui]"`). No extra alias in v1.
 
 ## Behavior
 
-- **Start.** `galliani` (or `python -m galliani`) runs the 017 R5 checks, then `Session`, then `run_app`. The transcript opens with the R2 banner (and the R25 warning when it applies), with the prompt box focused.
+- **Start.** `galliacli` (or `python -m galliani`) runs the 017 R5 checks, then `Session`, then `run_app`. The transcript opens with the R2 banner (and the R25 warning when it applies), with the prompt box focused.
 - **Completion.** A keystroke in the prompt goes to `complete_command(text, cursor, ...)` (pure). When the token is a path, file or memory id, it goes to `Session.complete(...)` (async, off the UI thread). The result is a `CompletionResult` and the popup renders it. A late result for stale text is dropped.
 - **Motion.** Phase leaves `idle`: the ticker starts. Phase returns to `idle` and no transitions are in flight: the ticker stops.
 
@@ -174,7 +182,7 @@ Then the three dicts equal their 017 values and no color literal exists outside 
 
 ### Banner
 Given keys for two providers and a workspace in the home folder
-When `galliani` starts
+When `galliacli` starts
 Then the banner shows the version, `~/...` workspace, both provider names and no key characters; started in `~` itself it also shows the R25 warning.
 
 ### Reduced Motion Is Static
@@ -214,8 +222,18 @@ Then that file is not offered.
 
 ### Launch Forms
 Given an installed checkout in folder W
-When the user runs `galliani`, `python -m galliani` and `python -m galliani.tui` in W, and `galliani --version`
-Then the first three start a session with workspace W and the last prints `galliani 0.2.0` and exits 0 without importing Textual.
+When the user runs `galliacli`, `python -m galliani` and `python -m galliani.tui` in W, and `galliacli --version`
+Then the first three start a session with workspace W and the last prints `galliacli 0.2.0` and exits 0 without importing Textual.
+
+### Console Script Name
+Given a fresh editable install with the `tui` extra
+When `pyproject.toml` and the installed scripts are inspected
+Then `galliacli` is the only console script that runs `galliani.tui.entry:main`, no `galliani` console script is installed, and `galliacli --help` and the R5 fallback name `galliacli`.
+
+### Enter In The Popup
+Given the popup open on `/help`, and separately on `/theme`
+When the user presses Enter
+Then `/help` is sent at once; `/theme ` is inserted and nothing is sent.
 
 ## Tests
 
@@ -225,6 +243,8 @@ Then the first three start a session with workspace W and the last prints `galli
   - The timeout path.
   - `BannerInfo`: no key material, home shown as `~`, `wide_workspace` for home and root.
   - `galliani/__main__.py` and `--version` with Textual blocked (`sys.modules["textual"] = None`).
+  - The rename: `prog` and usage, help and fallback text say `galliacli`; existing `tests/tui` assertions that expect `galliani` as the command name are updated.
+  - A `pyproject.toml` check: `[project.scripts]` has `galliacli` and no `galliani` entry.
   - A palette and CSS literal scan.
   - A WGL4 glyph check.
 - **Pilot, `tests/tui/test_app_pilot.py` (ui-engineer):**
@@ -240,7 +260,7 @@ Then the first three start a session with workspace W and the last prints `galli
   - Widths 80 and 60.
   - At least one failure path each: an unknown command filtered to empty, a listing error.
 - **Security (qa-security):** the File Mention, Unsafe Name and Banner criteria as tests, plus a review that no completion path bypasses `Workspace` checks.
-- **Release (release-engineer):** a fresh-venv smoke test of `pipx install -e ".[tui]"`, then `galliani --version`, recorded in the PR. The existing 017 tests stay green.
+- **Release (release-engineer):** a fresh-venv smoke test of `pipx install -e ".[tui]"`, then `galliacli --version`, recorded in the PR, and `where galliacli` shows it on PATH. The existing 017 tests stay green.
 
 ## Evaluation
 
@@ -250,24 +270,27 @@ Then the first three start a session with workspace W and the last prints `galli
 
 ## Implementation Tasks
 
-Do not start any task until the user approves this spec and answers Open Questions 1-3. The paths are disjoint, and the contracts above let tasks A, B and C start in parallel.
+Do not start any task until the user approves this spec as a whole (the open questions are answered). The paths are disjoint, and the contracts above let tasks A, B and C start in parallel.
 
-- [ ] A (core-engineer): `galliani/tui/commands.py` (`Completion`, `CompletionResult`, `complete_command`), `galliani/tui/session.py` (`complete`, `banner`, `BannerInfo`), `galliani/tui/entry.py` (`--version`, R25 detection), `galliani/__main__.py`, and the headless tests in `tests/tui/` except `test_app_pilot.py`. Covers R13, R15, R18-R25.
+- [ ] A (core-engineer): `galliani/tui/commands.py` (`Completion`, `CompletionResult`, `complete_command`), `galliani/tui/session.py` (`complete`, `banner`, `BannerInfo`), `galliani/tui/entry.py` (`--version`, R25 detection), `galliani/__main__.py`, and the headless tests in `tests/tui/` except `test_app_pilot.py`. Covers R13, R15, R18-R25 and the entry.py part of R27.
 - [ ] B (ui-engineer): `galliani/tui/app.py`, `widgets.py` and `styles.py` (layout, banner, prompt box, status line, compact entries, `motion_enabled`, `Ticker`, `CompletionPopup`, transitions), and `tests/tui/test_app_pilot.py`. Covers R1-R12, R14, R16, R17, R21 display. The palette dicts are read-only.
-- [ ] C (release-engineer): the README "Interactive terminal" install and PATH section, the `docs/release-checklist.md` smoke step and `CHANGELOG.md`. After the Open Questions 1 answer, also `scripts/winget_manifest.py` `COMMAND_ALIAS`, the spec 016 text and its tests. Covers R26 and R27.
+- [ ] C1 (release-engineer): the README "Interactive terminal" install and PATH section (with `galliacli`), the `docs/release-checklist.md` smoke step and `CHANGELOG.md`. `scripts/winget_manifest.py` (`COMMAND_ALIAS = "galliani"`) and spec 016 are **not** changed. Covers R26.
+- [ ] C2 (rename, R27; the code still says `galliani` today):
+  - release-engineer: `pyproject.toml` `[project.scripts]` `galliani` -> `galliacli`; any mention in CI workflows, `CHANGELOG.md` and the README.
+  - core-engineer: `galliani/tui/entry.py` (`prog`, `ONE_SHOT_HINT` and other usage and fallback strings) and the `tests/tui` tests that expect `galliani` as the command name.
 - [ ] D (qa-security, after A and B): the security tests, a review of R19-R21 and the banner, the full `pytest` run and the gate. Updates the `docs/security.md` TUI section.
 
 ## Dependencies
 
 Spec 017 (all contracts), spec 014 and Decision 0032 (`Workspace` protections), spec 016 R15, R24 and Phase 5, and Textual `>=8.2.8,<9` (no new dependency).
 
-## Open Questions (for the user)
+## Settled by the user (2026-10-19)
 
-1. **Name clash.** Today `galliani` means two things:
-   - The terminal UI, for pip and pipx installs (017).
-   - The desktop `.exe`, through the winget alias (016 R15, `scripts/winget_manifest.py` `COMMAND_ALIAS = "galliani"`). 016 R24 also plans a desktop console script.
+1. **Name clash.** The desktop keeps `galliani` (016 R15 winget alias, future 016 R24 script). The terminal console script is `galliacli` (R27). Spec 017 is amended accordingly.
+2. **Short alias.** None. `galliacli` is the short, distinct name.
+3. **`@file` mentions.** Included in this wave (R20 is required).
+4. **Enter in the popup.** Commands that take no argument (and finished arguments) are sent at once; everything else only inserts (R17).
 
-   Proposal: `galliani` is the terminal everywhere. The desktop becomes `galliani-desktop`, both as the winget alias and as the future 016 R24 script. This is cheap to change now, because the first winget submission is still pending. Approve this, or keep the winget alias `galliani` and accept that PATH order decides on machines that have both installed?
-2. **Short alias.** Proposal: none in v1. A second script adds PATH clutter and clash risk, and `galliani` is already short. If you want one, name it (for example `gli`). It would need a clash check on PATH and winget before it is adopted.
-3. **`@file` mentions (R20).** Include them in this wave, or defer them? They insert text only. The agent still reads files through its tools.
-4. **Enter in the popup (R17).** Should Enter send no-argument commands at once, as Claude Code does (proposed)? Or should it always insert only, so a second Enter is needed to send?
+## Open Questions
+
+None. The remaining step is the user's approval of the whole spec.
