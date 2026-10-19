@@ -39,8 +39,8 @@ Also useful: [[docs/agent-loop]], [[docs/tool-system]], [[docs/model-routing]], 
 | 014 | Accept-Edits Mode | Approved, hardened 2026-10-15 | Per-task opt-in to file writes in the workspace without per-write approval | [[specs/014-accept-edits/spec\|014]] |
 | 015 | Remotion Video | Draft | Short kinetic marketing video built with Remotion in `video/` | [[specs/015-remotion-video/spec\|015]] |
 | 016 | Public Launch | Approved, amended 2026-10-16 (no Store; unsigned until a certificate is bought) | Release, landing page, winget, PyPI, signing | [[specs/016-public-launch/spec\|016]] |
-| 017 | Interactive CLI (terminal UI) | Approved 2026-10-19; command renamed `galliacli` | Claude Code-style full-screen terminal front end | [[specs/017-interactive-cli/spec\|017]] |
-| 018 | TUI polish | Approved 2026-10-19; implementation in progress | Look and feel, motion, `/` and `@` completion, easier launch | [[specs/018-tui-polish/spec\|018]] |
+| 017 | Interactive CLI (terminal UI) | Implemented; command is `galliacli` | Claude Code-style full-screen terminal front end | [[specs/017-interactive-cli/spec\|017]] |
+| 018 | TUI polish | Implemented, reviewed 2026-10-20 | Look and feel, motion, `/` and `@` completion, easier launch | [[specs/018-tui-polish/spec\|018]] |
 
 ## How agents use this vault
 

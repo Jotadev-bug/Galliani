@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved by the user (2026-10-19, "we can now proceed"); implementation in progress. The user answered the four open questions the same day (see "Settled by the user"). Design choices: `docs/decisions.md` Decision 0035 (Proposed).
+Approved by the user (2026-10-19, "we can now proceed"); implemented and security-reviewed (2026-10-20). The user answered the four open questions the same day (see "Settled by the user"). Design choices: `docs/decisions.md` Decision 0035 (Proposed).
 
 Amendments to spec 017:
 
