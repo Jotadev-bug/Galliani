@@ -154,7 +154,7 @@ def _fail(call: ToolCall, code: str, summary: str, *, retryable: bool = False,
         call_id=call.call_id,
         status=status,
         error=ToolError(code=code, message=summary, retryable=retryable, safe_summary=summary),
-        observation_summary=f"{call.tool_name}: {summary}",
+        observation_summary=summary if summary.startswith(f"{call.tool_name}:") else f"{call.tool_name}: {summary}",
         **extra,
     )
 
