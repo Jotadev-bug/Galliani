@@ -360,3 +360,20 @@ Status: Accepted (2026-10-19, user approved spec 017). The user gave the go-ahea
 - **Naming note.** Spec 016 R24 plans console scripts for the desktop app and the CLI; `galliani` is now the terminal, so a future desktop script needs another name.
 - **Reversal.** Dropping Textual means replacing only the three UI modules; the controller and its tests stay.
 - **Amendment (2026-10-19, R18).** The security review (docs/security.md TUI section, tests/tui/test_security.py) found that redact-then-strip let a secret split by `ESC[0m`, U+202E, BEL or NUL rejoin unmasked; R18 is now redact, strip controls, redact again, applied to every displayed source, with the plan view (step `purpose`, `revision_reason`) sanitized when stored rather than at render time.
+
+## Decision 0035: TUI polish: Claude Code look on the existing palette, gated motion, headless completion, simpler launch (spec 018 drafted)
+
+Status: Proposed (2026-10-19). Draft, awaiting user approval. When approved, amends spec 017 R20, R22, R28 and "Behavior: Start". Proposes changes to spec 016 R15 and R24, pending the user's answer to spec 018 Open Question 1.
+
+- **Look, not new colors.** The user asked for the Claude Code look and feel: a bordered prompt box, a status line under it, compact tool lines, a welcome banner and minimal chrome. The three palette dicts in `galliani/tui/styles.py` are frozen. A test fails on any color literal outside them. Reason: the user asked to keep exactly the current palette (Decision 0025).
+- **Motion behind one gate and one ticker.** Every effect checks `motion_enabled(app)`, which is false under `GALLIANI_REDUCED_MOTION=1`, animation level `none`, `NO_COLOR` or the ANSI theme. The check is manual because `TEXTUAL_ANIMATIONS` does not stop `set_interval` timers. A single ticker of at most 10 Hz runs only while a task is active or a transition is in flight, so an idle session has zero timers. Verbs are fixed UI strings, so no model text is shown as if it were "thinking". Rejected: per-widget timers (unbounded CPU, hard to gate).
+- **Completion data is headless.** Command and argument candidates come from pure `commands.complete_command`. Folder, file and memory-id candidates come from `Session.complete`. The UI only displays them. File candidates come only from `Workspace.list_files`, so the Decision 0032 protections apply unchanged. A name that `sanitize()` would alter is omitted rather than inserted. Rejected: a Textual-side file walker, which would duplicate the sandbox rules.
+- **`@file` is text only.** It adds no file attachment path. The agent still reads files through its permission-checked tools. Whether it ships in this wave is up to the user.
+- **Launch.** Plain `galliani` already uses the current folder (017 R4). Spec 018 adds `python -m galliani`, `--version`, a notice when the workspace is home or a drive root (no prompt, nothing stored) and install and PATH docs, including the Windows `pip --user` Scripts folder. `--continue` stays out, because there is no persistent transcript.
+- **Name clash (proposal, needs the user).** `galliani` means the terminal for pip and pipx installs, and the desktop `.exe` through the winget alias (016 R15). Proposal: the terminal keeps `galliani`, and the desktop becomes `galliani-desktop` (winget alias and the future 016 R24 script). The change is cheap now, while the first winget submission is pending. No short alias in v1.
+- **Ownership.** The split follows Decision 0034:
+  - core-engineer: `commands.py`, `session.py`, `entry.py`, `galliani/__main__.py` and the headless tests.
+  - ui-engineer: `app.py`, `widgets.py`, `styles.py` and the Pilot tests.
+  - release-engineer: the docs and, after approval, `scripts/winget_manifest.py`.
+  - qa-security: the gate.
+- **Reversal.** Motion can be removed by making `motion_enabled` return false. Completion is additive and can be dropped by not opening the popup.

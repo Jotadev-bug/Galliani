@@ -26,7 +26,7 @@ Branding (name, logo, Claude mascot) was checked by the user and is no longer a 
 
 | # | Item | Owner | Spec |
 |---|---|---|---|
-| 7 | Claude Code-style interactive CLI, built on `galliani/cli` | tech-lead then core-engineer | New spec 017. Spec 017 approved 2026-10-19; implementation in progress |
+| 7 | Claude Code-style interactive CLI, built on `galliani/cli` | tech-lead then core-engineer | New spec 017. Spec 017 approved 2026-10-19; implementation in progress. Polish after user trial (Claude Code look with the existing palette, motion, slash and `@` completion, easier launch): spec 018, draft awaiting approval |
 | 8 | Memory completion and UI (spec 010 follow-through) | core-engineer + ui-engineer | 010 |
 | 9 | Provider breadth: more adapters (local models via Ollama, direct OpenAI/Google/Anthropic keys) behind the existing adapter interface | core-engineer | 003 amendment |
 | 10 | Router quality: eval suite growth, routing explanations, automated `sync_pricing` | core-engineer + qa-security | 003, 013 |
