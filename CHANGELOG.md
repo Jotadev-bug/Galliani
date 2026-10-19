@@ -6,6 +6,10 @@ This project follows spec-driven development. Changelog entries should reference
 
 ## Unreleased
 
+### Added
+
+- Packaging for the interactive terminal UI (spec 017 R1-R2, Decision 0034): a new optional `tui` extra (`textual>=8.2.8,<9`) and the `galliani` console script (`galliani.tui.entry:main`). CI and the Release workflow install the extra, and CI sets `GALLIANI_REQUIRE_TUI=1` so the TUI tests fail instead of skipping. The TUI is not bundled into `Galliani.exe` yet (documented follow-up); install it with `pip install ".[tui]"`.
+
 ## 0.2.0 - 2026-10-16
 
 This release hardens what the agent can touch on your computer and what the local server accepts, and it explains clearly what happens when Microsoft Edge WebView2 is missing or broken. `Galliani.exe` is still not code-signed (a certificate is planned), so Windows SmartScreen shows an "unknown publisher" warning on first launch.

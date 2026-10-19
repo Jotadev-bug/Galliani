@@ -42,7 +42,7 @@ jobs:
         run: git checkout --detach "refs/tags/$env:TAG"
 
       - name: Install
-        run: python -m pip install -e ".[dev,desktop,build]"
+        run: python -m pip install -e ".[dev,desktop,build,tui]"
       - name: Tests
         run: python -m pytest -q
 
