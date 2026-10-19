@@ -30,3 +30,28 @@ The first Remotion command downloads Chrome Headless Shell.
 - `public/galliani-mark*.png`: the G-and-star mark cut out of the new logo (transparent). `galliani-mark.png` is the whole mark, and `-g` and `-star` are the separate pieces for the end-card animation.
 
 The only assets are the logo pieces. Everything else is system fonts and inline SVG.
+
+# Galliani in your terminal (`GallianiCli`)
+
+A 25-second video of the shipped terminal UI, `galliacli` (spec 015 Part B, Decision 0036). It has 15 beats joined by hard cuts. The orange mark and the hook caret sit outside the terminal. Inside it, the video shows the welcome banner, a goal typed into the prompt box, the plan steps turning `[ok]`, per-step route lines and cost rising against the budget, `/` and `@file` completion, the inline approval card, and the verified, done result. The video has seven burned-in captions and no sound.
+
+Output: `out/galliani-cli.mp4` (1920x1080, 30 fps, 750 frames).
+
+## Commands
+
+```bash
+npm test             # also runs tests/cli.test.ts: palette drift, copied strings, captions, motion bounds, privacy
+npm run stills:cli   # one PNG per beat (its middle frame) in out/cli-stills/, for review
+npm run preview:cli  # half-scale MP4 for review, out/galliani-cli-preview.mp4
+npm run render:cli   # final MP4, only after the stills and preview are approved (spec 015 R45)
+```
+
+In Studio (`npm run studio`), pick `GallianiCli`.
+
+## Editing
+
+- `src/cli/timeline.ts`: every beat, frame, caption, layout box and terminal string. Components hold none of their own.
+- `src/cli/palette.ts`: the only colors. `BRAND` (showcase and mark) is for outside the terminal, and `TUI` is for inside it. `TUI` is a copy of `DARK_PALETTE` in `galliani/tui/styles.py`, and the tests fail if the two drift apart.
+- `src/cli/GallianiCli.tsx`: the shots (mark, hook prompt, shell line, terminal, end card) and the captions.
+- Terminal strings are copied from `galliani/tui/widgets.py` and `commands.py`, and the tests check them against those files. The banner routing line, the transcript entries, the route ids, the costs and the `@file` rows come from the real TUI session, run headless in a demo folder with every provider mocked. If the TUI's wording changes, capture it again and update `TERM` and the entries in `timeline.ts`.
+- The captions are fixed copy (spec 015 R46). Changing one is a spec amendment.
