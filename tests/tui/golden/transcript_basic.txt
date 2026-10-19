@@ -7,7 +7,7 @@ tool [s1]: read_file succeeded
 verification [s1]: The criterion is satisfied.
 route [s2]: Selected w1: supports text; low cost, fast latency (cheapest strategy).
 verification [s2]: The criterion is satisfied.
-tool [s3]: write_file: write_file: write action requires user approval
+tool [s3]: write_file: write action requires user approval
 approval: Approval needed: Allow 'write_file' (write) on 'summary.md' limited to scope 'summary.md'? Reason: save summary.md
     risk: write action
     scope: summary.md
