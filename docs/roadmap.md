@@ -79,8 +79,8 @@ A modern, minimalistic, impactful motion-graphics video that shows the CLI updat
 
 | Order | Item | Owner | Prerequisite | Spec |
 |---|---|---|---|---|
-| V0 | Amend spec 015: it fixes 35-55 s and vertical-first for the explainer, so a 20-30 s CLI-update cut needs its own composition requirement | tech-lead | User agrees to the video | 015 amendment |
-| V1 | Script and storyboard approval (outline below), plus captions text | product-growth | V0 | 015 |
+| V0 | **Done 2026-10-20.** Spec 015 Part B (R19-R48) adds the `GallianiCli` composition; Decision 0036 | tech-lead | User agrees to the video | 015 Part B |
+| V1 | **Done 2026-10-20.** The storyboard and exact captions are fixed in spec 015 R46, from the outline below, so no copy pass is needed | tech-lead (product-growth not needed) | V0 | 015 R46 |
 | V2 | Remotion composition `GallianiCli` in `video/`, built from scene data like the showcase (`timeline.ts`), reusing `galliani-mark.png` | ui-engineer | V1 approved. TUI visuals final (spec 018 merged) so what is shown is real | 015 |
 | V3 | Review stills and a preview; **the user approves before any final render or publish** | user | V2 | 015 |
 | V4 | Final render (16:9 1920x1080, 30 fps like the showcase; optional 9:16 cut). Publishing is the user's | ui-engineer renders; user publishes | V3 approved | 015 |
@@ -98,6 +98,8 @@ Storyboard outline (about 25 s at 30 fps, 16:9; each beat 1-3 s, kinetic type, h
 | 23-25 s | Close | Verified, then Done. The mark and `galliacli` on black | Local. No telemetry. Free. |
 
 Copy rules from spec 015 carry over: short headlines, no filler, no "magic", no claim of unrestricted autonomy, no chain-of-thought shown, no real keys or logs on screen. The "Free" and "No telemetry" captions are claims, so check them against the README and the privacy page before V3. Do not show streaming or session resume; they are not built yet.
+
+The outline above was the starting point. Spec 015 R46 is now authoritative: it splits the segments into 1-3 s beats and follows the shipped UI (cost rises against the budget, and the model shows as `route <id>`, not as a chip).
 
 ## Monetization options
 
