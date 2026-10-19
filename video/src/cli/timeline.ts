@@ -237,7 +237,7 @@ const HOOK_CAPTION = {x: 96, y: 640, width: 1728, height: 120, fontSize: 76};
 // Push origins. Zooming toward a point keeps the terminal's top edge below the caption band (tests/cli.test.ts);
 // the bottom of the frame may leave the screen, as in a camera push.
 const AT = {
-  shell: {x: TERMINAL.x, y: TERMINAL.y},
+  shell: {x: WIDTH / 2, y: TERMINAL.y},
   prompt: {x: WIDTH / 2, y: 480},
   status: {x: WIDTH / 2, y: 560},
   card: {x: WIDTH / 2, y: 420},
