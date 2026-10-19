@@ -54,7 +54,8 @@ ANSI_THEME = replace(BUILTIN_THEMES["ansi-dark"], name=ANSI,
                      variables={**BUILTIN_THEMES["ansi-dark"].variables, **_ANSI_VARIABLES})
 THEMES = (DARK_THEME, LIGHT_THEME, ANSI_THEME)
 
-# Focus is shown by a heavier border as well as a colour, so it survives NO_COLOR.
+# Focus is shown by a heavier border as well as a colour, so it survives NO_COLOR. Only `$g-*` variables appear
+# here (spec 018 R1); the three palette dicts above are the single place a colour value is written.
 APP_CSS = """
 Screen {
     layout: vertical;
@@ -74,33 +75,54 @@ Screen {
 TranscriptView {
     width: 1fr;
     height: 1fr;
-    padding: 0 1 0 0;
+    padding: 0 1;
     background: $g-bg;
-    border-left: tall $g-border;
     scrollbar-size-vertical: 1;
     scrollbar-background: $g-bg;
     scrollbar-color: $g-border;
     scrollbar-color-hover: $g-accent;
     scrollbar-color-active: $g-accent;
 }
-TranscriptView:focus { border-left: heavy $g-accent; }
-TranscriptView > .entry { height: auto; width: 1fr; padding: 0 0 0 1; }
+TranscriptView:focus { scrollbar-color: $g-accent; }
+TranscriptView > Banner {
+    height: auto;
+    padding: 0 1;
+    margin: 0 0 1 0;
+    border: round $g-border;
+}
+Banner > Static { height: auto; }
+Banner > .b-title { color: $g-fg; }
+Banner > .b-workspace, Banner > .b-settings, Banner > .b-tip { color: $g-muted; }
+Banner > .b-tip:first-of-type { margin-top: 1; }
+Banner > .b-warn { color: $g-warn; margin-top: 1; }
+
+TranscriptView > .entry { height: auto; width: 1fr; }
 TranscriptView > .entry.-gap { margin-top: 1; }
-TranscriptView > .-user { color: $g-accent; text-style: bold; }
-TranscriptView > .-plan { color: $g-fg; text-style: bold; }
-TranscriptView > .-tool, TranscriptView > .-route, TranscriptView > .-retry,
-TranscriptView > .-replan, TranscriptView > .-edit_mode, TranscriptView > .-event,
-TranscriptView > .-usage { color: $g-muted; }
-TranscriptView > .-verification { color: $g-agent; }
-TranscriptView > .-approval, TranscriptView > .-question { color: $g-warn; }
-TranscriptView > .-notice { color: $g-muted; text-style: italic; }
-TranscriptView > .-error { color: $g-bad; text-style: bold; }
-TranscriptView > .-result { color: $g-good; text-style: bold; }
-TranscriptView > .-verbose { text-style: dim; }
-TranscriptView > .body { color: $g-fg; padding: 0 0 0 3; text-style: none; }
+EntryRow > .glyph { width: 2; height: auto; }
+EntryRow > .text { width: 1fr; height: auto; }
+.-user > .glyph { color: $g-accent; text-style: bold; }
+.-user > .text { color: $g-fg; }
+.-plan > .glyph { color: $g-fg; }
+.-plan > .text { color: $g-fg; text-style: bold; }
+.-tool > .glyph, .-tool > .text { color: $g-fg; }
+.-route > .glyph, .-route > .text, .-retry > .glyph, .-retry > .text, .-replan > .glyph, .-replan > .text,
+.-edit_mode > .glyph, .-edit_mode > .text, .-event > .glyph, .-event > .text,
+.-usage > .glyph, .-usage > .text { color: $g-muted; }
+.-verification > .glyph { color: $g-agent; }
+.-verification > .text { color: $g-fg; }
+.-approval > .glyph, .-approval > .text, .-question > .glyph, .-question > .text { color: $g-warn; }
+.-notice > .glyph { color: $g-muted; }
+.-notice > .text { color: $g-muted; text-style: italic; }
+.-error > .glyph { color: $g-bad; }
+.-error > .text { color: $g-bad; text-style: bold; }
+.-result > .glyph { color: $g-good; }
+.-result > .text { color: $g-fg; text-style: bold; }
+.-verbose { text-style: dim; }
+TranscriptView > .detail { color: $g-muted; height: auto; }
+TranscriptView > .body { color: $g-fg; padding: 0 0 0 2; text-style: none; height: auto; }
 TranscriptView > Markdown.body {
     margin: 0;
-    padding: 0 0 0 3;
+    padding: 0 0 0 2;
     background: $g-bg;
     color: $g-fg;
 }
@@ -110,39 +132,55 @@ PlanPanel {
     width: 40;
     height: 1fr;
     padding: 0 1;
-    background: $g-surface;
+    background: $g-bg;
     border: round $g-border;
     border-title-color: $g-muted;
 }
 PlanPanel:focus { border: heavy $g-accent; border-title-color: $g-accent; }
 PlanPanel.-docked { display: block; }
+PlanPanel > Static, PlanSummary > Static { height: auto; }
+StepList { height: auto; }
+StepList > .step { height: 1; color: $g-muted; }
+StepList > .step.-running { color: $g-accent; }
+StepList > .step.-waiting { color: $g-warn; }
+StepList > .step.-verified { color: $g-good; }
+StepList > .step.-failed { color: $g-bad; }
+StepList > .step.-fresh { text-style: bold; }
+StepList > .revised { color: $g-muted; height: auto; }
 
 PlanSummary {
     display: none;
     height: auto;
     max-height: 9;
     padding: 0 1;
-    background: $g-surface;
+    background: $g-bg;
     color: $g-fg;
-    border-left: tall $g-border;
 }
-PlanSummary:focus { border-left: heavy $g-accent; }
+PlanSummary:focus { background: $g-surface; }
 PlanSummary.-compact { display: block; }
 
 #dock { height: auto; }
-StatusBar {
-    height: 1;
-    padding: 0 1;
-    background: $g-surface;
-    color: $g-muted;
-}
 #hint { height: auto; padding: 0 1; color: $g-warn; display: none; }
 #hint.-show { display: block; }
+WorkingLine {
+    height: 1;
+    padding: 0 1;
+    color: $g-accent;
+}
+CompletionPopup {
+    display: none;
+    height: auto;
+    max-height: 10;
+    padding: 0 1;
+    background: $g-surface;
+    color: $g-fg;
+}
+#question-text { height: auto; padding: 0 1; color: $g-warn; }
 
 ApprovalCard {
     height: auto;
     padding: 0 1;
-    background: $g-surface;
+    background: $g-bg;
     border: round $g-warn;
 }
 ApprovalCard:focus { border: heavy $g-warn; }
@@ -156,17 +194,35 @@ QuestionInput {
 QuestionInput.-show { display: block; }
 QuestionInput:focus { border: heavy $g-accent; }
 
-PromptArea {
+#promptbox {
     height: auto;
     min-height: 3;
-    max-height: 9;
+    padding: 0 1;
+    background: $g-bg;
+    border: round $g-border;
+}
+#promptbox:focus-within { border: heavy $g-accent; }
+#promptbox.-hidden { display: none; }
+#lead { width: 2; height: 1; color: $g-accent; text-style: bold; }
+PromptArea {
+    height: auto;
+    min-height: 1;
+    max-height: 8;
+    width: 1fr;
+    padding: 0;
     background: $g-bg;
     color: $g-fg;
-    border: round $g-border;
-    border-title-color: $g-muted;
-    border-subtitle-color: $g-muted;
+    border: none;
 }
-PromptArea:focus { border: heavy $g-accent; border-title-color: $g-accent; }
+PromptArea:focus { border: none; }
 PromptArea > .text-area--cursor-line { background: transparent; }
+PromptArea > .text-area--placeholder { color: $g-muted; }
 PromptArea.-hidden { display: none; }
+
+StatusBar {
+    height: 1;
+    padding: 0 2;
+    background: $g-bg;
+    color: $g-muted;
+}
 """
