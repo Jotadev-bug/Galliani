@@ -124,9 +124,6 @@ SPLIT_SECRETS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="DEFECT (task D): sanitize() redacts before it strips controls, so a key "
-                                       "split by a control or bidi character is joined back unmasked "
-                                       "(galliani/tui/session.py:62-63). Fix: redact again after stripping.")
 @pytest.mark.parametrize("text", SPLIT_SECRETS)
 def test_sanitize_masks_a_secret_split_by_control_characters(text):
     out = sanitize(text)
@@ -156,7 +153,6 @@ async def test_hostile_approval_prompt_fields_are_clean(workspace):
     await session.submit("Write it")
     assert session.state.phase is Phase.awaiting_approval
     pending = session.state.pending_approval
-    # The plan panel's copy of the purpose is the separate plan defect (xfail tests below).
     assert_clean(" ".join([all_text(session), pending.action_summary, pending.risk_summary, pending.scope]))
     assert "txt.exe" in pending.scope and "save" in pending.action_summary
     await session.deny()
@@ -201,10 +197,6 @@ async def test_hostile_memory_records_are_clean_when_listed(workspace):
     assert_clean(text)
 
 
-@pytest.mark.xfail(strict=True, reason="DEFECT (task D): SessionState.plan is the raw PlanView; step purposes and "
-                                       "revision_reason are not passed through sanitize() (galliani/tui/session.py:427 "
-                                       "and :517), and PlanPanel/PlanSummary render them (galliani/tui/widgets.py:185, "
-                                       ":211). A model-written plan can put OSC 52 / OSC 8 / CSI on the terminal.")
 async def test_hostile_plan_step_purposes_are_clean_in_state(workspace):
     s1 = read_step()
     s1["purpose"] = f"read {HOSTILE_PLAN}"
@@ -564,9 +556,6 @@ async def test_screen_bytes_are_clean_on_a_hostile_question(workspace):
 
 
 @needs_textual
-@pytest.mark.xfail(strict=True, reason="DEFECT (task D): plan step purposes reach PlanPanel/PlanSummary unsanitized "
-                                       "(galliani/tui/session.py:427, :517; galliani/tui/widgets.py:185, :211), so a "
-                                       "model-written plan writes OSC 52 / OSC 8 / title sequences to the terminal.")
 @pytest.mark.parametrize("width", [120, 80])
 async def test_screen_bytes_are_clean_for_a_hostile_plan(workspace, width):
     from galliani.tui.app import GallianiApp

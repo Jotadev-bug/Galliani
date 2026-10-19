@@ -46,6 +46,13 @@ def test_one_shot_usage_errors_are_the_cli_s(monkeypatch, tmp_path):
     assert seen and seen[0][0] == "do it"
 
 
+@pytest.mark.parametrize("argv", [["do it", "--budget", "abc"], ["do it", "--theme", "blue"], ["do it", "--budget"]])
+def test_one_shot_usage_errors_name_the_cli_program(argv, capsys):
+    assert entry.main(argv) == 2
+    err = capsys.readouterr().err
+    assert "usage: python -m galliani.cli" in err and "usage: galliani" not in err
+
+
 # ---------------------------------------------------------------------- Fallback Without Textual Or TTY
 
 

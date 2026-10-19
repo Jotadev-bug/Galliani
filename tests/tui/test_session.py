@@ -341,6 +341,13 @@ async def test_budget_off_means_no_limit(workspace):
     assert factory.builds[-1][0].budget_usd is None
 
 
+async def test_negative_budget_is_refused_with_a_notice(workspace):
+    session, _ = make_session(workspace, budget_usd=0.5)
+    await session.submit("/budget -1")
+    assert session.config.budget_usd == 0.5 and session.state.status.budget_usd == 0.5
+    assert session.entries()[-1].kind is EntryKind.notice and "negative" in session.entries()[-1].text
+
+
 async def test_unchanged_settings_reuse_the_runtime(workspace):
     session, factory = make_session(workspace, plans=[{"steps": [read_step()]}] * 2)
     await session.submit("one")
