@@ -84,6 +84,10 @@ class GallianiApp(App[int]):
         Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("ctrl+t", "toggle_plan", "Plan", show=False, priority=True),
         Binding("escape", "escape", "Stop", show=False),
+        # TUI2-3: Tab may move focus off the approval card; these keep y/n/a live wherever focus is
+        Binding("y", "decide('approve')", "Approve", show=False),
+        Binding("n", "decide('deny')", "Deny", show=False),
+        Binding("a", "decide('accept_edits')", "Approve and accept edits", show=False),
     ]
 
     def __init__(self, session: Session, *, theme: Literal["dark", "light"] = "dark",
@@ -279,7 +283,9 @@ class GallianiApp(App[int]):
         highlighted = frozenset(self._highlight) if motion else frozenset()
         plan = self.session.state.plan
         self.query_one(PlanPanel).set_plan(plan, frame=frame, highlighted=highlighted)
-        self.query_one(PlanSummary).set_plan(plan, frame=frame, highlighted=highlighted)
+        summary = self.query_one(PlanSummary)
+        summary.task_active = self._task_active()
+        summary.set_plan(plan, frame=frame, highlighted=highlighted)
 
     def _note_steps(self, plan: Any, now: float) -> None:
         """R11: a step that just finished is shown bold in its status colour for 400 ms (motion on only)."""
@@ -541,6 +547,18 @@ class GallianiApp(App[int]):
         self._dispatch(self.session.answer(answer), gate=True)
 
     # ---- actions
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "decide":
+            card = self._card
+            if card is None or self._phase != "awaiting_approval":
+                return False
+            return card.check_action(action, parameters)
+        return True
+
+    def action_decide(self, choice: str) -> None:
+        if self._card is not None:
+            self._card.action_decide(choice)  # type: ignore[arg-type]
 
     def action_escape(self) -> None:
         """Spec 018 R17: with the popup open, Esc only closes it. Otherwise R23-R25: Esc denies an approval,

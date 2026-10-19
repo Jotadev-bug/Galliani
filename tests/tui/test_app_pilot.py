@@ -16,24 +16,25 @@ else:
 
 from rich.text import Text  # noqa: E402
 from textual.geometry import Region  # noqa: E402
+from textual.widgets import Static  # noqa: E402
 from textual.worker import WorkerCancelled  # noqa: E402
 
 from galliani.permissions import EditMode  # noqa: E402
 from galliani.tui import styles  # noqa: E402
 from galliani.tui.app import GallianiApp, run_app  # noqa: E402
 from galliani.tui.widgets import (  # noqa: E402
-    ApprovalCard, Banner, CompletionPopup, EntryRow, PlanPanel, PlanSummary, PromptHistory, QuestionInput,
+    ApprovalCard, Banner, CompletionPopup, DetailRow, EntryRow, PlanPanel, PlanSummary, PromptHistory, QuestionInput,
     StepList, build_status_text, build_working_text, motion_enabled, plan_summary_text, working_verb,
 )
 
 try:
     from .fake_session import (
-        BannerInfo, Completion, CompletionResult, FakeSession, HAVE_COMPLETION, plan_view,
+        BannerInfo, Completion, CompletionResult, EntryKind, FakeSession, HAVE_COMPLETION, plan_view,
         stand_in_complete_command,
     )
 except ImportError:
     from fake_session import (  # type: ignore[no-redef]
-        Completion, CompletionResult, FakeSession, HAVE_COMPLETION, plan_view, stand_in_complete_command,
+        Completion, CompletionResult, EntryKind, FakeSession, HAVE_COMPLETION, plan_view, stand_in_complete_command,
     )
 
 
@@ -64,8 +65,8 @@ def row_text(child) -> str:
     if isinstance(child, EntryRow):
         glyph, text = child.query("Static")
         return f"{plain(glyph)} {plain(text)}"
-    if isinstance(child, Banner):
-        return tree_text(child)
+    if isinstance(child, (Banner, DetailRow)):
+        return "".join(plain(w) for w in child.query("Static")) if isinstance(child, DetailRow) else tree_text(child)
     return plain(child)
 
 
@@ -883,7 +884,7 @@ async def test_entries_are_compact_with_one_blank_line_between_turns_only():
                   for kind in ("user", "tool", "verification", "result", "usage")}
         assert glyphs == {"user": ">", "tool": "●", "verification": "●", "result": "●", "usage": "·"}
         detail = [c for c in app.transcript.children if c.has_class("detail")]
-        assert detail and plain(detail[-1]).startswith("  └ ")
+        assert detail and [plain(w) for w in detail[-1].query("Static")][0] == "  └ "
 
 
 async def test_error_entries_use_the_error_glyph_and_style():
@@ -1600,3 +1601,48 @@ async def test_real_session_banner_and_slash_popup_and_file_mentions(tmp_path):
         await settle(app, pilot)
         assert "sub" in popup_text(app) and "notes.md" not in popup_text(app)        # folders only
         assert overflows(app) == []
+
+
+# ================================================================ review fixes (TUI2-3, V1, V2)
+
+@pytest.mark.parametrize("width", [80, 60])
+async def test_018_a_long_popup_summary_is_cut_to_one_row_not_wrapped(width):
+    app = GallianiApp(FakeSession())
+    async with app.run_test(size=(width, 24)) as pilot:
+        await pilot.pause()
+        app.prompt.focus()
+        await pilot.press("/")
+        await settle(app, pilot)
+        item = Completion("/x", "/memory", "word " * 30, "command")
+        other = Completion("/y", "/help", "short", "command")
+        app.popup.show((other, other))
+        await pilot.pause()
+        one_line_rows = app.popup.region.height
+        app.popup.show((item, other))
+        await pilot.pause()
+        assert app.popup.region.height == one_line_rows and overflows(app) == []
+        first = plain(app.popup).splitlines()[0]
+        assert len(first) <= width and first.endswith("…")
+
+
+@pytest.mark.parametrize("width", [80, 60])
+async def test_018_a_wrapped_detail_line_is_indented_under_the_corner_glyph(width):
+    session = FakeSession()
+    app = GallianiApp(session)
+    long = "created " + " ".join(f"file{n}.md" for n in range(40))
+    async with app.run_test(size=(width, 30)) as pilot:
+        session._add(EntryKind.tool, "read_file", detail=(long,))
+        await pilot.pause()
+        row = next(c for c in app.transcript.children if c.has_class("detail"))
+        lead, text = row.query("Static")
+        assert plain(lead) == "  └ " and text.region.height > 1
+        assert text.region.x == lead.region.x + 4 and lead.region.height == 1
+        assert overflows(app) == []
+
+
+@pytest.mark.parametrize("width", [80, 60])
+async def test_018_no_plan_hint_while_idle_below_100_columns(width):
+    app = GallianiApp(FakeSession())
+    async with app.run_test(size=(width, 24)) as pilot:
+        await pilot.pause()
+        assert "No plan yet" not in "|".join(plain(w) for w in app.query_one(PlanSummary).query(Static))

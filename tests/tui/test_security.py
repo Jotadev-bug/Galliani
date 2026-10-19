@@ -951,8 +951,6 @@ async def test_018_folder_completion_never_lists_inside_git_through_an_alias(tmp
 
 
 @needs_textual
-@pytest.mark.xfail(strict=True, reason="TUI2-3: Tab moves focus off the approval card, so y/n/a then do nothing "
-                                       "until the card is focused again (fails closed; widgets.py ApprovalCard)")
 async def test_018_tab_on_the_approval_card_keeps_its_keys_live(workspace):
     from galliani.tui.app import GallianiApp
 
