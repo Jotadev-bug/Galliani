@@ -1,16 +1,20 @@
-"""Spec 017 R2-R5: the `galliani` entry point. One-shot delegation, fallbacks and flag errors."""
+"""Spec 017 R2-R5 and 018 R23-R25, R27: the `galliacli` entry point. One-shot delegation, fallbacks and flag errors."""
 
 from __future__ import annotations
 
 import subprocess
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
+import galliani
 import galliani.cli as cli
 from galliani.permissions import EditMode
 from galliani.tui import entry, session as session_mod
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
@@ -50,7 +54,7 @@ def test_one_shot_usage_errors_are_the_cli_s(monkeypatch, tmp_path):
 def test_one_shot_usage_errors_name_the_cli_program(argv, capsys):
     assert entry.main(argv) == 2
     err = capsys.readouterr().err
-    assert "usage: python -m galliani.cli" in err and "usage: galliani" not in err
+    assert "usage: python -m galliani.cli" in err and "usage: galliacli" not in err
 
 
 # ---------------------------------------------------------------------- Fallback Without Textual Or TTY
@@ -63,7 +67,7 @@ def test_fallback_when_textual_is_missing(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(session_mod, "Session", lambda *a, **k: built.append(1))
     assert entry.main(["--workspace", str(tmp_path)]) == 2
     err = capsys.readouterr().err
-    assert "Textual" in err and 'pip install "galliani[tui]"' in err and 'galliani "<objective>"' in err
+    assert "Textual" in err and 'pip install "galliani[tui]"' in err and 'galliacli "<objective>"' in err
     assert sys.modules["textual"] is None and "galliani.tui.app" not in sys.modules and built == []
 
 
@@ -72,7 +76,7 @@ def test_fallback_when_not_a_tty(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(entry, "_isatty", lambda stream: stream is sys.stdin)  # stdout redirected
     assert entry.main(["--workspace", str(tmp_path)]) == 2
     err = capsys.readouterr().err
-    assert "TTY" in err and 'galliani "<objective>"' in err and "pip install" not in err
+    assert "TTY" in err and 'galliacli "<objective>"' in err and "pip install" not in err
 
 
 def test_fallback_when_term_is_dumb(tty, monkeypatch, tmp_path, capsys):
@@ -94,7 +98,7 @@ def test_real_stdout_pipe_falls_back_without_importing_textual(tmp_path):
     proc = subprocess.run([sys.executable, "-c", code, str(tmp_path)], capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=120)
     assert proc.returncode == 2 and proc.stdout.strip() == "False False"
-    assert 'galliani "<objective>"' in proc.stderr
+    assert 'galliacli "<objective>"' in proc.stderr
 
 
 def test_textual_missing_check_does_not_import_it(monkeypatch):
@@ -156,7 +160,7 @@ def test_one_shot_flags_without_an_objective_are_usage_errors(tty, argv, needle,
 @pytest.mark.parametrize("argv", [["--theme", "blue"], ["--budget", "lots"], ["--bogus"]])
 def test_bad_flags_exit_2(tty, argv, capsys):
     assert entry.main(argv) == 2
-    assert "usage: galliani" in capsys.readouterr().err
+    assert "usage: galliacli" in capsys.readouterr().err
 
 
 def test_missing_workspace_prints_the_one_shot_message(tty, tmp_path, capsys):
@@ -174,3 +178,89 @@ def test_python_dash_m_galliani_tui_runs_entry_main(tmp_path):
     proc = subprocess.run([sys.executable, "-m", "galliani.tui", "--workspace", str(tmp_path / "nope")],
                           capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
     assert proc.returncode == 2 and "Workspace folder not found" in proc.stderr
+
+
+# ---------------------------------------------------------------------- 018 R23, R24, R27: launch forms and name
+
+
+BLOCK_TEXTUAL = "import sys; sys.modules['textual'] = None; sys.modules['rich'] = None; "
+
+
+def test_version_prints_galliacli_and_the_version(capsys):
+    assert entry.main(["--version"]) == 0
+    assert capsys.readouterr().out == f"galliacli {galliani.__version__}\n"
+
+
+@pytest.mark.parametrize("argv", [["--version", "--workspace", "nope"], ["do it", "--version"],
+                                  ["--theme", "blue", "--version"], ["--version", "--bogus"]])
+def test_version_with_other_flags_still_prints_and_exits_0(argv, capsys, monkeypatch):
+    monkeypatch.setattr(cli, "main", lambda argv=None: pytest.fail("the one-shot must not run"))
+    assert entry.main(argv) == 0
+    assert capsys.readouterr().out.strip() == f"galliacli {galliani.__version__}"
+
+
+def test_version_after_double_dash_is_not_the_flag(monkeypatch):
+    seen = []
+    monkeypatch.setattr(cli, "main", lambda argv=None: seen.append(argv) or 0)
+    assert entry.main(["--", "--version"]) == 0 and seen == [["--", "--version"]]
+
+
+@pytest.mark.parametrize("module", ["galliani", "galliani.tui"])
+def test_version_does_not_import_textual(module):
+    code = (BLOCK_TEXTUAL + f"import runpy; sys.argv = ['x', '--version']; "
+            f"\ntry:\n    runpy.run_module('{module}', run_name='__main__')\nexcept SystemExit as e:\n"
+            "    print('exit', e.code)\n"
+            "print(sorted(m for m in sys.modules if m.split('.')[0] in ('textual', 'rich') and sys.modules[m]))")
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.splitlines() == [f"galliacli {galliani.__version__}", "exit 0", "[]"]
+
+
+def test_python_dash_m_galliani_runs_entry_main(tmp_path):
+    proc = subprocess.run([sys.executable, "-m", "galliani", "--workspace", str(tmp_path / "nope")],
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
+    assert proc.returncode == 2 and "Workspace folder not found" in proc.stderr
+
+
+def test_python_dash_m_galliani_falls_back_like_galliacli(tmp_path):
+    proc = subprocess.run([sys.executable, "-m", "galliani", "--workspace", str(tmp_path)],
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
+    assert proc.returncode == 2 and 'galliacli "<objective>"' in proc.stderr
+
+
+def test_importing_galliani_does_not_load_the_entry_point():
+    code = "import sys, galliani; print('galliani.tui.entry' in sys.modules, 'galliani.__main__' in sys.modules)"
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert proc.stdout.strip() == "False False"
+
+
+def test_galliani_main_module_runs_entry_main(monkeypatch):
+    import galliani.__main__ as main_module
+
+    monkeypatch.setattr(entry, "main", lambda argv=None: 5)
+    assert main_module._main() == 5
+
+
+def test_help_and_usage_name_galliacli(capsys):
+    assert entry.main(["--help"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("usage: galliacli ") and "--version" in out and "usage: galliani " not in out
+    assert entry.main(["--bogus"]) == 2
+    assert "usage: galliacli " in capsys.readouterr().err
+
+
+def test_one_shot_hint_and_flag_errors_name_galliacli(tty, tmp_path, capsys):
+    assert entry.ONE_SHOT_HINT.endswith('galliacli "<objective>"') and "galliani " not in entry.ONE_SHOT_HINT
+    assert entry.main(["--context", "x", "--workspace", str(tmp_path)]) == 2
+    assert capsys.readouterr().err.startswith("galliacli: --context needs an objective.")
+
+
+def test_pyproject_installs_galliacli_and_no_galliani_script():
+    import tomllib
+
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    scripts = data["project"]["scripts"]
+    assert scripts.get("galliacli") == "galliani.tui.entry:main"
+    assert "galliani" not in scripts
+    assert [name for name, target in scripts.items() if target == "galliani.tui.entry:main"] == ["galliacli"]
+    assert data["project"]["name"] == "galliani" and "tui" in data["project"]["optional-dependencies"]

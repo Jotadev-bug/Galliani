@@ -2,12 +2,12 @@
 
 ## Status
 
-Draft, awaiting user approval of the whole spec; nothing implemented. On 2026-10-19 the user answered the four open questions (see "Settled by the user"), but has not yet approved the spec as a whole. Design choices: `docs/decisions.md` Decision 0035 (Proposed).
+Approved by the user (2026-10-19, "we can now proceed"); implemented and security-reviewed (2026-10-20). The user answered the four open questions the same day (see "Settled by the user"). Design choices: `docs/decisions.md` Decision 0035 (Proposed).
 
 Amendments to spec 017:
 
 - **Already applied (user decision, 2026-10-19):** the terminal console script is renamed from `galliani` to `galliacli` (017 R2, R5, Behavior "Start", acceptance criteria, tests, Open Item 4). The code still uses `galliani` until task C2 lands.
-- **Apply on approval of this spec:** 017 R20 (layout), R22 (Up/Down while the popup is open), R28 (more motion than the spinner) and Behavior "Start" (banner instead of start notice).
+- **Applied with this spec's approval (2026-10-19):** 017 R20 (layout), R22 (Up/Down while the popup is open), R28 (more motion than the spinner) and Behavior "Start" (banner instead of start notice).
 
 Spec 016 needs no change. R15 (winget alias `galliani`) and R24 (console scripts for the desktop app and CLI; `pipx install galliani` starts the app) already fit: the desktop keeps `galliani`, the CLI script is `galliacli`, and the PyPI package and extra keep the name `galliani`.
 
@@ -270,7 +270,7 @@ Then `/help` is sent at once; `/theme ` is inserted and nothing is sent.
 
 ## Implementation Tasks
 
-Do not start any task until the user approves this spec as a whole (the open questions are answered). The paths are disjoint, and the contracts above let tasks A, B and C start in parallel.
+The user approved this spec as a whole on 2026-10-19. The paths are disjoint, and the contracts above let tasks A, B and C start in parallel.
 
 - [ ] A (core-engineer): `galliani/tui/commands.py` (`Completion`, `CompletionResult`, `complete_command`), `galliani/tui/session.py` (`complete`, `banner`, `BannerInfo`), `galliani/tui/entry.py` (`--version`, R25 detection), `galliani/__main__.py`, and the headless tests in `tests/tui/` except `test_app_pilot.py`. Covers R13, R15, R18-R25 and the entry.py part of R27.
 - [ ] B (ui-engineer): `galliani/tui/app.py`, `widgets.py` and `styles.py` (layout, banner, prompt box, status line, compact entries, `motion_enabled`, `Ticker`, `CompletionPopup`, transitions), and `tests/tui/test_app_pilot.py`. Covers R1-R12, R14, R16, R17, R21 display. The palette dicts are read-only.

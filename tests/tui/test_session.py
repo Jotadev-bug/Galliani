@@ -65,7 +65,7 @@ async def test_send_objective_shows_entries_in_order_and_returns_to_idle(workspa
     session.subscribe(lambda: changes.append(session.state.phase))
     assert await session.submit("Summarize notes.md") is None
     order = kinds(session)
-    assert order[0] == "notice" and order[1] == "user"
+    assert order[0] == "user"  # 018 R2: the banner replaces the start notice
     for earlier, later in [("user", "plan"), ("plan", "tool"), ("tool", "verification"),
                            ("verification", "result"), ("result", "usage")]:
         assert order.index(earlier) < order.index(later)

@@ -50,6 +50,19 @@ python -c "import re,sys; t=open('smoke.jsonl',encoding='utf-8').read(); [print(
 
 Delete `docs/summary.md` and `smoke.jsonl` afterwards.
 
+## 4a. Terminal command smoke (manual)
+
+Spec 018 R24, R26, R27. In a fresh virtual environment (or with `pipx install -e ".[tui]"`), from a clone:
+
+```powershell
+pipx install -e ".[tui]"
+galliacli --version      # prints: galliacli <version>, exit 0
+where.exe galliacli      # shows the Scripts folder on PATH
+python -m galliani --version
+```
+
+`galliacli --version` must print the `pyproject.toml` version. If `where.exe galliacli` finds nothing, run `pipx ensurepath` and open a new terminal (for `pip install --user`, see the README "Interactive terminal" PATH note). The Scripts folder must hold `galliacli` and no terminal `galliani` script; the desktop keeps `galliani`. Record the result in the pull request.
+
 ## 5. Publish
 
 Bump `version` in `pyproject.toml`, commit, then push **only** the matching tag (`v0.2.0`, or `v0.3.0-beta.1` for a pre-release). The 0.2.0 steps, in order, are in section 12.

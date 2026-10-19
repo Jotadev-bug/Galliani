@@ -81,6 +81,73 @@ except ImportError:
         value: str | None = None
 
 
+try:  # spec 018 contracts; same-shaped local ones keep the Pilot tests independent of the headless layer
+    from galliani.tui.commands import Completion, CompletionResult
+    HAVE_COMPLETION = True
+except ImportError:
+    HAVE_COMPLETION = False
+
+    @dataclass(frozen=True)
+    class Completion:  # type: ignore[no-redef]
+        insert: str
+        label: str
+        summary: str = ""
+        kind: str = "command"
+        enabled: bool = True
+        submits: bool = False
+
+    @dataclass(frozen=True)
+    class CompletionResult:  # type: ignore[no-redef]
+        start: int
+        items: tuple = ()
+        needs_io: str | None = None
+        truncated: bool = False
+
+try:
+    from galliani.tui.session import BannerInfo
+except ImportError:
+    @dataclass(frozen=True)
+    class BannerInfo:  # type: ignore[no-redef]
+        version: str
+        workspace: str
+        providers: tuple[str, ...]
+        wide_workspace: bool
+        edit_mode: EditMode
+        budget_usd: float | None
+        memory: str
+
+_COMMANDS = {  # name -> (summary, takes_no_argument, allowed_while_active)
+    "help": ("list commands and keys", True, True), "clear": ("clear the visible transcript", True, True),
+    "workspace": ("show, or switch to an existing folder", False, False),
+    "edit-mode": ("show or set the edit mode", False, True), "budget": ("show or set the per-task budget", False, False),
+    "memory": ("list or forget memory records", False, True), "events": ("show or hide verbose events", False, True),
+    "theme": ("switch the theme for this session", False, True), "quit": ("quit Galliani", True, True),
+}
+_CHOICES = {"theme": ("dark", "light"), "events": ("on", "off"), "edit-mode": ("ask", "accept-edits"),
+            "memory": ("list", "forget", "on", "off")}
+
+
+def stand_in_complete_command(text: str, cursor: int, *, task_active: bool):
+    """A small copy of the spec 018 `complete_command` contract, used only while commands.py predates it."""
+    head = text[:cursor]
+    if head.startswith("//"):
+        return None
+    if not head.startswith("/"):
+        start = max(head.rfind(c) for c in (" ", chr(9), chr(10))) + 1
+        return CompletionResult(start=start, items=(), needs_io="file") if head[start:start + 1] == "@" else None
+    name, space, rest = head[1:].partition(" ")
+    if not space:
+        names = [n for n in _COMMANDS if n.startswith(name.lower())] or [n for n in _COMMANDS if name.lower() in n]
+        items = tuple(Completion(f"/{n}" if _COMMANDS[n][1] else f"/{n} ", f"/{n}", _COMMANDS[n][0], "command",
+                                 not task_active or _COMMANDS[n][2], _COMMANDS[n][1]) for n in names)
+        return CompletionResult(start=0, items=items)
+    if name == "workspace":
+        return CompletionResult(start=cursor - len(rest), items=(), needs_io="folder")
+    choices = [c for c in _CHOICES.get(name, ()) if c.startswith(rest)]
+    items = tuple(Completion(c, c, "", "argument", True, True) for c in choices)
+    return CompletionResult(start=cursor - len(rest), items=items) if items else None
+
+
 def plan_view(version: int = 1, states: tuple[str, ...] = ("pending", "pending", "pending", "pending")) -> PlanView:
     purposes = ("Read the notes", "Draft the summary", "Write summary.md", "Check the summary")
     steps = [StepView(step_id=f"s{i}", kind="tool", purpose=purposes[i], capability="x", state=state, attempts=1)
@@ -109,6 +176,9 @@ class FakeSession:
     _status_label: str | None = None
     _cost: float = 0.0
     _release: asyncio.Event = field(default_factory=asyncio.Event)
+    banner_info: BannerInfo | None = None
+    completions: Callable[[str, int], CompletionResult | None] | None = None
+    complete_delay: float = 0.0
 
     # ---- contract
 
@@ -189,7 +259,26 @@ class FakeSession:
         self._phase = Phase.closed
         self._notify()
 
+    def banner(self) -> BannerInfo:
+        return self.banner_info or BannerInfo(
+            version="0.2.0", workspace="~/projects/notes", providers=("anthropic", "openai"), wide_workspace=False,
+            edit_mode=self.edit_mode, budget_usd=0.5, memory="on")
+
+    async def complete(self, text: str, cursor: int) -> CompletionResult | None:
+        """Scripted `Session.complete`: `completions(text, cursor)` decides, after an optional delay."""
+        self.calls.append(("complete", text))
+        if self.complete_delay:
+            await asyncio.sleep(self.complete_delay)
+        return self.completions(text, cursor) if self.completions else None
+
     # ---- test helpers
+
+    def set_plan(self, states: tuple[str, ...], phase: Phase | None = None) -> None:
+        """Move the plan (and optionally the phase) like the supervisor would, then notify the UI."""
+        self._plan = plan_view(1, states)
+        if phase is not None:
+            self._phase = phase
+        self._notify()
 
     def finish_hold(self) -> None:
         """Let a held run return after `cancel()` (the supervisor reached its next checkpoint)."""
