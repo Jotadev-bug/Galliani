@@ -8,7 +8,11 @@ This project follows spec-driven development. Changelog entries should reference
 
 ### Added
 
-- Packaging for the interactive terminal UI (spec 017 R1-R2, Decision 0034): a new optional `tui` extra (`textual>=8.2.8,<9`) and the `galliani` console script (`galliani.tui.entry:main`). CI and the Release workflow install the extra, and CI sets `GALLIANI_REQUIRE_TUI=1` so the TUI tests fail instead of skipping. The TUI is not bundled into `Galliani.exe` yet (documented follow-up); install it with `pip install ".[tui]"`.
+- Packaging for the interactive terminal UI (spec 017 R1-R2, Decision 0034): a new optional `tui` extra (`textual>=8.2.8,<9`) and the `galliacli` console script (`galliani.tui.entry:main`; spec 018 R27). The terminal command is `galliacli`; the desktop app keeps `galliani` (winget alias, spec 016 R15), and `python -m galliani` also starts the terminal UI. CI and the Release workflow install the extra, and CI sets `GALLIANI_REQUIRE_TUI=1` so the TUI tests fail instead of skipping. The TUI is not bundled into `Galliani.exe` yet (documented follow-up); install it with `pip install ".[tui]"`.
+
+### Changed
+
+- The terminal console script is renamed from `galliani` to `galliacli` (spec 018 R27, Decision 0035), so it no longer clashes with the desktop app's `galliani` command. `pyproject.toml` `[project.scripts]` now has `galliacli` only; the PyPI package and the `tui` extra keep the name `galliani`. The README has an "Interactive terminal" section with the install options and the Windows PATH note (spec 018 R26), and the release checklist has a `galliacli --version` smoke step.
 
 ## 0.2.0 - 2026-10-16
 

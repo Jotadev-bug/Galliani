@@ -1,8 +1,9 @@
-"""Spec 017 R2-R5: `galliani` and `python -m galliani.tui`.
+"""Spec 017 R2-R5 and 018 R23-R25, R27: `galliacli`, `python -m galliani` and `python -m galliani.tui`.
 
 With an objective this is exactly the one-shot `python -m galliani.cli` (R3). With none it starts an
 interactive session, after checking that Textual is installed and the terminal can host it (R5).
-Textual is imported only after those checks pass, inside `galliani.tui.app`.
+Textual is imported only after those checks pass, inside `galliani.tui.app`, and never for `--version`.
+The console script is `galliacli`; `galliani` belongs to the desktop app (018 R27).
 """
 
 from __future__ import annotations
@@ -13,19 +14,38 @@ import os
 import sys
 from pathlib import Path
 
+import galliani
 from galliani.cli import DEFAULT_BUDGET_USD
 from galliani.permissions import EditMode
 
-ONE_SHOT_HINT = 'To run one objective without the interactive terminal: galliani "<objective>"'
+PROG = "galliacli"
+ONE_SHOT_HINT = f'To run one objective without the interactive terminal: {PROG} "<objective>"'
+
+
+def version_line() -> str:
+    """018 R24: what `galliacli --version` prints."""
+    return f"{PROG} {galliani.__version__}"
+
+
+def is_wide_workspace(path: Path) -> bool:
+    """018 R25: the resolved workspace is the user's home folder or a filesystem root (a drive on Windows).
+    The session puts the result in `BannerInfo.wide_workspace`; the banner shows the warning. Nothing is stored."""
+    resolved = Path(path).expanduser().resolve()
+    try:
+        home = Path.home().resolve()
+    except (RuntimeError, OSError):  # no home folder known
+        home = None
+    return resolved == home or resolved.parent == resolved
 
 
 def _parser(*, strict: bool = True) -> argparse.ArgumentParser:
-    """The `galliani` flags. `strict=False` checks no values, so `_objective_given` only finds the positional."""
+    """The `galliacli` flags. `strict=False` checks no values, so `_objective_given` only finds the positional."""
     parser = argparse.ArgumentParser(
-        prog="galliani", exit_on_error=strict, add_help=strict,
+        prog=PROG, exit_on_error=strict, add_help=strict,
         description="Work with the Galliani supervisor in an interactive terminal session, "
                     "or run one objective (same as python -m galliani.cli).")
     loose = {} if strict else {"nargs": "?"}  # a missing flag value is the one-shot's error to report
+    parser.add_argument("--version", action="store_true", help=f"print {PROG} and its version, then exit")
     parser.add_argument("objective", nargs="?", help="run this one objective and exit (the one-shot CLI)")
     parser.add_argument("--workspace", **loose, default=".",
                         help="directory the agent may read (and, with approval, write)")
@@ -84,6 +104,10 @@ def _objective_given(argv: list[str]) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    flags = argv[:argv.index("--")] if "--" in argv else argv  # after "--" everything is the objective
+    if "--version" in flags:
+        print(version_line())  # 018 R24: before anything else, with any other flags, without Textual
+        return 0
     if _objective_given(argv):
         from galliani.cli import main as one_shot
 
@@ -98,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         return int(e.code or 0)
     if args.context is not None or args.non_interactive:
         flag = "--context" if args.context is not None else "--non-interactive"
-        print(f"galliani: {flag} needs an objective. {ONE_SHOT_HINT}", file=sys.stderr)
+        print(f"{PROG}: {flag} needs an objective. {ONE_SHOT_HINT}", file=sys.stderr)
         return 2
     workspace = Path(args.workspace)
     if not workspace.is_dir():

@@ -1,4 +1,3 @@
-notice: Galliani interactive session. Workspace: <workspace>. Edit mode: ask. Budget: $0.50 per task. Memory: on. Type an objective, or /help.
 user: Summarize notes.md into summary.md
 plan: Plan v1: plan v1 with 3 step(s)
     s1 (tool: read_file) read the notes

@@ -79,6 +79,44 @@ A model plans the work, the supervisor validates the plan, cheap workers run the
 
 In the desktop app (`python -m app.desktop`), switch the message box from **Chat** to **Agent**, pick a folder, and type a task. The agent's reply shows the plan, live activity, approvals and the verified result. The **Memory** page lists what the agent remembers between tasks; it only saves a note when you approve it.
 
+## Interactive terminal
+
+`galliacli` is a full-screen terminal chat for the agent (specs 017 and 018). It needs the optional `tui` extra. The command is `galliacli`; the name `galliani` belongs to the desktop app.
+
+Install, in order of preference:
+
+```bash
+# From a clone, recommended: pipx puts the command on PATH (run `pipx ensurepath` once)
+pipx install -e ".[tui]"
+
+# Or into a virtual environment
+pip install -e ".[tui]"
+
+# Or for your user only
+pip install --user -e ".[tui]"
+```
+
+Non-editable installs (`pip install "galliani[tui]"`) still lack package data until spec 016 Phase 5, so install from a clone for now.
+
+**Windows PATH.** `pip install --user` puts scripts in `%APPDATA%\Python\Python3XY\Scripts` (for example `Python312\Scripts`), which is not on PATH by default. Add it for your user in PowerShell, then open a new terminal:
+
+```powershell
+$scripts = "$env:APPDATA\Python\Python312\Scripts"   # match your Python version
+[Environment]::SetEnvironmentVariable("Path", "$([Environment]::GetEnvironmentVariable('Path','User'));$scripts", "User")
+```
+
+`python -m galliani` always works, with or without PATH.
+
+Check it, then run it in any project folder (the folder you start in is the workspace):
+
+```bash
+galliacli --version
+cd path/to/your/project
+galliacli
+```
+
+On Windows, `where galliacli` shows which copy is on PATH. No installer edits PATH for you.
+
 ## Calling the local API
 
 `python -m app.api` serves the web UI and the JSON API at `http://127.0.0.1:8000`. The API only answers on your own machine and refuses anything that looks like a web page acting on your behalf (spec 012 R16-R19, Decision 0032). If you call it from a script, `curl` or a test:

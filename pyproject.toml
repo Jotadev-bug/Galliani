@@ -21,7 +21,7 @@ build = ["pyinstaller>=6.0", "pillow>=10.0"]
 tui = ["textual>=8.2.8,<9"]
 
 [project.scripts]
-galliani = "galliani.tui.entry:main"
+galliacli = "galliani.tui.entry:main"
 
 [build-system]
 requires = ["setuptools>=68"]

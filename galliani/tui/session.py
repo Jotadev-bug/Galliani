@@ -10,13 +10,15 @@ here (R31); the only files are those the existing stack writes (approved memory,
 from __future__ import annotations
 
 import asyncio
-import re
+import os
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Literal
 
+import galliani
 from app.keys import PROVIDERS
 from galliani.cli import (
     DEFAULT_BUDGET_USD,
@@ -24,6 +26,7 @@ from galliani.cli import (
     Runtime,
     UsageTotals,
     build_runtime,
+    load_keys,
     memory_scopes,
     open_memory,
     workspace_overview,
@@ -33,11 +36,22 @@ from galliani.errors import GallianiError
 from galliani.memory import MemoryStore
 from galliani.observability import EventSink, EventType, LifecycleEvent
 from galliani.permissions import ACCEPT_EDITS_CHOICE, EditMode
-from galliani.redaction import redact_text
 from galliani.state import TERMINAL_STATUSES, TaskStatus
 from galliani.supervisor import StartTaskRequest, TaskResult, UserPolicy
-from galliani.tui.commands import COMMANDS, Command, CommandError, _allowed_while_active, parse_command
+from galliani.tui.commands import (
+    COMMANDS,
+    Command,
+    CommandError,
+    CompletionResult,
+    _allowed_while_active,
+    complete_command,
+    parse_command,
+    safe_completion,
+    sanitize,
+)
+from galliani.tui.entry import is_wide_workspace
 from galliani.viewmodel import STATUS_LABELS, PlanView, TaskViewModel, build_task_view
+from galliani.workspace import ListIn, Workspace
 
 MAX_BODY_CHARS = 20_000  # R19
 EARLIER_TASKS = 3  # R9, the desktop's rule (Decision 0020)
@@ -46,22 +60,61 @@ NO_KEYS = "No model provider key found. Set one of: " + ", ".join(sorted(PROVIDE
 KEYS_HELP = ("Keys: Enter send - Alt+Enter or Ctrl+J newline - Up/Down history - Esc or Ctrl+C stop a task - "
              "y/n/a answer an approval - Ctrl+T plan panel - Ctrl+C twice or Ctrl+Q quit")
 
-# R18: terminal escape sequences (CSI, OSC, other ESC sequences), then any remaining C0/C1 control
-# character except \n and \t, DEL, and bidirectional override and isolate characters.
-_ESCAPE_SEQUENCES = re.compile(
-    r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?"   # OSC ... BEL or ST (OSC 8 links, OSC 52 clipboard, titles)
-    r"|\x1b\[[0-?]*[ -/]*[@-~]?"             # CSI (colors, cursor movement)
-    r"|\x1b[PX^_][^\x1b]*(?:\x1b\\)?"        # DCS, SOS, PM, APC strings
-    r"|\x1b[ -/]*[0-~]?"                     # other two-character escapes
-)
-_UNSAFE_CHARS = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f‪-‮⁦-⁩]")
+MAX_FOLDERS = 50  # 018 R19
+LISTING_TIMEOUT = 0.5  # seconds, 018 R19
+FILE_LISTING_TIMEOUT = 2.0  # seconds; a slower R20 listing keeps running and fills the cache for a later key
+FILE_CACHE_SECONDS = 30.0  # 018 R20
+WIDE_WORKSPACE_WARNING = ("This workspace is your whole home folder (or drive). The agent can read any file in it "
+                          "that is not protected. Start galliacli in a project folder, or use /workspace.")
 
 
-def sanitize(text: str) -> str:
-    """R18: redact secrets, strip terminal control and bidi characters, then redact again so a secret split by
-    a stripped character is masked once rejoined. Markup stays literal text."""
-    text = redact_text(str(text))
-    return redact_text(_UNSAFE_CHARS.sub("", _ESCAPE_SEQUENCES.sub("", text)))
+@dataclass(frozen=True)
+class BannerInfo:
+    """018 R2 and R25: what the welcome banner shows. Never key material."""
+    version: str
+    workspace: str               # absolute, home shown as "~", sanitized
+    providers: tuple[str, ...]   # provider names with a key; never key material
+    wide_workspace: bool         # R25
+    edit_mode: EditMode
+    budget_usd: float | None
+    memory: Literal["on", "off", "unavailable"]
+
+
+def display_path(path: Path) -> str:
+    """018 R2: the absolute path, with the home folder shown as `~`, sanitized."""
+    resolved = Path(path).expanduser().resolve()
+    try:
+        rel = resolved.relative_to(Path.home().resolve())
+    except (ValueError, RuntimeError, OSError):
+        return sanitize(str(resolved))
+    return sanitize("~" if rel == Path(".") else str(Path("~") / rel))
+
+
+def _list_folders(base: Path, typed: str, blocked: Callable[[str], bool], deadline: float) -> tuple[list[str], bool]:
+    """018 R19: subfolders of `base` whose names start with `typed` (case-insensitive). Dot-folders only when
+    `typed` starts with `.`; names `Workspace._blocked` refuses are skipped. Stops at MAX_FOLDERS or the
+    deadline. Returns (names, truncated)."""
+    names, truncated = [], False
+    folded = typed.casefold()
+    with os.scandir(base) as entries:
+        for entry in entries:
+            if time.monotonic() > deadline:
+                return sorted(names, key=str.casefold), True
+            name = entry.name
+            if not name.casefold().startswith(folded) or (name.startswith(".") and not typed.startswith(".")):
+                continue
+            if blocked(name):
+                continue
+            try:
+                if not entry.is_dir():
+                    continue
+            except OSError:
+                continue
+            if len(names) >= MAX_FOLDERS:
+                truncated = True
+                break
+            names.append(name)
+    return sorted(names, key=str.casefold), truncated
 
 
 def sanitize_plan(plan: PlanView | None) -> PlanView | None:
@@ -197,6 +250,8 @@ class Session:
         self._cleared_after = 0
         self._history: list[str] = []  # "- objective -> status: summary" lines for R9
         self._session_micro = 0
+        self._files: tuple[Path, float, list[str], bool] | None = None  # 018 R20 cache: root, time, files, truncated
+        self._files_pending: tuple[Path, asyncio.Future] | None = None  # the one file listing in flight
         self._reset_task()
 
         notes: list[str] = []
@@ -204,11 +259,7 @@ class Session:
             self._ensure_memory(notes)
             if self._memory is None and not notes:
                 notes.append("Memory is unavailable; continuing without it.")
-        self._add(EntryKind.notice,
-                  f"Galliani interactive session. Workspace: {self.config.workspace.resolve()}. "
-                  f"Edit mode: {self._mode_label(self.config.edit_mode)}. Budget: {_budget_label(self.config.budget_usd)}. "
-                  f"Memory: {self._memory_label()}. Type an objective, or /help.")
-        for note in notes:
+        for note in notes:  # 018 R2: the banner (`banner()`) replaces 017's start notice
             self._add(EntryKind.notice, note)
         self._build_runtime()
         if self._runtime is not None and not self._runtime.available_workers:
@@ -237,6 +288,101 @@ class Session:
         """Entries with seq > `after` (and after the last /clear); verbose ones only while /events is on."""
         after = max(after, self._cleared_after)
         return [e for e in self._entries if e.seq > after and (self.config.verbose_events or not e.verbose)]
+
+    def banner(self) -> BannerInfo:
+        """018 R2, R25: the welcome banner. Provider names come from `load_keys().keys()` only, never values."""
+        names = {env: name for name, env in PROVIDERS.items()}
+        try:
+            providers = tuple(sorted(names[env] for env in load_keys() if env in names))
+        except Exception:  # noqa: BLE001 - an unreadable credential store means no provider is shown
+            providers = ()
+        workspace = self.config.workspace
+        return BannerInfo(version=galliani.__version__, workspace=display_path(workspace), providers=providers,
+                          wide_workspace=is_wide_workspace(workspace), edit_mode=self.config.edit_mode,
+                          budget_usd=self.config.budget_usd, memory=self._memory_label())
+
+    async def complete(self, text: str, cursor: int) -> CompletionResult | None:
+        """018 R18-R21: `complete_command`, then the folders, files or memory ids it asks for. Listings run off the
+        event loop thread with the R19/R20 bounds. Never raises: an error gives an empty, truncated result."""
+        try:
+            result = complete_command(text, cursor, task_active=self._active)
+        except Exception:  # noqa: BLE001
+            return None
+        if result is None or result.needs_io is None:
+            return result
+        typed = text[result.start:max(result.start, min(cursor, len(text)))]
+        try:
+            if result.needs_io == "folder":
+                filled = await self._complete_folders(result, typed)
+            elif result.needs_io == "file":
+                filled = await self._complete_files(result, typed[1:])
+            else:
+                filled = self._complete_memory_ids(result, typed)
+        except Exception:  # noqa: BLE001 - permission denied, folder vanished, timeout (Error Handling)
+            filled = replace(result, items=(), truncated=True)
+        return replace(filled, needs_io=None)  # answered: nothing more to ask
+
+    async def _complete_folders(self, result: CompletionResult, typed: str) -> CompletionResult:
+        """018 R19: existing folders under the typed parent (workspace-relative, absolute or `~`), never files."""
+        cut = max(typed.rfind("/"), typed.rfind("\\")) + 1
+        parent, segment = typed[:cut], typed[cut:]
+        if any(Workspace._blocked(part) for part in parent.replace("\\", "/").split("/") if part):
+            return replace(result, items=())  # never list inside .git and the like
+        base = Path(parent).expanduser() if parent else Path()
+        if not base.is_absolute():
+            base = self.config.workspace / base
+        deadline = time.monotonic() + LISTING_TIMEOUT
+        try:
+            names, truncated = await asyncio.wait_for(
+                asyncio.to_thread(_list_folders, base, segment, Workspace._blocked, deadline), LISTING_TIMEOUT + 0.5)
+        except asyncio.TimeoutError:
+            return replace(result, items=(), truncated=True)
+        items = (safe_completion(f"{parent}{name}/", kind="folder") for name in names)
+        return replace(result, items=tuple(i for i in items if i is not None), truncated=truncated)
+
+    async def _complete_files(self, result: CompletionResult, typed: str) -> CompletionResult:
+        """018 R20: workspace files from `Workspace.list_files` only (protected files and escaping links are never
+        listed; 200 at most), prefix then substring matches."""
+        files, truncated = await self._workspace_files()
+        folded = typed.casefold()
+        matches = [f for f in files if f.casefold().startswith(folded)] or \
+                  [f for f in files if folded in f.casefold()]
+        items = (safe_completion("@" + rel, kind="file") for rel in matches)
+        return replace(result, items=tuple(i for i in items if i is not None), truncated=truncated)
+
+    async def _workspace_files(self) -> tuple[list[str], bool]:
+        """018 R20: the listing, cached in memory per workspace for 30 s. One listing runs at a time per workspace,
+        however fast the typing."""
+        root = self.config.workspace.resolve()
+        cached = self._files
+        if cached is not None and cached[0] == root and time.monotonic() - cached[1] < FILE_CACHE_SECONDS:
+            return cached[2], cached[3]
+        pending = self._files_pending
+        if pending is None or pending[0] != root:
+            future = asyncio.ensure_future(asyncio.to_thread(
+                lambda: Workspace(root).list_files(ListIn(path=".", pattern="*"))))
+            pending = self._files_pending = (root, future)
+        try:
+            listing = await asyncio.wait_for(asyncio.shield(pending[1]), FILE_LISTING_TIMEOUT)
+        except asyncio.TimeoutError:
+            return [], True
+        finally:
+            if pending[1].done() and self._files_pending is pending:
+                self._files_pending = None
+        files, truncated = list(listing["files"]), bool(listing["truncated"])
+        if self.config.workspace.resolve() == root:  # not switched by /workspace meanwhile
+            self._files = (root, time.monotonic(), files, truncated)
+        return files, truncated
+
+    def _complete_memory_ids(self, result: CompletionResult, typed: str) -> CompletionResult:
+        """018 R18: ids of records in this session's scopes, with the summary `/memory list` shows (redacted)."""
+        store = self._memory if self.config.memory_on else None
+        if store is None:
+            return replace(result, items=())
+        records = [r for r in store.list(memory_scopes(self.config.workspace)) if r.id.startswith(typed)]
+        items = (safe_completion(r.id, f"[{r.type}, {'user' if r.scope == 'user' else 'project'}] "
+                                       f"{r.display_content()}", kind="memory_id", submits=True) for r in records)
+        return replace(result, items=tuple(i for i in items if i is not None))
 
     def subscribe(self, listener: Listener) -> Callable[[], None]:
         self._listeners.append(listener)
@@ -601,6 +747,7 @@ class Session:
                 return
             self.config.workspace = path
             self._runtime_stale = True
+            self._files = self._files_pending = None  # 018 R20: the file cache belongs to the old workspace
         self._add(EntryKind.notice, f"Workspace: {self.config.workspace.resolve()}"
                                     + (" (applies to the next task)." if args else "."))
 
