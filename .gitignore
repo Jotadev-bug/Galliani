@@ -36,3 +36,6 @@ Thumbs.db
 
 # Galliani run outputs (event logs from --events)
 *.jsonl
+
+# Obsidian vault config (local UI state)
+.obsidian/
