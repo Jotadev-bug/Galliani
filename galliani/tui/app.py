@@ -360,7 +360,7 @@ class GallianiApp(App[int]):
 
     async def _quit(self) -> None:
         try:
-            await asyncio.wait_for(self.session.aclose(timeout=QUIT_TIMEOUT_SECONDS), QUIT_TIMEOUT_SECONDS + 0.5)
+            await asyncio.wait_for(self.session.aclose(timeout=QUIT_TIMEOUT_SECONDS - 0.5), QUIT_TIMEOUT_SECONDS)
         except Exception:
             pass
         self.exit(0)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 import time
 
@@ -14,6 +16,7 @@ else:
 
 from rich.text import Text  # noqa: E402
 from textual.geometry import Region  # noqa: E402
+from textual.worker import WorkerCancelled  # noqa: E402
 
 from galliani.permissions import EditMode  # noqa: E402
 from galliani.tui import styles  # noqa: E402
@@ -289,7 +292,27 @@ async def test_second_ctrl_c_while_running_cancels_then_quits_with_exit_code_zer
         await pilot.pause()
     assert time.monotonic() - started < 3
     assert app.return_code == 0
-    assert calls(session, "cancel") and calls(session, "aclose") == [("aclose", 3.0)]
+    assert calls(session, "cancel") and calls(session, "aclose") == [("aclose", 2.5)]
+
+
+async def test_quit_returns_within_three_seconds_when_closing_hangs():
+    class HangingSession(FakeSession):
+        async def aclose(self, timeout: float = 3.0) -> None:
+            self.calls.append(("aclose", timeout))
+            await asyncio.Event().wait()  # never returns
+
+    session = HangingSession(scenario="hold")
+    app = GallianiApp(session)
+    async with app.run_test(size=(100, 30)) as pilot:
+        await type_and_send(app, pilot, "long job")
+        await pilot.pause()
+        await pilot.press("ctrl+c")
+        started = time.monotonic()
+        await pilot.press("ctrl+c")
+        with contextlib.suppress(WorkerCancelled):  # the held run is left behind when the app exits
+            await app.workers.wait_for_complete()
+    assert time.monotonic() - started <= 3.2  # R25: at most 3 seconds, plus test-loop slack
+    assert app.return_code == 0
 
 
 async def test_second_ctrl_c_after_the_window_does_not_quit():
