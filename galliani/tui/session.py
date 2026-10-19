@@ -58,9 +58,21 @@ _UNSAFE_CHARS = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f‪-‮⁦-⁩]")
 
 
 def sanitize(text: str) -> str:
-    """R18: redact secrets, then strip terminal control and bidi characters. Markup stays literal text."""
+    """R18: redact secrets, strip terminal control and bidi characters, then redact again so a secret split by
+    a stripped character is masked once rejoined. Markup stays literal text."""
     text = redact_text(str(text))
-    return _UNSAFE_CHARS.sub("", _ESCAPE_SEQUENCES.sub("", text))
+    return redact_text(_UNSAFE_CHARS.sub("", _ESCAPE_SEQUENCES.sub("", text)))
+
+
+def sanitize_plan(plan: PlanView | None) -> PlanView | None:
+    """R18: a copy of the plan whose model-written text (step purposes, revision reason) is sanitized."""
+    if plan is None:
+        return None
+    steps = [step.model_copy(update={"step_id": sanitize(step.step_id), "kind": sanitize(step.kind),
+                                     "purpose": sanitize(step.purpose), "capability": sanitize(step.capability)})
+             for step in plan.steps]
+    reason = None if plan.revision_reason is None else sanitize(plan.revision_reason)
+    return plan.model_copy(update={"steps": steps, "revision_reason": reason})
 
 
 class Phase(str, Enum):
@@ -424,7 +436,7 @@ class Session:
     def _settle(self, result: TaskResult) -> None:
         self._task_id = result.task_id
         view = self._view(result.task_id)
-        self._plan = view.plan
+        self._plan = sanitize_plan(view.plan)
         self._task_mode = view.edit_mode
         self._status_label = view.status_label
         self._pending = self._question = None
@@ -514,7 +526,7 @@ class Session:
 
     def _refresh_plan(self) -> None:
         try:
-            self._plan = self._view(self._task_id).plan
+            self._plan = sanitize_plan(self._view(self._task_id).plan)
         except Exception:  # noqa: BLE001 - a view refresh never breaks the run
             pass
 
@@ -551,6 +563,9 @@ class Session:
         elif name == "budget":
             if args:
                 value = None if args[0] == "off" else float(args[0])
+                if value is not None and value < 0:
+                    self._add(EntryKind.notice, "Budget cannot be negative. Use /budget off for no limit.")
+                    return None
                 self.config.budget_usd = value if value is not None and value > 0 else None
                 self._runtime_stale = True
             self._add(EntryKind.notice, f"Budget: {_budget_label(self.config.budget_usd)}"
