@@ -372,6 +372,7 @@ class PlanSummary(Vertical, can_focus=True):
         self._frame: str | None = None
         self._highlighted: frozenset[str] = frozenset()
         self.expanded = False
+        self.task_active = False
 
     def compose(self):
         yield Static("", markup=False, id="summary-head")
@@ -390,7 +391,7 @@ class PlanSummary(Vertical, can_focus=True):
         head = self.query_one("#summary-head", Static)
         steps = self.query_one(StepList)
         if plan is None:
-            head.update(Text("No plan yet.", no_wrap=True, overflow="ellipsis"))
+            head.update(Text("No plan yet.", no_wrap=True, overflow="ellipsis") if self.task_active else Text(""))
         elif self.expanded:
             head.update(Text(plan_summary_text(plan), style="bold", no_wrap=True, overflow="ellipsis"))
         else:
@@ -459,6 +460,15 @@ class EntryRow(Horizontal):
                          Static(Text(text), markup=False, classes="text"), classes=classes)
 
 
+class DetailRow(Horizontal):
+    """R5: a detail line under its entry. The corner glyph sits in its own column, so a wrapped line
+    continues indented under the text instead of under the glyph."""
+
+    def __init__(self, lead: str, line: str, *, classes: str) -> None:
+        super().__init__(Static(lead, markup=False, classes="lead"),
+                         Static(Text(line), markup=False, classes="text"), classes=classes)
+
+
 def entry_widgets(entry: Any) -> list[Widget]:
     """Widgets for one transcript entry. Untrusted text is never parsed as markup (R18)."""
     kind = value_of(entry.kind)
@@ -466,7 +476,7 @@ def entry_widgets(entry: Any) -> list[Widget]:
     widgets: list[Widget] = [EntryRow(kind, entry.text, classes=classes)]
     for index, line in enumerate(entry.detail):
         lead = "  └ " if index == 0 else "    "
-        widgets.append(Static(Text(lead + line), markup=False, classes=f"entry detail -{kind}"))
+        widgets.append(DetailRow(lead, line, classes=f"entry detail -{kind}"))
     if entry.body:
         body = entry.body
         if len(body) > MAX_BODY_CHARS:
@@ -555,6 +565,7 @@ class CompletionPopup(Static):
         top = min(max(0, self.selected - POPUP_ROWS + 1), max(0, len(self.items) - POPUP_ROWS))
         window = self.items[top:top + POPUP_ROWS]
         column = min(28, max(len(item.label) for item in window)) + 2
+        width = max(1, self.size.width or 80)
         for offset, item in enumerate(window):
             current = top + offset == self.selected
             row = Text(no_wrap=True, overflow="ellipsis")
@@ -567,6 +578,7 @@ class CompletionPopup(Static):
                 row.append(summary, style="" if current else "dim")
             if not item.enabled:
                 row.stylize("dim")
+            row.truncate(width, overflow="ellipsis", pad=False)
             if offset:
                 text.append("\n")
             text.append_text(row)

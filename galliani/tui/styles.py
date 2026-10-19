@@ -119,6 +119,8 @@ EntryRow > .text { width: 1fr; height: auto; }
 .-result > .text { color: $g-fg; text-style: bold; }
 .-verbose { text-style: dim; }
 TranscriptView > .detail { color: $g-muted; height: auto; }
+DetailRow > .lead { width: 4; height: auto; color: $g-muted; }
+DetailRow > .text { width: 1fr; height: auto; color: $g-muted; }
 TranscriptView > .body { color: $g-fg; padding: 0 0 0 2; text-style: none; height: auto; }
 TranscriptView > Markdown.body {
     margin: 0;
