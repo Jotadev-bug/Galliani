@@ -42,7 +42,7 @@ def _clean_env(monkeypatch):
     for name in ("NO_COLOR", "GALLIANI_REDUCED_MOTION", "TEXTUAL_ANIMATIONS"):
         monkeypatch.delenv(name, raising=False)
     if not HAVE_COMPLETION:   # headless layer predates spec 018: use the local copy of the contract
-        monkeypatch.setattr("galliani.tui.app.complete_command", stand_in_complete_command)
+        monkeypatch.setattr("galliani.tui.app.complete_command", stand_in_complete_command)  # pragma: no cover
 
 
 # ---------------------------------------------------------------- helpers
@@ -1565,3 +1565,38 @@ def test_run_app_prints_only_the_exception_type_and_returns_one(monkeypatch, cap
     assert run_app(FakeSession()) == 1
     captured = capsys.readouterr()
     assert captured.err.strip() == "Boom" and "secret" not in captured.err + captured.out
+
+
+# ================================================================ against the real Session (spec 018 R15-R21 display)
+
+async def test_real_session_banner_and_slash_popup_and_file_mentions(tmp_path):
+    from .conftest import make_session
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "notes.md").write_text("n", encoding="utf-8")
+    (ws / ".env").write_text("SECRET=1", encoding="utf-8")
+    (ws / "sub").mkdir()
+    session, _ = make_session(ws)
+    app = GallianiApp(session)
+    async with app.run_test(size=(80, 30)) as pilot:
+        await pilot.pause()
+        text = tree_text(app.query_one(Banner))
+        assert "Galliani " in text and "memory:" in text and "sk-" not in text
+        app.prompt.focus()
+        await pilot.press("/", "m", "e", "tab")
+        await pilot.pause()
+        assert app.prompt.text == "/memory " and "list" in popup_text(app)
+        app.prompt.clear_prompt()
+        await pilot.press("escape")
+        await pilot.press("@")
+        await settle(app, pilot)
+        shown = popup_text(app)
+        assert "notes.md" in shown and ".env" not in shown                           # protected names never listed
+        await pilot.press("tab")
+        await pilot.pause()
+        assert app.prompt.text == "@notes.md" and not app.popup.display
+        app.prompt.clear_prompt()
+        await pilot.press(*"/workspace ")
+        await settle(app, pilot)
+        assert "sub" in popup_text(app) and "notes.md" not in popup_text(app)        # folders only
+        assert overflows(app) == []

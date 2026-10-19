@@ -23,6 +23,7 @@ from textual.screen import Screen
 from textual.widgets import Input, Static, TextArea
 
 from galliani.tui import styles
+from galliani.tui.commands import complete_command
 from galliani.tui.widgets import (
     ACTIVE_PLACEHOLDER,
     CARD_ENTER_ROWS,
@@ -51,11 +52,6 @@ from galliani.tui.widgets import (
     spinner_frame,
     value_of,
 )
-
-try:    # spec 018 R15: pure completion lives in commands.py
-    from galliani.tui.commands import complete_command
-except ImportError:    # pragma: no cover - only while the headless layer predates spec 018
-    complete_command = None
 
 if TYPE_CHECKING:
     from galliani.tui.session import Session
@@ -456,7 +452,7 @@ class GallianiApp(App[int]):
         """A keystroke goes to the pure `complete_command`; folders, files and ids go to `Session.complete`."""
         prompt = self.prompt
         text = prompt.text
-        if self._card is not None or self._question is not None or complete_command is None:
+        if self._card is not None or self._question is not None:
             self._close_popup()
             return
         if text == self._dismissed:
