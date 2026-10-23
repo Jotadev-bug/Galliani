@@ -1,4 +1,4 @@
-// GallianiCli scene data (spec 015 Part B, R19-R48): every frame number, string and layout box.
+// GallianiCli scene data (spec 015 Part B, R19-R82): every frame number, string and layout box.
 // Components read this file and hold no copy, timing or color of their own (R22).
 //
 // Terminal strings are copied from galliani/tui/widgets.py and commands.py (R32). The banner lines, the
@@ -8,7 +8,7 @@
 export const FPS = 30;
 export const WIDTH = 1920;
 export const HEIGHT = 1080;
-export const DURATION = 720; // 24 s (R21, R54)
+export const DURATION = 960; // 32 s (R21, R54)
 
 export const CLI_RENDER = {
   compositionId: 'GallianiCli',
@@ -18,6 +18,9 @@ export const CLI_RENDER = {
   durationInFrames: DURATION,
   output: 'out/galliani-cli.mp4',
   stillsDir: 'out/cli-stills',
+  previewScale: 1,
+  finalScale: 2,
+  stillScale: 2,
 } as const;
 
 // ---------------------------------------------------------------- copied TUI strings (R32, R33)
@@ -177,37 +180,30 @@ export interface Key {
   at: number; // local frame within the beat
   screen: Screen;
 }
+// `desk`: the desktop, with the window at its desktop rectangle; `shell`: the same window, typing after the shell
+// prompt, over the still desktop; `terminal`: the TUI; `end`: the end card.
 export type Shot =
-  | {kind: 'mark'}
-  | {kind: 'hook-prompt'}
+  | {kind: 'desk'}
   | {kind: 'shell'; typing: Typing}
   | {kind: 'terminal'; keys: readonly Key[]}
   | {kind: 'end'};
 // The emphasized motions a beat may carry (R38, R49: at most one per beat). `at` is a local frame.
-export interface Push {
+export interface Timed {
   at: number;
   frames: number;
-  from: number;
-  to: number;
-  origin: {x: number; y: number}; // canvas pixels the push zooms toward
 }
-export interface Entrance {
-  at: number;
-  frames: number;
-  slide: number; // px the incoming shot rises into place
-}
-export interface Move {
-  at: number;
-  frames: number; // the mark moves from the seam spot to beside the hook prompt
-}
-export interface Count {
-  at: number;
-  frames: number;
+export interface Count extends Timed {
   from: number; // cost before, in USD
   to: number;
 }
 export interface CardEnter {
   at: number; // the approval card's own entry, CARD_ENTER_FRAMES long
+}
+export type Pose = 'lean' | 'point' | 'glance' | 'nod' | 'raise' | 'lower' | 'cheer' | 'wave';
+export interface GestureCue {
+  at: number;
+  pose: Pose;
+  target: TargetId;
 }
 export interface CliBeat {
   id: string;
@@ -215,18 +211,26 @@ export interface CliBeat {
   start: number;
   duration: number;
   shot: Shot;
-  push?: Push;
-  entrance?: Entrance;
-  move?: Move;
+  cursor?: Timed;
+  drag?: Timed;
+  absorb?: Timed;
+  expand?: Timed;
   count?: Count;
   card?: CardEnter;
+  gesture?: GestureCue;
+}
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 export interface CliCaption {
   segment: Segment;
   text: string;
   start: number;
   end: number;
-  box: {x: number; y: number; width: number; height: number; fontSize: number};
+  box: Box & {fontSize: number};
   enterFrames: number;
 }
 
@@ -240,10 +244,11 @@ export const CARD_ENTER_ROWS = 2; // widgets.CARD_ENTER_ROWS
 export const CARET_BLINK_FRAMES = 15; // Textual's 0.5 s cursor blink
 export const GRID = 15; // beats and motions start on the 0.5 s grid (R53)
 export const CAPTION_ENTER = {frames: 6, slide: 24, fade: 4}; // one element; px; opacity ramp (R38, R39)
-export const ENTRANCE = {frames: 8, slide: 24}; // a new shot rises into place, no fade (R38, R62)
-export const MOVE_FRAMES = 15; // the mark moves aside (R38)
+export const CURSOR_FRAMES = 30; // the cursor travels to the hero icon (R68)
+export const DRAG_FRAMES = 40; // the icon rides one arc to the window (R70)
+export const ABSORB = {frames: 8, scale: 0.12, fade: 4}; // the icon shrinks into the caret (R71)
+export const EXPAND_FRAMES = 15; // the window grows into the TUI frame (R73)
 export const COUNT_FRAMES = 15; // a cost counts up (R38, R56)
-export const PUSH_FRAMES = 15;
 export const TYPE_SPEEDUP = 2.5; // the last character interval is this much shorter than the first (R52)
 
 // ---------------------------------------------------------------- layout
@@ -252,31 +257,131 @@ export const FONTS = {
   sans: '"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
   mono: '"Cascadia Mono", Consolas, "SF Mono", Menlo, monospace',
 } as const;
+export const MONO_ADVANCE = 0.586; // Cascadia Mono's advance width in em (1200 / 2048)
 
 // The 90% title-safe area (R42, R63).
 export const SAFE = {left: 96, right: WIDTH - 96, top: 54, bottom: HEIGHT - 54};
 
-// The terminal window. Rows are 30 px; the docked plan panel is 40 columns wide (widgets.DOCK_MIN_WIDTH), and
-// transcript text wraps at `transcriptColumns`. `border` and `pad` size the content box (layout.ts).
+// The Act 3 terminal frame, left of centre so the robot fits at its lower right (R76). Rows are 30 px; the docked
+// plan panel is 40 columns wide (widgets.DOCK_MIN_WIDTH), and transcript text wraps at `transcriptColumns`.
+// `border` and `pad` size the content box (layout.ts); a focused window border is `focusBorder` wide (R71).
 export const TERMINAL = {
-  x: 180, y: 204, width: 1560, height: 780, radius: 14, titleBar: 40, border: 1.5, pad: {top: 6, bottom: 4, side: 6},
-  fontSize: 21, row: 30, planColumns: 40, transcriptColumns: 80,
+  x: 104, y: 204, width: 1480, height: 780, radius: 14, titleBar: 40, border: 1.5, focusBorder: 3,
+  pad: {top: 6, bottom: 4, side: 6}, fontSize: 21, row: 30, planColumns: 40, transcriptColumns: 74,
 };
-// The seam spot (R57): where the mark sits on frame 0, in the end card and on the last frame.
-export const SEAM_MARK = {x: WIDTH / 2, y: 482, size: 240};
-export const HOOK = {asideSize: 150, asideX: 818, promptX: 953, promptSize: 150};
-// The end card block: the mark, a gap, then the `galliacli` line, centered on the frame (R65). The call to action
-// shows for `ctaFrames`, then the card holds in the seam state (R57).
-export const END = {markSize: SEAM_MARK.size, gap: 36, wordSize: 64, wordLine: 80, ctaFrames: 30};
+
+// The desktop (R66, R67): three generic icons and the hero icon in a column at the left, the window at the right.
+// `tile` is the rounded square; the label sits below it.
+export type Glyph = 'page' | 'folder' | 'grid';
+export interface DesktopIcon {
+  label: string;
+  glyph?: Glyph;
+  tile: Box;
+  labelBox: Box;
+}
+const ICON = {x: 250, tile: 96, hero: 128, labelGap: 12, labelHeight: 32, labelWidth: 150};
+const icon = (label: string, cy: number, size: number, glyph?: Glyph): DesktopIcon => ({
+  label,
+  glyph,
+  tile: {x: ICON.x - size / 2, y: cy - size / 2, width: size, height: size},
+  labelBox: {x: ICON.x - ICON.labelWidth / 2, y: cy + size / 2 + ICON.labelGap, width: ICON.labelWidth, height: ICON.labelHeight},
+});
+export const DESKTOP = {
+  icons: [icon('Notes', 290, ICON.tile, 'page'), icon('Files', 660, ICON.tile, 'folder'), icon('Projects', 845, ICON.tile, 'grid')],
+  hero: icon('Galliani', 475, ICON.hero),
+  labelSize: 22,
+  heroLabelSize: 24,
+  tileRadius: 0.24, // of the tile size
+  markSize: 84, // the mark inside the hero tile (R80: at most 320)
+  hoverLift: 2, // px (R69)
+  window: {x: 960, y: 300, width: 800, height: 460},
+  // The cursor's tip enters from below the frame and grabs the hero tile `grab` px from its centre (R68).
+  cursorEntry: {x: 820, y: 1140},
+  grab: {x: 22, y: 26},
+  cursorHeight: 34,
+  // The drag arc ends with the tile over the shell line; its apex is `apex` px above the chord (R70).
+  dragEnd: {x: 1290, y: 412},
+  apex: 120,
+};
+// The strings drawn outside the terminal besides the captions and `galliacli` (R47, R67).
+export const DESKTOP_LABELS = ['Galliani', 'Notes', 'Files', 'Projects'] as const;
+
+// Where the shell caret sits in the desktop window with an empty command: the absorb target (R71).
+export const SHELL_CARET = {
+  x: DESKTOP.window.x + TERMINAL.border + TERMINAL.pad.side + (1 + TERM.shellPrompt.length + 0.5) * MONO_ADVANCE * TERMINAL.fontSize,
+  y: DESKTOP.window.y + TERMINAL.border + TERMINAL.titleBar + TERMINAL.pad.top + TERMINAL.row / 2,
+};
+
+// The end card block: the mark, a gap, then the `galliacli` line, centered on the frame (R65).
+export const END = {markSize: 240, gap: 36, wordSize: 64, wordLine: 80};
 
 const TOP_CAPTION = {x: 96, y: 56, width: 1728, height: 112, fontSize: 64};
-const HOOK_CAPTION = {x: 96, y: 650, width: 1728, height: 110, fontSize: 76};
 
-// Push origins. Each keeps the zoomed terminal inside the safe area and below the caption band (B-AC21).
-const AT = {
-  prompt: {x: 560, y: 600},
-  result: {x: 640, y: 560},
+// ---------------------------------------------------------------- the robot (R74-R79)
+
+// The hover-robot of video/src/Robot.tsx: each shape's static attributes, copied verbatim (B-AC24 checks them).
+export const ROBOT_SHAPES = {
+  thruster: {cx: 0, cy: 44, rx: 14, ry: 5},
+  body: {x: -17, y: 14, width: 34, height: 24, rx: 10},
+  chest: {cx: 0, cy: 26, r: 4},
+  armLeft: {x: -27, y: 18, width: 9, height: 16, rx: 4.5},
+  armRight: {x: 18, y: 18, width: 9, height: 16, rx: 4.5},
+  antenna: {x1: 0, y1: -30, x2: 0, y2: -46},
+  antennaTip: {cx: 0, cy: -49, r: 5},
+  head: {x: -30, y: -32, width: 60, height: 46, rx: 16},
+  face: {x: -23, y: -25, width: 46, height: 30, rx: 11},
+  eyeLeft: {x: -13, width: 8, rx: 4},
+  eyeRight: {x: 5, width: 8, rx: 4},
+} as const;
+// Robot.tsx's viewBox, arm pivots, eye row, rest arm angle and antenna stroke; the two fixed opacities replace its
+// thruster flicker and antenna pulse (R75, R77).
+export const ROBOT_FRAME = {
+  viewBox: {x: -60, y: -70, width: 120, height: 130},
+  pivotLeft: {x: -22, y: 18},
+  pivotRight: {x: 22, y: 18},
+  eyeRow: -10,
+  eyeHeight: 10,
+  restArm: 12, // degrees: the left arm rests at +12, the right at -12
+  antennaWidth: 3,
+  thrusterOpacity: 0.2,
+  antennaTipOpacity: 0.85,
 };
+export const ROBOT_HEIGHT = 200; // authored px (R74: 180-240)
+export const ROBOT_SCALE = ROBOT_HEIGHT / ROBOT_FRAME.viewBox.height;
+const robotBox = (x: number, y: number): Box => ({x, y, width: ROBOT_FRAME.viewBox.width * ROBOT_SCALE, height: ROBOT_HEIGHT});
+// Act 3: in the margin at the terminal's lower right; the end card: beside the block (R76).
+export const ROBOT_PLACE = {
+  act3: robotBox(TERMINAL.x + TERMINAL.width + 24, 770),
+  end: robotBox(1212, 440),
+};
+export const ROBOT_BREATH = {px: 2.5, period: 90}; // R77: at most 3 px, a 60-120 frame period
+export const ROBOT_BLINKS: readonly number[] = [255, 410, 530, 640, 735, 840]; // 90+ frames apart, never in a gesture
+export const BLINK_FRAMES = 6;
+
+// The boxes the robot's gestures aim at, in canvas px (R78).
+const rowY = (row: number) => TERMINAL.y + TERMINAL.titleBar + row * TERMINAL.row;
+export const TARGETS = {
+  prompt: {x: TERMINAL.x + 20, y: TERMINAL.y + TERMINAL.height - 150, width: TERMINAL.width - 40, height: 75},
+  plan: {x: TERMINAL.x + TERMINAL.width - 520, y: rowY(0.5), width: 500, height: 6 * TERMINAL.row},
+  route: {x: TERMINAL.x + 20, y: rowY(16), width: 960, height: TERMINAL.row},
+  popup: {x: TERMINAL.x + 20, y: rowY(12), width: 900, height: 9 * TERMINAL.row},
+  card: {x: TERMINAL.x + 20, y: TERMINAL.y + TERMINAL.height - 240, width: TERMINAL.width - 40, height: 170},
+  cta: {x: 787, y: 362, width: 346, height: 356},
+};
+export type TargetId = keyof typeof TARGETS;
+
+// Each pose: its legs in frames (out, hold, back; `wave` raises, swings and lowers) and its extent (R78). Angles are
+// degrees, eye offsets robot units; negative turns toward the terminal, at the robot's left.
+export const POSES = {
+  lean: {legs: [8, 10, 8], headTilt: -8, lean: -6, eyeX: -5, eyeY: 3},
+  point: {legs: [8, 14, 8]},
+  glance: {legs: [6, 12, 6], headTilt: -6, eyeX: -6, eyeY: -3},
+  nod: {legs: [6, 6], headTilt: -8},
+  raise: {legs: [9]},
+  lower: {legs: [9]},
+  cheer: {legs: [9, 6, 9], arm: 140},
+  wave: {legs: [8, 10, 8], arm: 140, swing: 20},
+} as const;
 
 // ---------------------------------------------------------------- beats (R46)
 
@@ -307,7 +412,7 @@ const planning = (shownSteps: number): Screen => ({
   prompt: activePrompt,
 });
 
-const SHELL_TYPING = typed(TERM.command, 12, 12);
+const SHELL_TYPING = typed(TERM.command, 6, 15);
 const GOAL_TYPING = typed(GOAL, 3, 36);
 // The `@` popup opens on the frame `@` is typed and holds its full list for AT_HOLD frames with nothing else moving
 // (the caret blink aside); `sig` then types in fast and narrows it on the frame `g` is typed.
@@ -319,22 +424,25 @@ const AT_TAIL = AT_SIGN + AT_HOLD;
 const AT_TYPING = typed(AT_PROMPT, 0, AT_TAIL + 4);
 const AT_SIG = Math.ceil(charTimes(AT_TYPING)[AT_PROMPT.length - 1]);
 const AT_DONE_AT = AT_SIG + 6;
+export const PRESS_Y = 15; // approval-answer: the local frame `y` is pressed
 
 const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
-  {id: 'hook-mark', segment: 'Hook', duration: 45, shot: {kind: 'mark'}},
-  {id: 'hook-prompt', segment: 'Hook', duration: 45, shot: {kind: 'hook-prompt'}, move: {at: 0, frames: MOVE_FRAMES}},
+  {id: 'desk-idle', segment: 'Hook', duration: 45, shot: {kind: 'desk'}},
+  {id: 'desk-hover', segment: 'Hook', duration: 45, shot: {kind: 'desk'}, cursor: {at: 0, frames: CURSOR_FRAMES}},
+  {id: 'desk-drag', segment: 'Hook', duration: 60, shot: {kind: 'desk'}, drag: {at: 0, frames: DRAG_FRAMES}},
+  {id: 'desk-drop', segment: 'Hook', duration: 30, shot: {kind: 'desk'}, absorb: {at: 0, frames: ABSORB.frames}},
+  {id: 'launch-type', segment: 'Launch', duration: 45, shot: {kind: 'shell', typing: SHELL_TYPING}},
   {
-    id: 'launch-type', segment: 'Launch', duration: 45, shot: {kind: 'shell', typing: SHELL_TYPING},
-    entrance: {at: 0, ...ENTRANCE},
+    id: 'launch-expand', segment: 'Launch', duration: 45, shot: {kind: 'terminal', keys: [{at: 0, screen: idle}]},
+    expand: {at: 0, frames: EXPAND_FRAMES},
   },
-  {id: 'launch-banner', segment: 'Launch', duration: 45, shot: {kind: 'terminal', keys: [{at: 0, screen: idle}]}},
   {
     id: 'goal-type', segment: 'Objective to plan', duration: 60,
     shot: {kind: 'terminal', keys: [{at: 0, screen: {...idle, prompt: idlePrompt(GOAL_TYPING)}}]},
-    push: {at: 15, frames: PUSH_FRAMES, from: 1, to: 1.05, origin: AT.prompt},
+    gesture: {at: 15, pose: 'lean', target: 'prompt'},
   },
   {
-    id: 'plan-steps', segment: 'Objective to plan', duration: 45,
+    id: 'plan-steps', segment: 'Objective to plan', duration: 60,
     shot: {kind: 'terminal', keys: [
       {at: 0, screen: {
         entries: [E.user], steps: null, working: {group: 'planning', elapsed: 0, cost: 0},
@@ -350,7 +458,7 @@ const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
         status: {route: ROUTE_CODING, cost: 0.0103, label: 'Working'}, prompt: activePrompt,
       }},
     ]},
-    count: {at: 15, frames: COUNT_FRAMES, from: 0, to: 0.0103},
+    gesture: {at: 15, pose: 'point', target: 'plan'},
   },
   {
     id: 'plan-check', segment: 'Objective to plan', duration: 30,
@@ -377,12 +485,13 @@ const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
     count: {at: 30, frames: COUNT_FRAMES, from: 0.0103, to: 0.0107},
   },
   {
-    id: 'route-next', segment: 'Routing', duration: 45,
+    id: 'route-next', segment: 'Routing', duration: 60,
     shot: {kind: 'terminal', keys: [{at: 0, screen: {
       entries: coded, steps: ['verified', 'verified', 'running', 'pending'], fresh: 1,
       working: {group: 'running', elapsed: 7, cost: 0.0107, step: 3},
       status: {route: ROUTE_CODING, cost: 0.0107, label: 'Working'}, prompt: activePrompt,
     }}]},
+    gesture: {at: 15, pose: 'glance', target: 'route'},
   },
   {
     id: 'slash-popup', segment: 'Commands', duration: 60,
@@ -392,9 +501,10 @@ const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
       {at: 30, screen: {...idle, prompt: idlePrompt(typed('/')), popup: {rows: SLASH_ROWS, selected: 1}}},
       {at: 40, screen: {...idle, prompt: idlePrompt(typed('/')), popup: {rows: SLASH_ROWS, selected: 2}}},
     ]},
+    gesture: {at: 15, pose: 'nod', target: 'popup'},
   },
   {
-    id: 'at-file', segment: 'Commands', duration: 60,
+    id: 'at-file', segment: 'Commands', duration: 75,
     shot: {kind: 'terminal', keys: [
       {at: 0, screen: {...idle, prompt: idlePrompt(AT_TYPING_BEFORE)}},
       {at: AT_SIGN, screen: {...idle, prompt: idlePrompt(AT_TYPING_BEFORE), popup: {rows: FILE_ROWS_ALL, selected: 0}}},
@@ -404,15 +514,20 @@ const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
     ]},
   },
   {
-    id: 'approval-card', segment: 'Control', duration: 45,
+    id: 'approval-card', segment: 'Control', duration: 30,
     shot: {kind: 'terminal', keys: [{at: 0, screen: waitingScreen}]},
     card: {at: 0},
   },
   {
-    id: 'approval-answer', segment: 'Control', duration: 45,
+    id: 'approval-wait', segment: 'Control', duration: 30,
+    shot: {kind: 'terminal', keys: [{at: 0, screen: waitingScreen}]},
+    gesture: {at: 0, pose: 'raise', target: 'card'},
+  },
+  {
+    id: 'approval-answer', segment: 'Control', duration: 60,
     shot: {kind: 'terminal', keys: [
       {at: 0, screen: waitingScreen},
-      {at: 15, screen: {...waitingScreen, approval: {pressed: true}}},
+      {at: PRESS_Y, screen: {...waitingScreen, approval: {pressed: true}}},
       {at: 20, screen: {
         entries: [...waiting, E.approved], steps: ['verified', 'verified', 'running', 'pending'],
         working: {group: 'running', elapsed: 9, cost: 0.0107, step: 3},
@@ -424,17 +539,19 @@ const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
         status: {route: ROUTE_CODING, cost: 0.0107, label: 'Working'}, prompt: activePrompt,
       }},
     ]},
+    gesture: {at: PRESS_Y, pose: 'lower', target: 'card'},
   },
   {
-    id: 'verified-done', segment: 'Close', duration: 45,
+    id: 'verified-done', segment: 'Close', duration: 60,
     shot: {kind: 'terminal', keys: [{at: 0, screen: {
       entries: [...waiting, E.approved, E.writeOk, E.checked, E.routeText, E.checked, E.result, E.usage],
       steps: ['verified', 'verified', 'verified', 'verified'], fresh: 3, working: null,
       status: {route: ROUTE_TEXT, cost: 0.0108, label: 'Ready'}, prompt: idlePrompt(),
     }}]},
-    push: {at: 0, frames: PUSH_FRAMES, from: 1, to: 1.05, origin: AT.result},
+    gesture: {at: 15, pose: 'cheer', target: 'prompt'},
   },
-  {id: 'end-card', segment: 'Close', duration: 45, shot: {kind: 'end'}},
+  {id: 'end-card', segment: 'Close', duration: 75, shot: {kind: 'end'}, gesture: {at: 15, pose: 'wave', target: 'cta'}},
+  {id: 'end-seam', segment: 'Close', duration: 30, shot: {kind: 'desk'}},
 ];
 
 export const BEATS: readonly CliBeat[] = BEATS_RAW.reduce<CliBeat[]>((out, beat) => {
@@ -449,13 +566,14 @@ export const segmentSpan = (segment: Segment) => {
   const beats = BEATS.flatMap((b) => (b.segment === segment ? [b] : []));
   return {start: beats[0].start, end: beats[beats.length - 1].start + beats[beats.length - 1].duration};
 };
-const caption = (segment: Segment, text: string, box = TOP_CAPTION, enterFrames: number = CAPTION_ENTER.frames): CliCaption => ({
-  segment, text, ...segmentSpan(segment), box, enterFrames,
+const caption = (segment: Segment, text: string, enterFrames: number = CAPTION_ENTER.frames): CliCaption => ({
+  segment, text, ...segmentSpan(segment), box: TOP_CAPTION, enterFrames,
 });
 
-// The hook caption cuts in on frame 0 (R55); the others rise in as one element (R38).
+// Every caption sits in the top band, clear of the desktop, the drag arc, the terminal and the robot (R42). The hook
+// caption cuts in on frame 0 (R55); the others rise in as one element (R38).
 export const CAPTIONS: readonly CliCaption[] = [
-  caption('Hook', 'Galliani now runs in your terminal.', HOOK_CAPTION, 0),
+  caption('Hook', 'Galliani now runs in your terminal.', 0),
   caption('Launch', 'One command.'),
   caption('Objective to plan', 'Type a goal. Watch the plan.'),
   caption('Routing', 'The cheapest capable model, every step.'),

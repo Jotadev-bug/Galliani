@@ -1,7 +1,7 @@
-// The only colors in the GallianiCli composition (spec 015 R25, Decision 0036).
-// BRAND is used outside the terminal frame; TUI only inside it. tests/cli.test.ts fails on drift.
+// The only colors in the GallianiCli composition (spec 015 R25, R75, Decisions 0036 and 0038).
+// BRAND is used outside the terminal frame, TUI only inside it, ROBOT only by robot.tsx. tests/cli.test.ts fails on drift.
 
-// The showcase and the mark. `accent` (orange) is for the mark and the hook caret only (R28).
+// The showcase and the mark. `accent` (orange) is for the mark and the background field only (R28).
 export const BRAND = {
   bg: '#0A0A0B',
   surface: '#141416',
@@ -23,6 +23,15 @@ export const TUI = {
   warn: '#e0b04f',
   bad: '#ec6f78',
   agent: '#4cc2bd',
+} as const;
+
+// A copy of GREY in video/src/Robot.tsx (the showcase robot), the one exception to the two groups (R75).
+export const ROBOT = {
+  shell: '#D7D7DC',
+  shellShade: '#A7A7AE',
+  face: '#0E0E10',
+  eye: '#F4F4F6',
+  dark: '#5A5A61',
 } as const;
 
 export type TuiColor = keyof typeof TUI;

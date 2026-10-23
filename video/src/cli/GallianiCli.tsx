@@ -1,24 +1,32 @@
-// The CLI-update video (spec 015 Part B, Decisions 0036 and 0037). Hard cuts between beats; inside a beat only the
-// motions in MOTIONS animate (R38, R49-R51), over a slow background field (R58-R62). Scene data lives in
-// timeline.ts, motion in motion.ts, boxes in layout.ts and colors in palette.ts; this file holds none of them.
+// The CLI-update video (spec 015 Part B, Decisions 0036-0038). A cursor drags the Galliani icon from a quiet desktop
+// into a terminal window, `galliacli` is typed, and the window grows into the TUI while the showcase robot guides each
+// beat. Hard cuts between beats; inside a beat only the motions in MOTIONS animate (R38, R49-R51), over a slow
+// background field (R58-R62). Scene data lives in timeline.ts, motion in motion.ts, the desktop in desktop.ts, the robot
+// in pose.ts, boxes in layout.ts and colors in palette.ts; this file holds none of them.
 import React from 'react';
 import {AbsoluteFill, Img, staticFile, useCurrentFrame} from 'remotion';
 import {BAND_STOPS, BLOB_STOPS, FIELD_COLORS, backgroundField, bandSpan, wavePath} from './background.ts';
+import {cursorAt, desktopShown, heroBoxes, heroIconAt, shellCommand, windowFocused} from './desktop.ts';
+import type {HeroState} from './desktop.ts';
+import {BANNER_ROWS, END_CTA, END_MARK, WINDOW, endCardShown, entryRows, terminalRect, transcriptLayout, tuiShown} from './layout.ts';
+import type {Rect} from './layout.ts';
 import {
-  BANNER_ROWS, END_CTA, HOOK_PROMPT, WINDOW, ctaShown, entranceOffset, entryRows, hookPromptShown, markAt, transcriptLayout, zoomAt,
-} from './layout.ts';
-import {CAPTION_ENTER, CARET_BLINK_FRAMES, DURATION, END, FONTS, HEIGHT, HIGHLIGHT_FRAMES, HOOK, SEAM_MARK, TERM, TERMINAL, WIDTH, beatAt, captionAt, planSummary, popupLines, screenAt, spinnerAt, statusText, stepLine, typedText, workingText} from './timeline.ts';
-import type {CliBeat, CliCaption, Entry, EntryKind, Screen, StepState, Typing} from './timeline.ts';
+  CAPTION_ENTER, CARET_BLINK_FRAMES, DESKTOP, DURATION, END, FONTS, HEIGHT, HIGHLIGHT_FRAMES, TERM, TERMINAL, WIDTH,
+  beatAt, captionAt, planSummary, popupLines, screenAt, spinnerAt, statusText, stepLine, typedText, workingText,
+} from './timeline.ts';
+import type {CliBeat, CliCaption, DesktopIcon, Entry, EntryKind, Glyph, Screen, StepState} from './timeline.ts';
 import {costAt, motionIn, progress, ramp} from './motion.ts';
 import {BRAND, TUI} from './palette.ts';
+import {robotPose} from './pose.ts';
+import {GuideRobot} from './robot.tsx';
 
 const MARK_G = staticFile('galliani-mark-g.png');
 const MARK_STAR = staticFile('galliani-mark-star.png');
-const blinkOn = (local: number) => Math.floor(local / CARET_BLINK_FRAMES) % 2 === 0;
+const blinkOn = (frame: number) => Math.floor(frame / CARET_BLINK_FRAMES) % 2 === 0;
 
 // ---------------------------------------------------------------- the background field (R58-R61)
 
-/** Soft blobs and wave bands in palette colors, drawn with SVG gradients only, outside the push. */
+/** Soft blobs and wave bands in palette colors, drawn with SVG gradients only. */
 const BackgroundField: React.FC<{frame: number}> = ({frame}) => {
   const {blobs, waves} = backgroundField(frame);
   return (
@@ -54,7 +62,7 @@ const BackgroundField: React.FC<{frame: number}> = ({frame}) => {
 
 // ---------------------------------------------------------------- brand pieces (outside the terminal)
 
-/** The mark: the G as drawn, with the star in orange (the only orange outside the hook caret and the field, R28). */
+/** The mark: the G as drawn, with the star in orange (the only orange outside the field, R28). */
 const Mark: React.FC<{size: number}> = ({size}) => {
   const fill: React.CSSProperties = {position: 'absolute', inset: 0, width: size, height: size};
   const star = `url(${MARK_STAR})`;
@@ -65,44 +73,6 @@ const Mark: React.FC<{size: number}> = ({size}) => {
     </div>
   );
 };
-
-const Centered: React.FC<{x: number; y: number; children: React.ReactNode; style?: React.CSSProperties}> = ({x, y, children, style}) => (
-  <div style={{position: 'absolute', left: x, top: y, transform: 'translate(-50%, -50%)', ...style}}>{children}</div>
-);
-
-/** The mark where layout.ts puts it: the seam spot, or moving aside in `hook-prompt` (R57). */
-const MarkAt: React.FC<{frame: number}> = ({frame}) => {
-  const mark = markAt(frame);
-  return mark ? (
-    <Centered x={mark.x} y={mark.y} style={{opacity: mark.opacity}}>
-      <Mark size={mark.size} />
-    </Centered>
-  ) : null;
-};
-
-const HookPrompt: React.FC<{frame: number; local: number}> = ({frame, local}) => (
-  <>
-    <MarkAt frame={frame} />
-    {hookPromptShown(frame) ? (
-      <div style={{position: 'absolute', left: HOOK_PROMPT.x, top: SEAM_MARK.y, transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', fontFamily: FONTS.mono, fontSize: HOOK.promptSize, lineHeight: 1, color: BRAND.text}}>
-        <span style={{fontWeight: 700}}>{TERM.promptLead}</span>
-        <span style={{width: '0.55em', height: '1em', marginLeft: '0.35em', background: BRAND.accent, opacity: blinkOn(local) ? 1 : 0}} />
-      </div>
-    ) : null}
-  </>
-);
-
-/** The mark and `galliacli`, centered as one block (R65); the line cuts out before the seam hold (R57). */
-const EndCard: React.FC<{frame: number}> = ({frame}) => (
-  <>
-    <MarkAt frame={frame} />
-    {ctaShown(frame) ? (
-      <div style={{position: 'absolute', left: 0, width: WIDTH, top: END_CTA.y, height: END_CTA.height, lineHeight: `${END_CTA.height}px`, textAlign: 'center', fontFamily: FONTS.mono, fontSize: END.wordSize, color: BRAND.text, letterSpacing: '-0.01em'}}>
-        {TERM.command}
-      </div>
-    ) : null}
-  </>
-);
 
 /** One caption, one element: it cuts in, or rises CAPTION_ENTER.slide px while fading in (R38-R41). */
 const Caption: React.FC<{caption: CliCaption; frame: number}> = ({caption, frame}) => {
@@ -124,6 +94,96 @@ const Caption: React.FC<{caption: CliCaption; frame: number}> = ({caption, frame
   );
 };
 
+/** The `galliacli` end card: the mark and the call to action, centered as one block (R65). */
+const EndCard: React.FC = () => (
+  <>
+    <div style={{position: 'absolute', left: END_MARK.x, top: END_MARK.y}}>
+      <Mark size={END.markSize} />
+    </div>
+    <div style={{position: 'absolute', left: 0, width: WIDTH, top: END_CTA.y, height: END_CTA.height, lineHeight: `${END_CTA.height}px`, textAlign: 'center', fontFamily: FONTS.mono, fontSize: END.wordSize, color: BRAND.text, letterSpacing: '-0.01em'}}>
+      {TERM.command}
+    </div>
+  </>
+);
+
+// ---------------------------------------------------------------- the desktop (R66-R71; BRAND only)
+
+/** Abstract generic glyphs, strokes only: a page, a folder, a square grid (R67). */
+const GLYPHS: Record<Glyph, React.ReactNode> = {
+  page: (
+    <>
+      <path d="M7 3h7l5 5v13H7z" />
+      <path d="M14 3v5h5M10 13h6M10 17h6" />
+    </>
+  ),
+  folder: <path d="M3 6.5h6.2l2 2.2H21V19H3z" />,
+  grid: (
+    <>
+      <rect x={4} y={4} width={7} height={7} rx={1.5} />
+      <rect x={13} y={4} width={7} height={7} rx={1.5} />
+      <rect x={4} y={13} width={7} height={7} rx={1.5} />
+      <rect x={13} y={13} width={7} height={7} rx={1.5} />
+    </>
+  ),
+};
+
+const Label: React.FC<{box: Rect; size: number; color: string; highlight?: boolean; children: string}> = ({box, size, color, highlight, children}) => (
+  <div style={{position: 'absolute', left: box.x, top: box.y, width: box.width, height: box.height, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
+    <span style={{padding: '0 10px', borderRadius: 7, lineHeight: `${box.height}px`, background: highlight ? BRAND.raised : 'transparent', fontFamily: FONTS.sans, fontSize: size, fontWeight: 500, color, letterSpacing: '-0.01em'}}>
+      {children}
+    </span>
+  </div>
+);
+
+const GenericIcon: React.FC<{icon: DesktopIcon}> = ({icon}) => {
+  const {tile} = icon;
+  return (
+    <>
+      <div style={{position: 'absolute', left: tile.x, top: tile.y, width: tile.width, height: tile.height, borderRadius: tile.width * DESKTOP.tileRadius, background: BRAND.surface, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+        <svg width={tile.width * 0.44} height={tile.width * 0.44} viewBox="0 0 24 24" fill="none" stroke={BRAND.muted} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round">
+          {icon.glyph ? GLYPHS[icon.glyph] : null}
+        </svg>
+      </div>
+      <Label box={icon.labelBox} size={DESKTOP.labelSize} color={BRAND.muted}>{icon.label}</Label>
+    </>
+  );
+};
+
+/** The hero icon: the mark in a raised tile, at its home slot, on the drag arc, or shrinking into the caret. Its
+ * size comes from the box, so nothing is CSS-scaled (R70, R71). */
+const HeroIcon: React.FC<{hero: HeroState}> = ({hero}) => {
+  const {tile, label} = heroBoxes(hero);
+  const radius = tile.width * DESKTOP.tileRadius;
+  return (
+    <div style={{position: 'absolute', inset: 0, opacity: hero.opacity}}>
+      <div style={{position: 'absolute', left: tile.x, top: tile.y, width: tile.width, height: tile.height, borderRadius: radius, background: BRAND.raised, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+        <Mark size={DESKTOP.markSize * hero.scale} />
+      </div>
+      {label ? <Label box={label} size={DESKTOP.heroLabelSize} color={BRAND.text} highlight={hero.hovered}>{DESKTOP.hero.label}</Label> : null}
+    </div>
+  );
+};
+
+/** An original arrow cursor: a BRAND.text fill with a BRAND.bg outline, its tip at (x, y) (R68). */
+const CURSOR_TIP = {x: 1.5, y: 1.5};
+const CursorArrow: React.FC<{x: number; y: number}> = ({x, y}) => {
+  const k = DESKTOP.cursorHeight / 30;
+  return (
+    <svg width={20 * k} height={30 * k} viewBox="0 0 20 30" style={{position: 'absolute', left: x - CURSOR_TIP.x * k, top: y - CURSOR_TIP.y * k, overflow: 'visible'}}>
+      <path d="M1.5 1.5 L1.5 23.6 L7 18.6 L10.8 27.4 L14.6 25.8 L10.9 17.2 L18.4 17.2 Z" fill={BRAND.text} stroke={BRAND.bg} strokeWidth={1.6} strokeLinejoin="round" />
+    </svg>
+  );
+};
+
+/** The generic icons, then the hero icon and the cursor above the window (R28). */
+const DesktopIcons: React.FC = () => (
+  <>
+    {DESKTOP.icons.map((icon) => (
+      <GenericIcon key={icon.label} icon={icon} />
+    ))}
+  </>
+);
+
 // ---------------------------------------------------------------- the terminal (TUI palette only, R27)
 
 const ROW = TERMINAL.row;
@@ -142,13 +202,15 @@ const Bordered: React.FC<{color: string; heavy?: boolean; title?: string; titleC
   );
 };
 
-const Cursor: React.FC<{local: number; char?: string}> = ({local, char}) => (
-  <span style={{background: blinkOn(local) ? TUI.fg : 'transparent', color: blinkOn(local) ? TUI.bg : TUI.muted}}>{char ?? ' '}</span>
+const Cursor: React.FC<{frame: number; char?: string}> = ({frame, char}) => (
+  <span style={{background: blinkOn(frame) ? TUI.fg : 'transparent', color: blinkOn(frame) ? TUI.bg : TUI.muted}}>{char ?? ' '}</span>
 );
 
-/** The window: an opaque TUI.bg fill at full opacity (R62), risen `dy` px during its entrance. */
-const TerminalFrame: React.FC<{dy: number; children: React.ReactNode}> = ({dy, children}) => (
-  <div style={{position: 'absolute', left: TERMINAL.x, top: TERMINAL.y, width: TERMINAL.width, height: TERMINAL.height, boxSizing: 'border-box', transform: dy ? `translateY(${dy}px)` : undefined, borderRadius: TERMINAL.radius, border: `${TERMINAL.border}px solid ${TUI.border}`, background: WINDOW.background, opacity: WINDOW.opacity, overflow: 'hidden', display: 'flex', flexDirection: 'column', fontFamily: FONTS.mono, fontSize: TERMINAL.fontSize, color: TUI.fg}}>
+/** The window at `rect`: an opaque TUI.bg fill at full opacity (R62). Its size comes from the rectangle, never from a
+ * CSS scale, and the border, radius, title bar and text size stay constant (R73). The focused border is drawn as an
+ * overlay, so focusing never shifts the content (R71). */
+const TerminalFrame: React.FC<{rect: Rect; focused: boolean; children?: React.ReactNode}> = ({rect, focused, children}) => (
+  <div style={{position: 'absolute', left: rect.x, top: rect.y, width: rect.width, height: rect.height, boxSizing: 'border-box', borderRadius: TERMINAL.radius, background: WINDOW.background, opacity: WINDOW.opacity, overflow: 'hidden', display: 'flex', flexDirection: 'column', fontFamily: FONTS.mono, fontSize: TERMINAL.fontSize, color: TUI.fg, padding: TERMINAL.border}}>
     <div style={{height: TERMINAL.titleBar, boxSizing: 'border-box', flex: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px', background: TUI.surface, borderBottom: `${TERMINAL.border}px solid ${TUI.border}`}}>
       {[0, 1, 2].map((i) => (
         <span key={i} style={{width: 12, height: 12, borderRadius: 6, background: TUI.border}} />
@@ -156,17 +218,17 @@ const TerminalFrame: React.FC<{dy: number; children: React.ReactNode}> = ({dy, c
       <span style={{flex: 1, textAlign: 'center', color: TUI.muted, fontSize: TERMINAL.fontSize * 0.8, marginRight: 52}}>{TERM.command}</span>
     </div>
     <div style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: `${TERMINAL.pad.top}px ${TERMINAL.pad.side}px ${TERMINAL.pad.bottom}px`}}>{children}</div>
+    <div style={{position: 'absolute', inset: 0, borderRadius: TERMINAL.radius, border: focused ? `${TERMINAL.focusBorder}px solid ${TUI.accent}` : `${TERMINAL.border}px solid ${TUI.border}`}} />
   </div>
 );
 
-const ShellShot: React.FC<{typing: Typing; local: number; dy: number}> = ({typing, local, dy}) => (
-  <TerminalFrame dy={dy}>
-    <div style={{...LINE, padding: '0 1ch'}}>
-      <span style={{color: TUI.muted}}>{TERM.shellPrompt}</span>
-      <span>{typedText(typing, local)}</span>
-      <Cursor local={local} />
-    </div>
-  </TerminalFrame>
+/** The shell line: the prompt, the typed command and the caret, blinking on the absolute frame so the seam holds. */
+const ShellLine: React.FC<{frame: number}> = ({frame}) => (
+  <div style={{...LINE, padding: '0 1ch'}}>
+    <span style={{color: TUI.muted}}>{TERM.shellPrompt}</span>
+    <span>{shellCommand(frame)}</span>
+    <Cursor frame={frame} />
+  </div>
 );
 
 const ENTRY_COLORS: Record<EntryKind, {glyph: string; text: string; glyphBold?: boolean; bold?: boolean}> = {
@@ -295,11 +357,11 @@ const PromptBox: React.FC<{prompt: NonNullable<Screen['prompt']>; local: number}
         {text ? (
           <span>
             {text}
-            <Cursor local={local} />
+            <Cursor frame={local} />
           </span>
         ) : (
           <span style={{color: TUI.muted}}>
-            <Cursor local={local} char={prompt.placeholder[0]} />
+            <Cursor frame={local} char={prompt.placeholder[0]} />
             {prompt.placeholder.slice(1)}
           </span>
         )}
@@ -318,7 +380,7 @@ const TuiScreen: React.FC<{beat: CliBeat; local: number; frame: number}> = ({bea
   const card = motionIn(beat, 'card');
   const rise = card ? (card.slide ?? 0) * (1 - progress(card, frame)) : 0;
   return (
-    <TerminalFrame dy={entranceOffset(frame)}>
+    <>
       <div style={{height: areaRows * ROW, flex: 'none', display: 'flex'}}>
         <Transcript entries={screen.entries} offset={offsetRows * ROW} />
         <PlanPanel screen={screen} frame={frame} since={since} />
@@ -331,26 +393,11 @@ const TuiScreen: React.FC<{beat: CliBeat; local: number; frame: number}> = ({bea
         {screen.prompt ? <PromptBox prompt={screen.prompt} local={local} /> : null}
         <div style={{...LINE, marginTop: ROW / 2, padding: '0 2ch', color: TUI.muted}}>{statusText({...screen.status, cost})}</div>
       </div>
-    </TerminalFrame>
+    </>
   );
 };
 
 // ---------------------------------------------------------------- composition
-
-const Shot: React.FC<{beat: CliBeat; local: number; frame: number}> = ({beat, local, frame}) => {
-  switch (beat.shot.kind) {
-    case 'mark':
-      return <MarkAt frame={frame} />;
-    case 'hook-prompt':
-      return <HookPrompt frame={frame} local={local} />;
-    case 'shell':
-      return <ShellShot typing={beat.shot.typing} local={local} dy={entranceOffset(frame)} />;
-    case 'terminal':
-      return <TuiScreen beat={beat} local={local} frame={frame} />;
-    case 'end':
-      return <EndCard frame={frame} />;
-  }
-};
 
 /** `fieldShift` (default 0) only offsets the field for the review still of an early beat over a later field (R45). */
 export const GallianiCli: React.FC<{fieldShift?: number}> = ({fieldShift = 0}) => {
@@ -358,14 +405,23 @@ export const GallianiCli: React.FC<{fieldShift?: number}> = ({fieldShift = 0}) =
   const beat = beatAt(frame);
   const local = frame - beat.start;
   const caption = captionAt(frame);
-  const zoom = zoomAt(frame);
-  const origin = beat.push?.origin;
+  const rect = terminalRect(frame);
+  const hero = heroIconAt(frame);
+  const cursor = cursorAt(frame);
+  const robot = robotPose(frame);
   return (
     <AbsoluteFill style={{background: BRAND.bg, overflow: 'hidden'}}>
       <BackgroundField frame={(frame + fieldShift) % DURATION} />
-      <AbsoluteFill style={origin && zoom !== 1 ? {transform: `scale(${zoom})`, transformOrigin: `${origin.x}px ${origin.y}px`} : undefined}>
-        <Shot beat={beat} local={local} frame={frame} />
-      </AbsoluteFill>
+      {desktopShown(frame) ? <DesktopIcons /> : null}
+      {rect ? (
+        <TerminalFrame rect={rect} focused={windowFocused(frame)}>
+          {beat.shot.kind === 'terminal' ? (tuiShown(frame) ? <TuiScreen beat={beat} local={local} frame={frame} /> : null) : <ShellLine frame={frame} />}
+        </TerminalFrame>
+      ) : null}
+      {endCardShown(frame) ? <EndCard /> : null}
+      {hero ? <HeroIcon hero={hero} /> : null}
+      {cursor ? <CursorArrow x={cursor.x} y={cursor.y} /> : null}
+      {robot ? <GuideRobot pose={robot} /> : null}
       {caption ? <Caption caption={caption} frame={frame} /> : null}
     </AbsoluteFill>
   );

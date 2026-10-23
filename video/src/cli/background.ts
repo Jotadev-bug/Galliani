@@ -1,7 +1,7 @@
 // The GallianiCli background field (spec 015 R58-R61, Decision 0037): the BRAND.bg base, three soft radial blobs
-// and three sine-wave bands. A pure function of the frame, never of the beat. Every animated value is
-// base + amp * cos(2π f / period) with a period of 8-12 s that divides DURATION, so the field turns at frame 0,
-// moves at a constant phase rate, and equals itself at DURATION (the loop seam, R57).
+// and three sine-wave bands. A pure function of the frame, never of the beat. Every animated value is built from
+// cos(2π f / period) with a period of 240 or 320 frames (8 or 10.7 s), both dividing DURATION, so the field moves at a
+// constant phase rate and equals itself at DURATION (the loop seam, R57).
 import {BRAND, TUI} from './palette.ts';
 import {DURATION, WIDTH} from './timeline.ts';
 
@@ -23,12 +23,14 @@ export interface Osc {
   amp: number;
   period: number; // frames
 }
-// An accent blob's opacity: `peak * max(0, gate * cos)^2`. Orange (gate 1) shows near frame 0 and the end, with
-// the mark; teal (gate -1) shows in between, so the two never show at once (R61).
+// An accent blob's opacity: `peak * max(0, gate * cos(f / period))^2`, times `max(0, cos(f / window))^2` when it has a
+// window. Orange (gate 1) shows near frame 0 and the end, with the mark. Teal (gate -1, windowed by a 240-frame
+// cosine) shows only in short spells mid-video, never with the hero icon or the end card, and never with orange (R61).
 export interface Gate {
   peak: number;
   period: number;
   gate: 1 | -1;
+  window?: number; // a second period; both divide DURATION
 }
 export interface BlobSpec {
   color: FieldColor;
@@ -49,15 +51,15 @@ export interface WaveSpec {
 }
 
 export const BLOBS: readonly BlobSpec[] = [
-  {color: 'border', cx: {base: 980, amp: 220, period: 360}, cy: {base: 520, amp: 70, period: 240}, r: {base: 1000, amp: 60, period: 360}, opacity: {base: 0.13, amp: 0.03, period: 240}},
-  {color: 'accent', cx: {base: 1500, amp: 160, period: 240}, cy: {base: 230, amp: 90, period: 360}, r: {base: 820, amp: 50, period: 360}, opacity: {peak: 0.16, period: 360, gate: 1}},
-  {color: 'agent', cx: {base: 380, amp: 160, period: 360}, cy: {base: 880, amp: 80, period: 240}, r: {base: 840, amp: 50, period: 240}, opacity: {peak: 0.15, period: 360, gate: -1}},
+  {color: 'border', cx: {base: 1080, amp: 220, period: 320}, cy: {base: 520, amp: 70, period: 240}, r: {base: 1000, amp: 60, period: 320}, opacity: {base: 0.13, amp: 0.03, period: 240}},
+  {color: 'accent', cx: {base: 1500, amp: 160, period: 240}, cy: {base: 230, amp: 90, period: 320}, r: {base: 720, amp: 50, period: 320}, opacity: {peak: 0.16, period: 320, gate: 1}},
+  {color: 'agent', cx: {base: 640, amp: 160, period: 320}, cy: {base: 880, amp: 80, period: 240}, r: {base: 840, amp: 50, period: 240}, opacity: {peak: 0.15, period: 320, gate: -1, window: 240}},
 ];
 
 export const WAVES: readonly WaveSpec[] = [
-  {color: 'muted', opacity: 0.05, y: {base: 250, amp: 20, period: 360}, amplitude: {base: 60, amp: 14, period: 240}, wavelength: 2000, phase: 4.0, sway: {px: 90, period: 360}, depth: 340},
-  {color: 'muted', opacity: 0.07, y: {base: 790, amp: 24, period: 240}, amplitude: {base: 52, amp: 12, period: 360}, wavelength: 1600, phase: 0.4, sway: {px: 240, period: 360}, depth: 300},
-  {color: 'border', opacity: 0.1, y: {base: 870, amp: 18, period: 360}, amplitude: {base: 40, amp: 10, period: 240}, wavelength: 1150, phase: 2.1, sway: {px: 150, period: 240}, depth: 240},
+  {color: 'muted', opacity: 0.05, y: {base: 250, amp: 20, period: 320}, amplitude: {base: 60, amp: 14, period: 240}, wavelength: 2000, phase: 4.0, sway: {px: 90, period: 320}, depth: 340},
+  {color: 'muted', opacity: 0.07, y: {base: 790, amp: 24, period: 240}, amplitude: {base: 52, amp: 12, period: 320}, wavelength: 1600, phase: 0.4, sway: {px: 240, period: 320}, depth: 300},
+  {color: 'border', opacity: 0.1, y: {base: 870, amp: 18, period: 320}, amplitude: {base: 40, amp: 10, period: 240}, wavelength: 1150, phase: 2.1, sway: {px: 150, period: 240}, depth: 240},
 ];
 
 // Opacity along a blob's radius and down a band, as [offset, factor] gradient stops.
@@ -65,15 +67,16 @@ export const BLOB_STOPS: readonly (readonly [number, number])[] = [[0, 1], [0.35
 export const BAND_STOPS: readonly (readonly [number, number])[] = [[0, 1], [0.35, 0.55], [1, 0]];
 
 export const FIELD_PERIODS: readonly number[] = [
-  ...BLOBS.flatMap((b) => [b.cx.period, b.cy.period, b.r.period, b.opacity.period]),
+  ...BLOBS.flatMap((b) => [b.cx.period, b.cy.period, b.r.period, b.opacity.period, ...('window' in b.opacity && b.opacity.window ? [b.opacity.window] : [])]),
   ...WAVES.flatMap((w) => [w.y.period, w.amplitude.period, w.sway.period]),
 ];
 
 /** The phase of a component at a frame: a constant step of 2π / period per frame. */
 export const phaseAt = (period: number, frame: number) => (2 * Math.PI * (frame % DURATION)) / period;
 const osc = (o: Osc, frame: number) => o.base + o.amp * Math.cos(phaseAt(o.period, frame));
+const lobe = (sign: number, period: number, frame: number) => Math.max(0, sign * Math.cos(phaseAt(period, frame))) ** 2;
 const opacityAt = (o: Osc | Gate, frame: number) =>
-  'gate' in o ? o.peak * Math.max(0, o.gate * Math.cos(phaseAt(o.period, frame))) ** 2 : osc(o, frame);
+  'gate' in o ? o.peak * lobe(o.gate, o.period, frame) * (o.window ? lobe(1, o.window, frame) : 1) : osc(o, frame);
 
 export interface Blob {
   color: FieldColor;

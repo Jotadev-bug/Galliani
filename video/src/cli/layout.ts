@@ -1,18 +1,13 @@
-// GallianiCli layout (spec 015 R57, R62-R65): where the terminal, its transcript rows, the mark and the end card sit
-// at each frame. Pure, so the framing is tested without rendering; the components draw exactly these boxes.
+// GallianiCli layout (spec 015 R57, R62-R65, R73): where the terminal, its transcript rows and the end card sit at
+// each frame, and the seam state. Pure, so the framing is tested without rendering; the components draw these boxes.
 import {TUI} from './palette.ts';
-import {
-  END, HEIGHT, HOOK, SEAM_MARK, TERM, TERMINAL, WIDTH, beatAt, popupLines, screenAt,
-} from './timeline.ts';
-import type {Entry, Screen} from './timeline.ts';
+import {DESKTOP, END, HEIGHT, TERM, TERMINAL, WIDTH, beatAt, popupLines, screenAt} from './timeline.ts';
+import type {Box, Entry, Screen} from './timeline.ts';
 import {motionIn, progress} from './motion.ts';
+import {cursorAt, desktopShown, heroIconAt, shellCommand, windowFocused} from './desktop.ts';
+import {robotPose} from './pose.ts';
 
-export interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+export type Rect = Box;
 
 const ROW = TERMINAL.row;
 
@@ -21,31 +16,27 @@ export const WINDOW = {background: TUI.bg, opacity: 1} as const;
 
 // ---------------------------------------------------------------- the terminal window
 
-/** The terminal window at an absolute frame, after the entrance slide and the push zoom; null when none shows. */
+const lerpRect = (a: Rect, b: Rect, t: number): Rect => ({
+  x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, width: a.width + (b.width - a.width) * t, height: a.height + (b.height - a.height) * t,
+});
+const ACT3: Rect = {x: TERMINAL.x, y: TERMINAL.y, width: TERMINAL.width, height: TERMINAL.height};
+
+/** The window at an absolute frame: its desktop rectangle, the `expand` toward the Act 3 frame, the Act 3 frame, or
+ * null on the end card. The rectangle is interpolated, never CSS-scaled (R73). */
 export function terminalRect(frame: number): Rect | null {
   const beat = beatAt(frame);
-  if (beat.shot.kind !== 'shell' && beat.shot.kind !== 'terminal') return null;
-  const rect = {x: TERMINAL.x, y: TERMINAL.y + entranceOffset(frame), width: TERMINAL.width, height: TERMINAL.height};
-  const z = zoomAt(frame);
-  const origin = beat.push?.origin ?? {x: 0, y: 0};
-  return {
-    x: origin.x + (rect.x - origin.x) * z,
-    y: origin.y + (rect.y - origin.y) * z,
-    width: rect.width * z,
-    height: rect.height * z,
-  };
+  if (beat.shot.kind === 'end') return null;
+  if (beat.shot.kind !== 'terminal') return {...DESKTOP.window};
+  const expand = motionIn(beat, 'expand');
+  return expand ? lerpRect(DESKTOP.window, ACT3, progress(expand, frame)) : ACT3;
 }
 
-/** How far below its place the window still is during its entrance (R38). */
-export function entranceOffset(frame: number): number {
-  const entrance = motionIn(beatAt(frame), 'entrance');
-  return entrance ? (entrance.slide ?? 0) * (1 - progress(entrance, frame)) : 0;
-}
-
-export function zoomAt(frame: number): number {
+/** The TUI content (banner, transcript, prompt, status) shows once the window has finished growing (R73). */
+export function tuiShown(frame: number): boolean {
   const beat = beatAt(frame);
-  const push = motionIn(beat, 'push');
-  return push?.zoom ? push.zoom.from + (push.zoom.to - push.zoom.from) * progress(push, frame) : 1;
+  if (beat.shot.kind !== 'terminal') return false;
+  const expand = motionIn(beat, 'expand');
+  return !expand || frame >= expand.start + expand.frames;
 }
 
 /** The content box inside the window border, title bar and padding, relative to the window. */
@@ -140,7 +131,7 @@ export function visibleRows(frame: number): {tops: number[]; areaHeight: number}
   return {tops, areaHeight: areaRows * ROW};
 }
 
-// ---------------------------------------------------------------- the mark and the end card (R57, R65)
+// ---------------------------------------------------------------- the end card (R65)
 
 const blockHeight = END.markSize + END.gap + END.wordLine;
 const blockTop = HEIGHT / 2 - blockHeight / 2;
@@ -149,37 +140,34 @@ const ctaWidth = TERM.command.length * END.wordSize * 0.6;
 /** The end card block (mark, gap, `galliacli` line) and its call-to-action line. */
 export const END_BLOCK: Rect = {x: WIDTH / 2 - Math.max(END.markSize, ctaWidth) / 2, y: blockTop, width: Math.max(END.markSize, ctaWidth), height: blockHeight};
 export const END_CTA: Rect = {x: WIDTH / 2 - ctaWidth / 2, y: blockTop + END.markSize + END.gap, width: ctaWidth, height: END.wordLine};
-export const END_MARK_Y = blockTop + END.markSize / 2;
+export const END_MARK: Rect = {x: WIDTH / 2 - END.markSize / 2, y: blockTop, width: END.markSize, height: END.markSize};
 
-/** The hook prompt `>` line, beside the moved mark. */
-export const HOOK_PROMPT: Rect = {x: HOOK.promptX, y: SEAM_MARK.y - HOOK.promptSize / 2, width: HOOK.promptSize * 1.2, height: HOOK.promptSize};
+/** The end card (the mark and `galliacli`) shows for the whole `end-card` beat. */
+export const endCardShown = (frame: number) => beatAt(frame).shot.kind === 'end';
 
-export interface MarkState {
-  x: number; // center
-  y: number;
-  size: number;
-  opacity: number;
+// ---------------------------------------------------------------- the seam state (R57)
+
+export interface SceneState {
+  icons: {label: string; tile: Rect}[] | null;
+  hero: {center: {x: number; y: number}; scale: number; opacity: number; hovered: boolean; home: boolean} | null;
+  window: {rect: Rect; focused: boolean; command: string} | null;
+  cursor: boolean;
+  robot: boolean;
+  tui: boolean;
+  cta: boolean;
 }
 
-/** The mark at an absolute frame: in the seam spot, moving aside in `hook-prompt`, or not shown. */
-export function markAt(frame: number): MarkState | null {
-  const beat = beatAt(frame);
-  const seam = {x: SEAM_MARK.x, y: SEAM_MARK.y, size: SEAM_MARK.size, opacity: 1};
-  if (beat.shot.kind === 'mark' || beat.shot.kind === 'end') return seam;
-  if (beat.shot.kind !== 'hook-prompt') return null;
-  const t = progress(motionIn(beat, 'move'), frame);
-  return {...seam, x: seam.x + (HOOK.asideX - seam.x) * t, size: seam.size + (HOOK.asideSize - seam.size) * t};
-}
-
-/** The hook prompt appears once the mark has moved aside. */
-export function hookPromptShown(frame: number): boolean {
-  const beat = beatAt(frame);
-  const move = motionIn(beat, 'move');
-  return beat.shot.kind === 'hook-prompt' && (!move || frame >= move.start + move.frames);
-}
-
-/** The `galliacli` call to action shows for END.ctaFrames, then the card holds in the seam state. */
-export function ctaShown(frame: number): boolean {
-  const beat = beatAt(frame);
-  return beat.shot.kind === 'end' && frame - beat.start < END.ctaFrames;
+/** What B-AC18 compares at frame 0 and the last frame, as data rather than pixels. */
+export function sceneState(frame: number): SceneState {
+  const hero = heroIconAt(frame);
+  const rect = terminalRect(frame);
+  return {
+    icons: desktopShown(frame) ? DESKTOP.icons.map((i) => ({label: i.label, tile: i.tile})) : null,
+    hero: hero && {center: hero.center, scale: hero.scale, opacity: hero.opacity, hovered: hero.hovered, home: hero.home},
+    window: rect && {rect, focused: windowFocused(frame), command: tuiShown(frame) ? '(tui)' : shellCommand(frame)},
+    cursor: cursorAt(frame) !== null,
+    robot: robotPose(frame) !== null,
+    tui: tuiShown(frame),
+    cta: endCardShown(frame),
+  };
 }

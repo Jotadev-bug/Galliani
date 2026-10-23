@@ -1,14 +1,26 @@
-// GallianiCli motion (spec 015 R38, R39, R49-R53, R56). Every foreground motion is a CliMotion derived from the
+// GallianiCli motion (spec 015 R38, R39, R49-R53, R56, R78). Every foreground motion is a CliMotion derived from the
 // scene data in timeline.ts; components animate nothing that is not in MOTIONS. Pure, so tests check the budget.
 import {Easing, interpolate} from 'remotion';
 import {
-  BEATS, CAPTIONS, CAPTION_ENTER, CARD_ENTER_FRAMES, CARD_ENTER_ROWS, END, HIGHLIGHT_FRAMES, TERMINAL, charTimes,
+  BEATS, CAPTIONS, CAPTION_ENTER, CARD_ENTER_FRAMES, CARD_ENTER_ROWS, HIGHLIGHT_FRAMES, POSES, TERMINAL, charTimes,
   screenAt,
 } from './timeline.ts';
-import type {CliBeat, CliCaption, Screen, Typing} from './timeline.ts';
+import type {CliBeat, CliCaption, Pose, Screen, TargetId, Typing} from './timeline.ts';
 
-export type MotionKind = 'caption' | 'push' | 'entrance' | 'move' | 'count' | 'card';
-export const EMPHASIZED: readonly MotionKind[] = ['push', 'entrance', 'move', 'count', 'card'];
+export type MotionKind = 'caption' | 'cursor' | 'drag' | 'absorb' | 'expand' | 'count' | 'card' | 'gesture';
+export const EMPHASIZED: readonly MotionKind[] = ['cursor', 'drag', 'absorb', 'expand', 'count', 'card', 'gesture'];
+
+// R39: the only easings. `inOutCubic` is for `cursor` and `drag` only (a hand-held drag starts from rest).
+export const EASINGS = {
+  outExpo: Easing.out(Easing.exp),
+  outQuart: Easing.out(Easing.poly(4)),
+  inOutCubic: Easing.inOut(Easing.poly(3)),
+} as const;
+export type EasingName = keyof typeof EASINGS;
+const EASING_OF: Record<MotionKind, EasingName> = {
+  caption: 'outQuart', cursor: 'inOutCubic', drag: 'inOutCubic', absorb: 'outExpo', expand: 'outExpo',
+  count: 'outQuart', card: 'outQuart', gesture: 'outQuart',
+};
 
 export interface CliMotion {
   kind: MotionKind;
@@ -16,48 +28,58 @@ export interface CliMotion {
   target: string; // the element that moves
   start: number; // absolute frame
   frames: number;
+  easing: EasingName;
   slide?: number; // px
-  zoom?: {from: number; to: number};
+  pose?: Pose; // gesture only
+  aim?: TargetId; // gesture only: the element box it turns toward
+  legs?: readonly number[]; // gesture only: frames per leg
 }
 
-// R39: out-quart for every motion, never linear, never overshooting.
-const OUT = Easing.out(Easing.poly(4));
-
-/** 0 before `start`, 1 from `start + frames` on, eased in between. */
-export function ramp(frame: number, start: number, frames: number): number {
-  if (frames <= 0) return frame >= start ? 1 : 0;
-  return interpolate(frame, [start, start + frames], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: OUT});
+/** 0 before `start`, exactly 1 from `start + frames` on (Easing.exp alone stops just short), eased in between. */
+export function ramp(frame: number, start: number, frames: number, easing: EasingName = 'outQuart'): number {
+  if (frames <= 0 || frame >= start + frames) return frame >= start ? 1 : 0;
+  return interpolate(frame, [start, start + frames], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: EASINGS[easing]});
 }
 
 export function deriveMotions(beats: readonly CliBeat[], captions: readonly CliCaption[]): CliMotion[] {
   const beatOf = (frame: number) => beats.find((b) => frame >= b.start && frame < b.start + b.duration) ?? beats[0];
   const out: CliMotion[] = [];
+  const add = (kind: MotionKind, b: CliBeat, target: string, at: number, frames: number, extra: Partial<CliMotion> = {}) =>
+    out.push({kind, beat: b.id, target, start: b.start + at, frames, easing: EASING_OF[kind], ...extra});
   for (const c of captions) {
-    if (c.enterFrames > 0) {
-      out.push({kind: 'caption', beat: beatOf(c.start).id, target: 'caption', start: c.start, frames: c.enterFrames, slide: CAPTION_ENTER.slide});
-    }
+    if (c.enterFrames > 0) add('caption', beatOf(c.start), 'caption', c.start - beatOf(c.start).start, c.enterFrames, {slide: CAPTION_ENTER.slide});
   }
   for (const b of beats) {
-    if (b.push) out.push({kind: 'push', beat: b.id, target: 'camera', start: b.start + b.push.at, frames: b.push.frames, zoom: {from: b.push.from, to: b.push.to}});
-    if (b.entrance) out.push({kind: 'entrance', beat: b.id, target: 'window', start: b.start + b.entrance.at, frames: b.entrance.frames, slide: b.entrance.slide});
-    if (b.move) out.push({kind: 'move', beat: b.id, target: 'mark', start: b.start + b.move.at, frames: b.move.frames});
-    if (b.count) out.push({kind: 'count', beat: b.id, target: 'cost', start: b.start + b.count.at, frames: b.count.frames});
-    if (b.card) out.push({kind: 'card', beat: b.id, target: 'card', start: b.start + b.card.at, frames: CARD_ENTER_FRAMES, slide: CARD_ENTER_ROWS * TERMINAL.row});
+    // The cursor and the dragged icon count as one element (R50).
+    if (b.cursor) add('cursor', b, 'cursor', b.cursor.at, b.cursor.frames);
+    if (b.drag) add('drag', b, 'cursor', b.drag.at, b.drag.frames);
+    if (b.absorb) add('absorb', b, 'icon', b.absorb.at, b.absorb.frames);
+    if (b.expand) add('expand', b, 'window', b.expand.at, b.expand.frames);
+    if (b.count) add('count', b, 'cost', b.count.at, b.count.frames);
+    if (b.card) add('card', b, 'card', b.card.at, CARD_ENTER_FRAMES, {slide: CARD_ENTER_ROWS * TERMINAL.row});
+    if (b.gesture) {
+      const legs = POSES[b.gesture.pose].legs;
+      add('gesture', b, 'robot', b.gesture.at, legs.reduce((s, f) => s + f, 0), {pose: b.gesture.pose, aim: b.gesture.target, legs});
+    }
   }
   return out.sort((a, b) => a.start - b.start);
 }
 
 export const MOTIONS: readonly CliMotion[] = deriveMotions(BEATS, CAPTIONS);
+export const GESTURES: readonly CliMotion[] = MOTIONS.flatMap((m) => (m.kind === 'gesture' ? [m] : []));
 
 /** The motion of `kind` in this beat, if any. */
 export function motionIn(beat: CliBeat, kind: MotionKind, motions: readonly CliMotion[] = MOTIONS): CliMotion | undefined {
   return motions.find((m) => m.beat === beat.id && m.kind === kind);
 }
 
-/** Eased progress of a motion at an absolute frame; 1 when there is no motion. */
+/** Eased progress of a motion at an absolute frame, with its own easing; 1 when there is no motion. */
 export function progress(motion: CliMotion | undefined, frame: number): number {
-  return motion ? ramp(frame, motion.start, motion.frames) : 1;
+  return motion ? ramp(frame, motion.start, motion.frames, motion.easing) : 1;
 }
+
+/** The frame a motion ends: its last moving frame plus one. */
+export const endOf = (m: CliMotion) => m.start + m.frames;
 
 // ---------------------------------------------------------------- what is on screen at a local frame
 
@@ -73,13 +95,21 @@ export function typingAt(beat: CliBeat, local: number): {target: 'shell' | 'prom
 export function costAt(beat: CliBeat, local: number, screen: Screen): number {
   const count = beat.count;
   if (!count || local < count.at) return screen.status.cost;
-  return count.from + (count.to - count.from) * ramp(local, count.at, count.frames);
+  return count.from + (count.to - count.from) * ramp(local, count.at, count.frames, EASING_OF.count);
 }
 
 // ---------------------------------------------------------------- budget (R49-R51)
 
-/** The elements animating at an absolute frame: active motions plus a string being typed (R50). */
-export function activeAt(frame: number, motions: readonly CliMotion[] = MOTIONS, beats: readonly CliBeat[] = BEATS): string[] {
+/** The robot is on screen from the `launch-expand` content cut to the end of `end-card` (R76). */
+export function robotShownAt(frame: number, beats: readonly CliBeat[] = BEATS, motions: readonly CliMotion[] = MOTIONS): boolean {
+  const expand = beats.find((b) => b.id === 'launch-expand');
+  const end = beats.find((b) => b.id === 'end-card');
+  const cut = expand ? (motions.find((m) => m.beat === expand.id && m.kind === 'expand') ?? {start: expand.start, frames: 0}) : null;
+  return !!cut && !!end && frame >= cut.start + cut.frames && frame < end.start + end.duration;
+}
+
+/** The elements that move at an absolute frame: active motions (gestures included) and a string being typed. */
+export function movingAt(frame: number, motions: readonly CliMotion[] = MOTIONS, beats: readonly CliBeat[] = BEATS): string[] {
   const active = new Set<string>();
   for (const m of motions) if (frame >= m.start && frame < m.start + m.frames) active.add(m.target);
   const beat = beats.find((b) => frame >= b.start && frame < b.start + b.duration);
@@ -90,6 +120,13 @@ export function activeAt(frame: number, motions: readonly CliMotion[] = MOTIONS,
       active.add(typing.target);
     }
   }
+  return [...active];
+}
+
+/** The elements animating at an absolute frame for R50: the moving ones, plus the robot whenever it is on screen. */
+export function activeAt(frame: number, motions: readonly CliMotion[] = MOTIONS, beats: readonly CliBeat[] = BEATS): string[] {
+  const active = new Set(movingAt(frame, motions, beats));
+  if (robotShownAt(frame, beats, motions)) active.add('robot');
   return [...active];
 }
 
@@ -106,8 +143,8 @@ export function changeFrames(beat: CliBeat, motions: readonly CliMotion[] = MOTI
     const typing = typingAt(beat, local);
     if (typing) for (const t of charTimes(typing.typing)) frames.add(Math.ceil(t));
   }
+  // A motion's end is a change too: the hover state, the drop's end, the content cut after the expand.
   for (const m of motions) if (m.beat === beat.id) frames.add(m.start + m.frames - beat.start);
-  if (beat.shot.kind === 'end') frames.add(END.ctaFrames);
   return new Set([...frames].flatMap((f) => (f >= 0 && f < beat.duration ? [f] : [])));
 }
 
@@ -117,7 +154,7 @@ export function longestHold(beat: CliBeat, motions: readonly CliMotion[] = MOTIO
   let run = 0;
   let best = 0;
   for (let local = 0; local < beat.duration; local++) {
-    if (activeAt(beat.start + local, motions, beats).length > 0) run = 0;
+    if (movingAt(beat.start + local, motions, beats).length > 0) run = 0;
     else run = changes.has(local) ? 1 : run + 1;
     best = Math.max(best, run);
   }
@@ -125,6 +162,7 @@ export function longestHold(beat: CliBeat, motions: readonly CliMotion[] = MOTIO
 }
 
 export const MIN_HOLD = 8;
+export const MAX_ANIMATING = 3;
 
 /** Every R49-R51 breach in a timeline; empty when the budget holds. */
 export function budgetViolations(beats: readonly CliBeat[] = BEATS, motions: readonly CliMotion[] = MOTIONS): string[] {
@@ -136,7 +174,7 @@ export function budgetViolations(beats: readonly CliBeat[] = BEATS, motions: rea
     if (hold < MIN_HOLD) out.push(`${b.id}: longest hold ${hold} frames`);
     for (let f = b.start; f < b.start + b.duration; f++) {
       const active = activeAt(f, motions, beats);
-      if (active.length > 2) out.push(`frame ${f}: ${active.join(', ')} animate at once`);
+      if (active.length > MAX_ANIMATING) out.push(`frame ${f}: ${active.join(', ')} animate at once`);
     }
   }
   return out;
