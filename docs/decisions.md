@@ -404,3 +404,39 @@ Status: Accepted (2026-10-23). The user directed it after viewing the built vide
 - **Framing.** Pending fixes are folded in as criteria: the terminal stays inside the safe margins at every frame (the approval beat was cropped), the transcript scrolls in whole rows, and the end card is centered.
 - **Ownership.** ui-engineer does V2c in `video/` only. qa-security reviews the privacy and determinism criteria on the new code. The user reviews the stills.
 - **Reversal.** Drop R49-R65 and `background.ts`, and restore R28 and R37-R39 from git history.
+
+## Decision 0038: GallianiCli v3: a drag-to-terminal intro, the showcase robot as guide, a 4K final (spec 015 Part B, R66-R82)
+
+Status: Accepted (2026-10-23). The user directed it after viewing the reworked preview: "I see it a bit of low quality and I don't quite like the intro where the Galliani logo does a > and then appears the square. Make something like the Galliani logo inside a desktop icon and a mouse dragging it to the terminal. After that it amazingly loads the full terminal of Galliani with that showcase and the robot from the previous video (the desktop one) guides the terminal. Upgrade the resolution and improve the description I gave you to a general better idea." Decision 0037's restraint still applies. The 1x preview and 4K stills need the user's approval before the final render (R45, B-AC14).
+
+- **Concept.** The working title is "Drop Galliani into your terminal." The hook is one continuous gesture in four acts:
+  - Desktop, about 6 s: a cursor drags the Galliani icon, which is the mark in a tile, into a quiet terminal window.
+  - Load, 3 s: `galliacli` is typed, and the window grows into the full TUI.
+  - The robot guides: the existing real-UI beats, with one robot gesture per beat at most.
+  - Close: the end card, the robot waves, and a cut back to the opening desktop so the video loops.
+  The seven captions and the real terminal strings are unchanged. The storyboard (R46) is replaced: `hook-mark`, `hook-prompt` and `launch-banner` give way to `desk-idle`, `desk-hover`, `desk-drag`, `desk-drop` and `launch-expand`, and `approval-wait` and `end-seam` are added. The reference total is 960 frames (32 s).
+- **Changes to the orchestrator's concept.**
+  - `galliacli` is typed in the dropped-on window before the load, so "One command." shows a command (R72).
+  - The banner is not typed in, because the TUI draws it whole (R34; Open Question B4).
+  - The drop's border "highlight" is the focused-border state, held through the load, rather than a flash (R71).
+  - The robot cuts in with the TUI content, not with its own entrance, so `launch-expand` keeps a single emphasized motion.
+- **Motion budget, amended rather than loosened in kind.** At most one emphasized motion per beat stays. The emphasized kinds are now `cursor`, `drag`, `absorb`, `expand`, `count`, `card` and `gesture`. `push`, `entrance` and `move` are removed, because nothing in the new storyboard needs them. A robot gesture is the beat's emphasized motion, allowed only where the terminal changes by cut, instant row or typing. The per-frame cap rises from two to three animating elements, because the robot counts as one element on every frame it is on screen. The ambient motions are named explicitly: the field, the caret blink, the spinner and the robot's idle breathing and blinks. Holds of 8 frames or more, hard cuts, the 15-frame grid, the loop seam and every banned kind stay.
+  To keep one emphasized motion per beat, Act 3 gives up both camera pushes and the `plan-steps` count. A still terminal also means the robot never overlaps it (Open Question B5). The approval split into `approval-card` (card), `approval-wait` (raise) and `approval-answer` (lower) gives each motion its own beat.
+  Rejected: letting gestures stack with counts or pushes, which is the busy motion Decision 0037 removed.
+- **Easing exception.** `Easing.inOut(Easing.poly(3))` is allowed for `cursor` and `drag` only. A hand-held drag starts from rest, and an ease-out drag reads as a flick. It does not overshoot. Every easing comes from one `EASINGS` table, so the scan stays exact.
+- **Robot: reused, not redrawn, not imported.** `video/src/Robot.tsx` reads the showcase timeline and carries a `drop-shadow`, a cheer wiggle, free-running sways and an antenna pulse, all of which Part B bans. So `src/cli/robot.tsx` copies the shape geometry into `ROBOT_SHAPES`, and a drift test checks it against `Robot.tsx`. `Robot.tsx` stays untouched. The CLI robot keeps only breathing and scheduled blinks between gestures. Rejected: importing `Robot.tsx`, which would break the R39 and R58 rules, and refactoring it into a shared figure, which would change a showcase file.
+- **Robot colors: the one palette exception.** `palette.ts` gains `ROBOT`, the five `GREY` values of `Robot.tsx` with a drift test, used only by `robot.tsx`. The thruster uses `ROBOT.eye` in place of `#FFFFFF`, so no sixth value is added. Recoloring the robot to `BRAND` neutrals would make it a different character than the one the user asked for, and these are near-neutral greys that add no hue. Every other rule of Decision 0036's palette is unchanged.
+- **Desktop and safety.** The desktop has no OS chrome, real app names, logos or trademarks. Its generic labels come from a fixed list (`Notes`, `Files`, `Projects`), the cursor is an original SVG arrow, and nothing new goes in `video/public/`. The dragged hero icon may pass over the terminal window as a desktop object above it. Orange still never appears in terminal content.
+- **Quality and resolution.** The composition stays authored at 1920x1080 in SVG and system fonts, so it scales cleanly. The preview renders at scale 1 (it was 0.5, which is likely part of the "low quality" the user saw), and the stills at scale 2. The final file is 3840x2160 (`--scale=2`), H.264, CRF 16 or lower, `yuv420p`, 30 fps and faststart, with PNG frames or JPEG at quality 95 or higher, using Remotion's bundled ffmpeg only. A test reads the script flags. Mark PNGs (640 px) are never drawn above 320 authored px. A 9:16 cut stays out of scope.
+- **Sentences replaced in earlier decisions.**
+  - Decision 0036, Format: "20-30 s (target 25 s)" becomes 28-34 s (reference 32 s), and the output is 3840x2160 from a 1920x1080 composition.
+  - Decision 0036, Palette: "Orange stays outside the terminal frame" now reads "outside terminal content", with the dragged icon as a desktop object.
+  - Decision 0037, "How the feedback is read": "At most two elements animate at any frame" becomes three, with the robot counted. The emphasized-motion list "(push, shot entrance, mark move, count-up or card entry)" is replaced by the R38 list above.
+  - Decision 0037, "Rhythm without audio": "motions use a strong ease-out (expo or quart), never linear" gains the `inOutCubic` exception for `cursor` and `drag`. "The target becomes 22-25 s" becomes 28-34 s.
+  - Decision 0037, "Addictive means loopable": the seam state "(the background field and the mark, with no terminal or call to action)" becomes the opening desktop: field, icons, the empty window, no cursor and no robot.
+  - Spec R28 and R61: the "hook caret" mentions are dropped, because the hook caret no longer exists.
+- **Ownership.**
+  - ui-engineer (opus) does V3a in `video/` only.
+  - qa-security does V3-QA: privacy, determinism, no brand or asset, showcase untouched, and QA tests updated rather than weakened.
+  - The user reviews the 4K stills and the 1x preview (V3), then approves the final 4K render (V4) and publishes.
+- **Reversal.** Restore the Decision 0037 storyboard, R38-R39 and R49-R57 from git history, and delete `robot.tsx`, the desktop code, the `ROBOT` palette group and R66-R82. The showcase is not affected.
