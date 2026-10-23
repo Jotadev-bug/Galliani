@@ -8,7 +8,7 @@
 export const FPS = 30;
 export const WIDTH = 1920;
 export const HEIGHT = 1080;
-export const DURATION = 750; // 25 s (R21)
+export const DURATION = 720; // 24 s (R21, R54)
 
 export const CLI_RENDER = {
   compositionId: 'GallianiCli',
@@ -160,7 +160,7 @@ export interface PopupRow {
 export interface Typing {
   text: string;
   from: number; // local frame the first character appears
-  rate: number; // characters per frame
+  frames: number; // frames from the first character to the last; 0 shows the whole string at once
 }
 export interface Screen {
   entries: readonly Entry[];
@@ -183,12 +183,31 @@ export type Shot =
   | {kind: 'shell'; typing: Typing}
   | {kind: 'terminal'; keys: readonly Key[]}
   | {kind: 'end'};
+// The emphasized motions a beat may carry (R38, R49: at most one per beat). `at` is a local frame.
 export interface Push {
   at: number;
   frames: number;
   from: number;
   to: number;
   origin: {x: number; y: number}; // canvas pixels the push zooms toward
+}
+export interface Entrance {
+  at: number;
+  frames: number;
+  slide: number; // px the incoming shot rises into place
+}
+export interface Move {
+  at: number;
+  frames: number; // the mark moves from the seam spot to beside the hook prompt
+}
+export interface Count {
+  at: number;
+  frames: number;
+  from: number; // cost before, in USD
+  to: number;
+}
+export interface CardEnter {
+  at: number; // the approval card's own entry, CARD_ENTER_FRAMES long
 }
 export interface CliBeat {
   id: string;
@@ -197,6 +216,10 @@ export interface CliBeat {
   duration: number;
   shot: Shot;
   push?: Push;
+  entrance?: Entrance;
+  move?: Move;
+  count?: Count;
+  card?: CardEnter;
 }
 export interface CliCaption {
   segment: Segment;
@@ -215,9 +238,13 @@ export const HIGHLIGHT_FRAMES = 12; // widgets.HIGHLIGHT_SECONDS (0.4 s)
 export const CARD_ENTER_FRAMES = 5; // widgets.CARD_ENTER_SECONDS (0.18 s)
 export const CARD_ENTER_ROWS = 2; // widgets.CARD_ENTER_ROWS
 export const CARET_BLINK_FRAMES = 15; // Textual's 0.5 s cursor blink
-export const WORD_FRAMES = 4; // each caption word: opacity and slide (R39: ramps of at most 4 frames)
-export const CAPTION_SLIDE = 24; // px (R38: at most 32)
-export const MARK_SNAP = {frames: 6, fromScale: 0.92}; // the hook mark snaps in
+export const GRID = 15; // beats and motions start on the 0.5 s grid (R53)
+export const CAPTION_ENTER = {frames: 6, slide: 24, fade: 4}; // one element; px; opacity ramp (R38, R39)
+export const ENTRANCE = {frames: 8, slide: 24}; // a new shot rises into place, no fade (R38, R62)
+export const MOVE_FRAMES = 15; // the mark moves aside (R38)
+export const COUNT_FRAMES = 15; // a cost counts up (R38, R56)
+export const PUSH_FRAMES = 15;
+export const TYPE_SPEEDUP = 2.5; // the last character interval is this much shorter than the first (R52)
 
 // ---------------------------------------------------------------- layout
 
@@ -226,28 +253,35 @@ export const FONTS = {
   mono: '"Cascadia Mono", Consolas, "SF Mono", Menlo, monospace',
 } as const;
 
-// The terminal window. Rows are 30 px; the docked plan panel is 40 columns wide (widgets.DOCK_MIN_WIDTH).
-export const TERMINAL = {x: 180, y: 212, width: 1560, height: 812, radius: 14, titleBar: 40, fontSize: 21, row: 30, planColumns: 40};
-export const HOOK = {markSize: 240, markY: 420, asideSize: 150, asideX: 818, promptX: 953, promptSize: 150};
-export const END = {markSize: 250, markY: 450, wordY: 640, wordSize: 64};
+// The 90% title-safe area (R42, R63).
+export const SAFE = {left: 96, right: WIDTH - 96, top: 54, bottom: HEIGHT - 54};
 
-const TOP_CAPTION = {x: 96, y: 62, width: 1728, height: 120, fontSize: 64};
-const HOOK_CAPTION = {x: 96, y: 640, width: 1728, height: 120, fontSize: 76};
+// The terminal window. Rows are 30 px; the docked plan panel is 40 columns wide (widgets.DOCK_MIN_WIDTH), and
+// transcript text wraps at `transcriptColumns`. `border` and `pad` size the content box (layout.ts).
+export const TERMINAL = {
+  x: 180, y: 204, width: 1560, height: 780, radius: 14, titleBar: 40, border: 1.5, pad: {top: 6, bottom: 4, side: 6},
+  fontSize: 21, row: 30, planColumns: 40, transcriptColumns: 80,
+};
+// The seam spot (R57): where the mark sits on frame 0, in the end card and on the last frame.
+export const SEAM_MARK = {x: WIDTH / 2, y: 482, size: 240};
+export const HOOK = {asideSize: 150, asideX: 818, promptX: 953, promptSize: 150};
+// The end card block: the mark, a gap, then the `galliacli` line, centered on the frame (R65). The call to action
+// shows for `ctaFrames`, then the card holds in the seam state (R57).
+export const END = {markSize: SEAM_MARK.size, gap: 36, wordSize: 64, wordLine: 80, ctaFrames: 30};
 
-// Push origins. Zooming toward a point keeps the terminal's top edge below the caption band (tests/cli.test.ts);
-// the bottom of the frame may leave the screen, as in a camera push.
+const TOP_CAPTION = {x: 96, y: 56, width: 1728, height: 112, fontSize: 64};
+const HOOK_CAPTION = {x: 96, y: 650, width: 1728, height: 110, fontSize: 76};
+
+// Push origins. Each keeps the zoomed terminal inside the safe area and below the caption band (B-AC21).
 const AT = {
-  shell: {x: WIDTH / 2, y: TERMINAL.y},
-  prompt: {x: WIDTH / 2, y: 480},
-  status: {x: WIDTH / 2, y: 560},
-  card: {x: WIDTH / 2, y: 420},
-  result: {x: WIDTH / 2, y: 560},
+  prompt: {x: 560, y: 600},
+  result: {x: 640, y: 560},
 };
 
 // ---------------------------------------------------------------- beats (R46)
 
 const idleStatus = {route: null, cost: 0, label: 'Ready'};
-const typed = (text: string, from = 0, rate = 1000): Typing => ({text, from, rate});
+const typed = (text: string, from = 0, frames = 0): Typing => ({text, from, frames});
 const idlePrompt = (typing: Typing = typed('')) => ({typing, placeholder: TERM.idlePlaceholder});
 const activePrompt = {typing: typed(''), placeholder: TERM.activePlaceholder};
 
@@ -273,40 +307,44 @@ const planning = (shownSteps: number): Screen => ({
   prompt: activePrompt,
 });
 
-const GOAL_TYPING = typed(GOAL, 4, 1.25);
-const AT_TYPING = typed(AT_PROMPT, 0, 1);
+const SHELL_TYPING = typed(TERM.command, 12, 12);
+const GOAL_TYPING = typed(GOAL, 3, 36);
+const AT_TYPING = typed(AT_PROMPT, 0, 18);
+// The `@` popup opens on the frame `@` is typed, and narrows to `@sig` on the frame `g` is typed.
+const AT_SIGN = Math.ceil(charTimes(AT_TYPING)[AT_PROMPT.indexOf('@')]);
+const AT_SIG = Math.ceil(charTimes(AT_TYPING)[AT_PROMPT.length - 1]);
 
 const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
   {id: 'hook-mark', segment: 'Hook', duration: 45, shot: {kind: 'mark'}},
-  {id: 'hook-prompt', segment: 'Hook', duration: 45, shot: {kind: 'hook-prompt'}},
+  {id: 'hook-prompt', segment: 'Hook', duration: 45, shot: {kind: 'hook-prompt'}, move: {at: 0, frames: MOVE_FRAMES}},
   {
-    id: 'launch-type', segment: 'Launch', duration: 60,
-    shot: {kind: 'shell', typing: typed(TERM.command, 10, 0.3)},
-    push: {at: 0, frames: 15, from: 1, to: 1.12, origin: AT.shell},
+    id: 'launch-type', segment: 'Launch', duration: 45, shot: {kind: 'shell', typing: SHELL_TYPING},
+    entrance: {at: 0, ...ENTRANCE},
   },
-  {id: 'launch-banner', segment: 'Launch', duration: 60, shot: {kind: 'terminal', keys: [{at: 0, screen: idle}]}},
+  {id: 'launch-banner', segment: 'Launch', duration: 45, shot: {kind: 'terminal', keys: [{at: 0, screen: idle}]}},
   {
     id: 'goal-type', segment: 'Objective to plan', duration: 60,
     shot: {kind: 'terminal', keys: [{at: 0, screen: {...idle, prompt: idlePrompt(GOAL_TYPING)}}]},
-    push: {at: 0, frames: 15, from: 1, to: 1.08, origin: AT.prompt},
+    push: {at: 15, frames: PUSH_FRAMES, from: 1, to: 1.05, origin: AT.prompt},
   },
   {
-    id: 'plan-steps', segment: 'Objective to plan', duration: 60,
+    id: 'plan-steps', segment: 'Objective to plan', duration: 45,
     shot: {kind: 'terminal', keys: [
       {at: 0, screen: {
         entries: [E.user], steps: null, working: {group: 'planning', elapsed: 0, cost: 0},
         status: {route: ROUTE_CODING, cost: 0, label: 'Planning'}, prompt: activePrompt,
       }},
-      {at: 8, screen: planning(1)},
-      {at: 13, screen: planning(2)},
-      {at: 18, screen: planning(3)},
-      {at: 23, screen: planning(4)},
-      {at: 36, screen: {
+      {at: 15, screen: planning(1)},
+      {at: 18, screen: planning(2)},
+      {at: 21, screen: planning(3)},
+      {at: 24, screen: planning(4)},
+      {at: 33, screen: {
         entries: [E.user, E.plan], steps: ['running', 'pending', 'pending', 'pending'],
         working: {group: 'running', elapsed: 3, cost: 0.0103, step: 1},
         status: {route: ROUTE_CODING, cost: 0.0103, label: 'Working'}, prompt: activePrompt,
       }},
     ]},
+    count: {at: 15, frames: COUNT_FRAMES, from: 0, to: 0.0103},
   },
   {
     id: 'plan-check', segment: 'Objective to plan', duration: 30,
@@ -330,10 +368,10 @@ const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
         status: {route: ROUTE_CODING, cost: 0.0107, label: 'Checking the result'}, prompt: activePrompt,
       }},
     ]},
-    push: {at: 0, frames: 12, from: 1, to: 1.06, origin: AT.status},
+    count: {at: 30, frames: COUNT_FRAMES, from: 0.0103, to: 0.0107},
   },
   {
-    id: 'route-next', segment: 'Routing', duration: 60,
+    id: 'route-next', segment: 'Routing', duration: 45,
     shot: {kind: 'terminal', keys: [{at: 0, screen: {
       entries: coded, steps: ['verified', 'verified', 'running', 'pending'], fresh: 1,
       working: {group: 'running', elapsed: 7, cost: 0.0107, step: 3},
@@ -344,37 +382,36 @@ const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
     id: 'slash-popup', segment: 'Commands', duration: 60,
     shot: {kind: 'terminal', keys: [
       {at: 0, screen: idle},
-      {at: 6, screen: {...idle, prompt: idlePrompt(typed('/')), popup: {rows: SLASH_ROWS, selected: 0}}},
-      {at: 26, screen: {...idle, prompt: idlePrompt(typed('/')), popup: {rows: SLASH_ROWS, selected: 1}}},
-      {at: 36, screen: {...idle, prompt: idlePrompt(typed('/')), popup: {rows: SLASH_ROWS, selected: 2}}},
+      {at: 15, screen: {...idle, prompt: idlePrompt(typed('/')), popup: {rows: SLASH_ROWS, selected: 0}}},
+      {at: 30, screen: {...idle, prompt: idlePrompt(typed('/')), popup: {rows: SLASH_ROWS, selected: 1}}},
+      {at: 40, screen: {...idle, prompt: idlePrompt(typed('/')), popup: {rows: SLASH_ROWS, selected: 2}}},
     ]},
   },
   {
     id: 'at-file', segment: 'Commands', duration: 60,
     shot: {kind: 'terminal', keys: [
       {at: 0, screen: {...idle, prompt: idlePrompt(AT_TYPING)}},
-      {at: 15, screen: {...idle, prompt: idlePrompt(AT_TYPING), popup: {rows: FILE_ROWS_ALL, selected: 0}}},
-      {at: 16, screen: {...idle, prompt: idlePrompt(AT_TYPING), popup: {rows: FILE_ROWS_SIG, selected: 0}}},
-      {at: 36, screen: {...idle, prompt: idlePrompt(typed(AT_DONE))}},
+      {at: AT_SIGN, screen: {...idle, prompt: idlePrompt(AT_TYPING), popup: {rows: FILE_ROWS_ALL, selected: 0}}},
+      {at: AT_SIG, screen: {...idle, prompt: idlePrompt(AT_TYPING), popup: {rows: FILE_ROWS_SIG, selected: 0}}},
+      {at: 30, screen: {...idle, prompt: idlePrompt(typed(AT_DONE))}},
     ]},
-    push: {at: 18, frames: 12, from: 1, to: 1.08, origin: AT.prompt},
   },
   {
     id: 'approval-card', segment: 'Control', duration: 45,
     shot: {kind: 'terminal', keys: [{at: 0, screen: waitingScreen}]},
-    push: {at: 6, frames: 12, from: 1, to: 1.1, origin: AT.card},
+    card: {at: 0},
   },
   {
     id: 'approval-answer', segment: 'Control', duration: 45,
     shot: {kind: 'terminal', keys: [
       {at: 0, screen: waitingScreen},
-      {at: 4, screen: {...waitingScreen, approval: {pressed: true}}},
-      {at: 9, screen: {
+      {at: 15, screen: {...waitingScreen, approval: {pressed: true}}},
+      {at: 20, screen: {
         entries: [...waiting, E.approved], steps: ['verified', 'verified', 'running', 'pending'],
         working: {group: 'running', elapsed: 9, cost: 0.0107, step: 3},
         status: {route: ROUTE_CODING, cost: 0.0107, label: 'Working'}, prompt: activePrompt,
       }},
-      {at: 27, screen: {
+      {at: 30, screen: {
         entries: [...waiting, E.approved, E.writeOk, E.checked], steps: ['verified', 'verified', 'verified', 'running'],
         fresh: 2, working: {group: 'running', elapsed: 10, cost: 0.0107, step: 4},
         status: {route: ROUTE_CODING, cost: 0.0107, label: 'Working'}, prompt: activePrompt,
@@ -382,15 +419,15 @@ const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
     ]},
   },
   {
-    id: 'verified-done', segment: 'Close', duration: 30,
+    id: 'verified-done', segment: 'Close', duration: 45,
     shot: {kind: 'terminal', keys: [{at: 0, screen: {
       entries: [...waiting, E.approved, E.writeOk, E.checked, E.routeText, E.checked, E.result, E.usage],
       steps: ['verified', 'verified', 'verified', 'verified'], fresh: 3, working: null,
       status: {route: ROUTE_TEXT, cost: 0.0108, label: 'Ready'}, prompt: idlePrompt(),
     }}]},
-    push: {at: 0, frames: 12, from: 1, to: 1.06, origin: AT.result},
+    push: {at: 0, frames: PUSH_FRAMES, from: 1, to: 1.05, origin: AT.result},
   },
-  {id: 'end-card', segment: 'Close', duration: 30, shot: {kind: 'end'}},
+  {id: 'end-card', segment: 'Close', duration: 45, shot: {kind: 'end'}},
 ];
 
 export const BEATS: readonly CliBeat[] = BEATS_RAW.reduce<CliBeat[]>((out, beat) => {
@@ -401,16 +438,17 @@ export const BEATS: readonly CliBeat[] = BEATS_RAW.reduce<CliBeat[]>((out, beat)
 
 // ---------------------------------------------------------------- captions (R40-R43, R46: exact text)
 
-const segmentSpan = (segment: Segment) => {
-  const beats = BEATS.filter((b) => b.segment === segment);
+export const segmentSpan = (segment: Segment) => {
+  const beats = BEATS.flatMap((b) => (b.segment === segment ? [b] : []));
   return {start: beats[0].start, end: beats[beats.length - 1].start + beats[beats.length - 1].duration};
 };
-const caption = (segment: Segment, text: string, box = TOP_CAPTION): CliCaption => ({
-  segment, text, ...segmentSpan(segment), box, enterFrames: 8,
+const caption = (segment: Segment, text: string, box = TOP_CAPTION, enterFrames: number = CAPTION_ENTER.frames): CliCaption => ({
+  segment, text, ...segmentSpan(segment), box, enterFrames,
 });
 
+// The hook caption cuts in on frame 0 (R55); the others rise in as one element (R38).
 export const CAPTIONS: readonly CliCaption[] = [
-  caption('Hook', 'Galliani now runs in your terminal.', HOOK_CAPTION),
+  caption('Hook', 'Galliani now runs in your terminal.', HOOK_CAPTION, 0),
   caption('Launch', 'One command.'),
   caption('Objective to plan', 'Type a goal. Watch the plan.'),
   caption('Routing', 'The cheapest capable model, every step.'),
@@ -435,9 +473,30 @@ export function screenAt(keys: readonly Key[], local: number): {key: Key; since:
   return {key, since: local - key.at};
 }
 
+// The local frame each character appears (R52). The n-1 intervals shrink linearly, so typing speeds up: the last
+// interval is TYPE_SPEEDUP times shorter than the first, they never grow, and the last character lands on
+// `from + frames`. Frames 0 shows the whole string at `from`.
+export function charTimes(typing: Typing): number[] {
+  const n = typing.text.length;
+  if (n === 0) return [];
+  const gaps = n - 1;
+  if (typing.frames <= 0 || gaps === 0) return Array.from({length: n}, () => typing.from);
+  const first = (2 * typing.frames) / (gaps * (1 + 1 / TYPE_SPEEDUP));
+  const times = [typing.from];
+  for (let i = 0; i < gaps; i++) {
+    const shrink = gaps === 1 ? 0 : (1 - 1 / TYPE_SPEEDUP) * (i / (gaps - 1));
+    times.push(times[i] + first * (1 - shrink));
+  }
+  return times;
+}
+
+// How many characters show at a local frame; pure and non-decreasing.
+export function typedCount(typing: Typing, local: number): number {
+  return charTimes(typing).reduce((count, t) => (t <= local + 1e-9 ? count + 1 : count), 0);
+}
+
 export function typedText(typing: Typing, local: number): string {
-  const count = Math.floor((local - typing.from + 1) * typing.rate);
-  return typing.text.slice(0, Math.max(0, Math.min(typing.text.length, count)));
+  return typing.text.slice(0, typedCount(typing, local));
 }
 
 // widgets.spinner_frame at 4 frames per second of video.

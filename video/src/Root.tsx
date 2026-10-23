@@ -22,6 +22,7 @@ export const RemotionRoot: React.FC = () => (
       width={CLI_RENDER.width}
       height={CLI_RENDER.height}
       durationInFrames={CLI_RENDER.durationInFrames}
+      defaultProps={{fieldShift: 0}}
     />
   </>
 );
