@@ -309,10 +309,16 @@ const planning = (shownSteps: number): Screen => ({
 
 const SHELL_TYPING = typed(TERM.command, 12, 12);
 const GOAL_TYPING = typed(GOAL, 3, 36);
-const AT_TYPING = typed(AT_PROMPT, 0, 18);
-// The `@` popup opens on the frame `@` is typed, and narrows to `@sig` on the frame `g` is typed.
-const AT_SIGN = Math.ceil(charTimes(AT_TYPING)[AT_PROMPT.indexOf('@')]);
+// The `@` popup opens on the frame `@` is typed and holds its full list for AT_HOLD frames with nothing else moving
+// (the caret blink aside); `sig` then types in fast and narrows it on the frame `g` is typed.
+const AT_BEFORE = AT_PROMPT.slice(0, AT_PROMPT.indexOf('@') + 1);
+const AT_TYPING_BEFORE = typed(AT_BEFORE, 0, 12);
+const AT_SIGN = Math.ceil(charTimes(AT_TYPING_BEFORE)[AT_BEFORE.length - 1]);
+const AT_HOLD = 24;
+const AT_TAIL = AT_SIGN + AT_HOLD;
+const AT_TYPING = typed(AT_PROMPT, 0, AT_TAIL + 4);
 const AT_SIG = Math.ceil(charTimes(AT_TYPING)[AT_PROMPT.length - 1]);
+const AT_DONE_AT = AT_SIG + 6;
 
 const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
   {id: 'hook-mark', segment: 'Hook', duration: 45, shot: {kind: 'mark'}},
@@ -390,10 +396,11 @@ const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
   {
     id: 'at-file', segment: 'Commands', duration: 60,
     shot: {kind: 'terminal', keys: [
-      {at: 0, screen: {...idle, prompt: idlePrompt(AT_TYPING)}},
-      {at: AT_SIGN, screen: {...idle, prompt: idlePrompt(AT_TYPING), popup: {rows: FILE_ROWS_ALL, selected: 0}}},
+      {at: 0, screen: {...idle, prompt: idlePrompt(AT_TYPING_BEFORE)}},
+      {at: AT_SIGN, screen: {...idle, prompt: idlePrompt(AT_TYPING_BEFORE), popup: {rows: FILE_ROWS_ALL, selected: 0}}},
+      {at: AT_TAIL, screen: {...idle, prompt: idlePrompt(AT_TYPING), popup: {rows: FILE_ROWS_ALL, selected: 0}}},
       {at: AT_SIG, screen: {...idle, prompt: idlePrompt(AT_TYPING), popup: {rows: FILE_ROWS_SIG, selected: 0}}},
-      {at: 30, screen: {...idle, prompt: idlePrompt(typed(AT_DONE))}},
+      {at: AT_DONE_AT, screen: {...idle, prompt: idlePrompt(typed(AT_DONE))}},
     ]},
   },
   {

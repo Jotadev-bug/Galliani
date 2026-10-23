@@ -1,4 +1,4 @@
-// `npm run stills:cli` (spec 015 R45): one PNG per GallianiCli beat, at the beat's middle frame, in out/cli-stills/,
+// `npm run stills:cli` (spec 015 R45): one PNG per GallianiCli beat, at the beat's middle frame (see SAMPLE_LOCAL), in out/cli-stills/,
 // plus frame-first.png and frame-last.png for the loop seam, and an early beat over a later background field.
 // Bundles once, then renders each still from the bundle.
 import {spawnSync} from 'node:child_process';
@@ -14,7 +14,10 @@ const still = (name: string, frame: number, extra: string[] = []) =>
   run(['still', bundle, CLI_RENDER.compositionId, `${CLI_RENDER.stillsDir}/${name}.png`, `--frame=${frame}`, ...extra]);
 
 run(['bundle', 'src/index.ts', `--out-dir=${bundle}`]);
-for (const beat of BEATS) still(beat.id, beat.start + Math.floor(beat.duration / 2));
+// Each still samples the beat's middle frame, except `hook-prompt`: the middle falls in the caret's off phase, so it
+// samples local frame 35 (after the mark's move, caret on).
+const SAMPLE_LOCAL: Record<string, number> = {'hook-prompt': 35};
+for (const beat of BEATS) still(beat.id, beat.start + (SAMPLE_LOCAL[beat.id] ?? Math.floor(beat.duration / 2)));
 still('frame-first', 0);
 still('frame-last', DURATION - 1);
 
