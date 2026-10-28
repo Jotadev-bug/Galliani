@@ -255,7 +255,7 @@ def test_one_shot_hint_and_flag_errors_name_galliacli(tty, tmp_path, capsys):
     assert capsys.readouterr().err.startswith("galliacli: --context needs an objective.")
 
 
-def test_pyproject_installs_galliacli_and_no_galliani_script():
+def test_pyproject_installs_galliacli_and_galliani_stays_the_desktop():
     import tomllib
 
     data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))

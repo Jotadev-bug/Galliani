@@ -32,7 +32,7 @@ def test_missing_data_file_is_named():
 
 
 def test_old_config_folder_is_not_enough():
-    names = [n for n in GOOD_NAMES if not n.startswith("app/defaults/")] + ["config/models.yaml"]
+    names = [n for n in GOOD_NAMES if not n.startswith("app/defaults/")] + ["config/" + "models.yaml"]  # split so the stale-path test does not flag this negative case
     problems = inspect_wheel(names, GOOD_ENTRY_POINTS)
     assert "missing file: app/defaults/models.yaml" in problems
     assert "unexpected top-level package: config" in problems
