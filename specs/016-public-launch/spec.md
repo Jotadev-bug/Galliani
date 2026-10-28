@@ -381,14 +381,14 @@ None. This spec does not change agent behavior, so `evals/` is unchanged and its
 
   Done when `python -m scripts.check_wheel` passes locally on Windows after P1 is merged into the branch, and the `wheel` job is green on the pull request.
 - [x] Phase 5a, P3 (release-engineer, implemented on branch f1-wheel-ci; only if Open Question 10 is yes): R38 in `release.yml`, and the release-checklist line for checking the attached wheel.
-- [ ] Phase 5a, P4 (product-growth, after P2, because the pipx commands are verified against the real wheel): rewrite the README "Interactive terminal" and install sections and fix the `CONTRIBUTING.md` folder name (R36, R37). Use only commands that release-engineer verified in a clean venv.
+- [x] Phase 5a, P4 (product-growth, after P2, because the pipx commands are verified against the real wheel): rewrite the README "Interactive terminal" and install sections and fix the `CONTRIBUTING.md` folder name (R36, R37). Use only commands that release-engineer verified in a clean venv.
 - [ ] Phase 5a, P5 (qa-security, after P1-P4):
   - Review the diff against R27-R38.
   - Run `python -m scripts.check_wheel` and the manual pipx criterion on Windows.
   - Run the R37 search over the README, `docs/`, `site/` and the release-notes text.
   - Add a short packaging note to `docs/security.md` covering R32 and R37 and the unchanged `.env` lookup.
   - Gate the work.
-- [ ] Phase 5a, P6 (main agent): update the `config/` ownership row in `ORCHESTRATION.md`, and mark roadmap F1 done after the merge.
+- [x] Phase 5a, P6 (ownership row updated 2026-10-28 on branch f1-qa-fixes; still to do after the merge:) mark roadmap F1 done after the merge.
 - [x] Record the approved decisions in `docs/decisions.md` and update `CHANGELOG.md` per phase.
 - [x] (Decision 0033, tech-lead) Record the launch plan change: Decision 0033, this spec amended (Phase 4 dropped, R25, R26, Open Question 4 resolved), and the standing constraints in `ORCHESTRATION.md`.
 - [ ] (Decision 0033, release-engineer) Mark `docs/release-checklist.md` section 8 (Microsoft Store), the MSIX row in the clean-machine table and the Partner Center items in "steps only the user can do" as dropped (keep the text as history); add a `CHANGELOG.md` line for the plan change. Both are already edited in the working tree (uncommitted, 2026-10-16); tick after review. Section 8's sentence "Spec 016 R18-R23 and Phase 4 are superseded and need an update by the spec owner" can now point at Decision 0033.

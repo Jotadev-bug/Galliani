@@ -426,9 +426,9 @@ Open findings from this review, each pinned by a strict-xfail test:
   or release note tells users to fetch it from PyPI. The release notes install the wheel attached to the
   versioned release through a PEP 508 direct URL (`"galliani[tui] @ https://.../releases/download/vX.Y.Z/..."`),
   which never resolves `galliani` on PyPI. Its dependencies still come from PyPI, as for any source install.
-  Open at the P5 review (2026-10-28): the README "Interactive terminal" section (P4, not yet done) and the
-  in-app Textual-missing hint in `galliani/tui/entry.py` (Open Question 8 answered "reword", spec 017 R5 not
-  yet amended) still print `pip install "galliani[tui]"`.
+  Closed on branch `f1-qa-fixes` (2026-10-28): the README "Interactive terminal" section and the in-app
+  Textual-missing hint in `galliani/tui/entry.py` (spec 017 R5 and 018 R27 amended, Open Question 8(a)) no
+  longer name a PyPI command.
 - **The wheel ships only runtime code and data.** `inspect_wheel` refuses any file outside `app/` and `galliani/`
   other than the `.dist-info` metadata, including a `.data` folder, so no `.env`, fixture or request log is
   packaged. `check_wheel` runs no task, calls no provider and prints no environment variable or key; the CI job
