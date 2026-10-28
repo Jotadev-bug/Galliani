@@ -206,6 +206,11 @@ def terminal_checks(python: Path, scripts: Path, cwd: Path, expected_version: st
             raise StepFailed(f"{step}: {label} printed {done.stdout.strip()!r} (exit {done.returncode}), "
                              f"expected {want!r}")
 
+    helped = run([str(scripts / "galliacli"), "--help"], cwd=cwd, step=step)  # R32: --help is a checked command
+    if helped.returncode != 0 or "usage: galliacli" not in helped.stdout:
+        raise StepFailed(f"{step}: galliacli --help exited {helped.returncode} without 'usage: galliacli'\n"
+                         f"{tail(helped.stderr)}")
+
     fallback = run([str(scripts / "galliacli")], cwd=cwd, step=step, input_text="")
     if fallback.returncode != 2 or FALLBACK_TEXT not in fallback.stdout + fallback.stderr:
         raise StepFailed(f"{step}: galliacli without a TTY exited {fallback.returncode}, expected 2 with the "

@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from scripts import check_wheel
 from scripts.check_wheel import (REQUIRED_FILES, diff_snapshots, inspect_wheel, project_version, sdist_problems,
                                  snapshot)
 
@@ -117,3 +123,30 @@ def test_project_version_reads_pyproject(tmp_path):
     path = tmp_path / "pyproject.toml"
     path.write_text('[project]\nversion = "1.2.3"\n')
     assert project_version(path) == "1.2.3"
+
+
+def test_terminal_checks_run_galliacli_help(monkeypatch, tmp_path):
+    """R32: `galliacli --help` is one of the commands the wheel check runs (and must exit 0 with usage text)."""
+    seen: list[list[str]] = []
+
+    def fake_run(cmd, *, cwd, step, input_text=None, timeout=0):
+        seen.append([Path(cmd[0]).stem, *cmd[1:]])
+        out = {"--version": "galliacli 9.9.9", "--help": "usage: galliacli [-h]"}.get(cmd[-1], "9.9.9")
+        if cmd[0].endswith("galliani") or cmd[0].endswith("galliani.exe"):
+            return subprocess.CompletedProcess(cmd, 2, "", check_wheel.R28_MESSAGE)
+        if len(cmd) == 1:
+            return subprocess.CompletedProcess(cmd, 2, "", check_wheel.FALLBACK_TEXT)
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+
+    monkeypatch.setattr(check_wheel, "run", fake_run)
+    check_wheel.terminal_checks(tmp_path / "python", tmp_path, tmp_path, "9.9.9")
+    assert ["galliacli", "--help"] in seen
+
+    def bad_help(cmd, **kw):
+        if cmd[-1] == "--help":
+            return subprocess.CompletedProcess(cmd, 1, "", "boom")
+        return fake_run(cmd, **kw)
+
+    monkeypatch.setattr(check_wheel, "run", bad_help)
+    with pytest.raises(check_wheel.StepFailed, match="--help"):
+        check_wheel.terminal_checks(tmp_path / "python", tmp_path, tmp_path, "9.9.9")
