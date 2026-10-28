@@ -66,7 +66,8 @@ export function heroIconAt(frame: number, beats: readonly CliBeat[] = BEATS, mot
     const absorb = motions.find((m) => m.beat === beat.id && m.kind === 'absorb');
     if (absorb && frame >= absorb.start + absorb.frames) return null;
     const t = progress(absorb, frame);
-    const fade = absorb ? ramp(frame, absorb.start + absorb.frames - ABSORB.fade, ABSORB.fade, 'outQuart') : 1;
+    // The fade starts ABSORB.fade frames before the end and reaches 0 on the absorb's last frame (R71, B-AC22).
+    const fade = absorb ? ramp(frame, absorb.start + absorb.frames - ABSORB.fade, ABSORB.fade - 1, 'outQuart') : 1;
     return {
       center: {x: DRAG_TO.x + (SHELL_CARET.x - DRAG_TO.x) * t, y: DRAG_TO.y + (SHELL_CARET.y - DRAG_TO.y) * t},
       scale: 1 - (1 - ABSORB.scale) * t, rotation: 0, opacity: 1 - fade, hovered: true, home: false, label: false,
