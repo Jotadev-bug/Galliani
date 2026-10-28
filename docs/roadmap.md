@@ -66,7 +66,7 @@ No spend and no posting without the user. Drafts live in the repo for review; th
 
 | Order | Item | Owner | Prerequisite | Spec |
 |---|---|---|---|---|
-| L1 | README: document `galliacli`, install paths that really work today, and the unsigned-build note | product-growth | Spec 018 merged (names and flags final) | 016 R25 |
+| L1 | (done) README: document `galliacli`, install paths that really work today, and the unsigned-build note | product-growth | Spec 018 merged (names and flags final) | 016 R25 |
 | L2 | Winget submission to `microsoft/winget-pkgs` (existing roadmap item 2) | user | Clean-machine test (item 1) | 016 Phase 3 |
 | L3 | Landing page update: a terminal section (screenshot or short clip), install steps, honest scope. Copy by product-growth, implementation by ui-engineer | product-growth (copy), ui-engineer (build) | L1; F1 if the page promises a one-line install, otherwise say "from source" | 016 Phase 2 amendment |
 | L4 | Announcement copy: short post and longer write-up, in English, no invented metrics or competitor claims | product-growth drafts; user posts | L1, L3 and V1 approved | None (copy only) |

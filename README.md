@@ -117,6 +117,15 @@ galliacli
 
 On Windows, `where galliacli` shows which copy is on PATH. No installer edits PATH for you.
 
+Inside the terminal UI:
+
+- Type `/` to complete commands and `@` to mention a file from the workspace. Up and Down move through suggestions, Tab inserts the selected one, Esc closes the list.
+- The plan panel shows the steps, the route line shows which model answers each one, and anything risky (writing files, running commands) waits for your approval.
+- Keys come from the same sources as `python -m galliani.cli` (see above). Nothing is sent anywhere except your model requests, and there is no telemetry.
+- `GALLIANI_REDUCED_MOTION=1` turns the animation off. `NO_COLOR` is honoured too.
+- Flags: `--workspace`, `--budget`, `--no-memory`, `--accept-edits`, `--theme`, `--version`.
+- The Windows `.exe` from Releases is the desktop app and is unsigned until a code-signing certificate is bought (see Download).
+
 ## Calling the local API
 
 `python -m app.api` serves the web UI and the JSON API at `http://127.0.0.1:8000`. The API only answers on your own machine and refuses anything that looks like a web page acting on your behalf (spec 012 R16-R19, Decision 0032). If you call it from a script, `curl` or a test:

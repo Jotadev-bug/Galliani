@@ -8,6 +8,8 @@ This project follows spec-driven development. Changelog entries should reference
 
 ### Added
 
+- README: usage section for `galliacli` (completion, `@file`, plan and approvals, reduced motion, flags).
+
 - Packaging for the interactive terminal UI (spec 017 R1-R2, Decision 0034): a new optional `tui` extra (`textual>=8.2.8,<9`) and the `galliacli` console script (`galliani.tui.entry:main`; spec 018 R27). The terminal command is `galliacli`; the desktop app keeps `galliani` (winget alias, spec 016 R15), and `python -m galliani` also starts the terminal UI. CI and the Release workflow install the extra, and CI sets `GALLIANI_REQUIRE_TUI=1` so the TUI tests fail instead of skipping. The TUI is not bundled into `Galliani.exe` yet (documented follow-up); install it with `pip install ".[tui]"`.
 
 ### Changed
