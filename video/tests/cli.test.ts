@@ -430,7 +430,7 @@ test('B-AC17: typing speeds up and finishes in its beat; cost only rises at a fi
     assert.ok(typing.from + typing.frames <= beat.duration - 1, `${beat.id} typing runs past the beat`);
     assert.equal(typedText(typing, beat.duration - 1), typing.text, `${beat.id} typing is cut off`);
   }
-  for (const {beat, typing} of typed) assert.ok(intervalsOk(charTimes(typing)), `${beat.id} typing does not speed up`);
+  for (const {beat, typing} of typed) assert.ok(intervalsOk(charTimes(typing).slice(typing.kept ?? 0)), `${beat.id} typing does not speed up`);
   assert.equal(intervalsOk([0, 1, 3, 6]), false, 'fixture: growing intervals are rejected');
   assert.equal(intervalsOk([0, 3, 6, 9, 12]), false, 'fixture: an even pace is rejected');
   // Cost (R35, R56): the shown value never falls during a task and keeps its width.

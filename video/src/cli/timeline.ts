@@ -164,6 +164,7 @@ export interface Typing {
   text: string;
   from: number; // local frame the first character appears
   frames: number; // frames from the first character to the last; 0 shows the whole string at once
+  kept?: number; // leading characters already in the box, shown from `from`; the rest are typed (R52 at-file)
 }
 export interface Screen {
   entries: readonly Entry[];
@@ -417,13 +418,14 @@ const planning = (shownSteps: number): Screen => ({
 const SHELL_TYPING = typed(TERM.command, 6, 15);
 const GOAL_TYPING = typed(GOAL, 3, 36);
 // The `@` popup opens on the frame `@` is typed and holds its full list for AT_HOLD frames with nothing else moving
-// (the caret blink aside); `sig` then types in fast and narrows it on the frame `g` is typed.
+// (the caret blink aside), the one typing pause R52 allows; `sig` then types in fast and narrows it on the frame `g`
+// is typed.
 const AT_BEFORE = AT_PROMPT.slice(0, AT_PROMPT.indexOf('@') + 1);
 const AT_TYPING_BEFORE = typed(AT_BEFORE, 0, 12);
 const AT_SIGN = Math.ceil(charTimes(AT_TYPING_BEFORE)[AT_BEFORE.length - 1]);
 const AT_HOLD = 24;
 const AT_TAIL = AT_SIGN + AT_HOLD;
-const AT_TYPING = typed(AT_PROMPT, 0, AT_TAIL + 4);
+const AT_TYPING: Typing = {...typed(AT_PROMPT, AT_TAIL, 3), kept: AT_BEFORE.length};
 const AT_SIG = Math.ceil(charTimes(AT_TYPING)[AT_PROMPT.length - 1]);
 const AT_DONE_AT = AT_SIG + 6;
 export const PRESS_Y = 15; // approval-answer: the local frame `y` is pressed
@@ -604,6 +606,8 @@ export function screenAt(keys: readonly Key[], local: number): {key: Key; since:
 // interval is TYPE_SPEEDUP times shorter than the first, they never grow, and the last character lands on
 // `from + frames`. Frames 0 shows the whole string at `from`.
 export function charTimes(typing: Typing): number[] {
+  const kept = typing.kept ?? 0;
+  if (kept > 0) return [...Array.from({length: kept}, () => typing.from), ...charTimes({...typing, text: typing.text.slice(kept), kept: 0})];
   const n = typing.text.length;
   if (n === 0) return [];
   const gaps = n - 1;
