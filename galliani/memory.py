@@ -275,7 +275,7 @@ class JsonMemoryStore(InMemoryMemoryStore):
         with self._lock, self._transaction():
             records, identity = self._read_disk()
             if records.pop(record_id, None) is None:
-                self._records, self._identity = records, identity
+                self._records, self._identity, self.unavailable_reason = records, identity, None
                 return False
             self._commit(records)
             return True
@@ -335,7 +335,7 @@ class JsonMemoryStore(InMemoryMemoryStore):
             if tmp:
                 Path(tmp).unlink(missing_ok=True)
             raise MemoryUnavailable(f"memory could not be saved ({type(e).__name__}); try again") from None
-        self._records, self._identity = records, self._stat()
+        self._records, self._identity, self.unavailable_reason = records, self._stat(), None
 
     def _replace(self, tmp: str) -> None:
         """`os.replace`, retrying a transient `PermissionError` (another program briefly holding the file)."""
