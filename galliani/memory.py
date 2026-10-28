@@ -311,7 +311,9 @@ class JsonMemoryStore(InMemoryMemoryStore):
             return {}, None
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
-            records = [MemoryRecord.model_validate(r) for r in raw.get("records", [])]
+            if not isinstance(raw, dict) or not isinstance(raw.get("records"), list):
+                raise TypeError  # not the {"version": 1, "records": [...]} format: never treat it as empty
+            records = [MemoryRecord.model_validate(r) for r in raw["records"]]
         except FileNotFoundError:
             return {}, None
         except (OSError, ValueError, AttributeError, TypeError) as e:

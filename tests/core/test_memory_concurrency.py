@@ -228,6 +228,8 @@ def test_a_crashed_lock_holder_does_not_block_the_next_write(path):
     '{"version": 1, "records": [ {"content": "' + PRIVATE + '"',  # truncated JSON
     '{"version": 1, "records": [{"content": "' + PRIVATE + '"}]}',  # valid JSON, invalid records
     '["' + PRIVATE + '"]',  # wrong top-level shape
+    '{"version": 1, "items": ["' + PRIVATE + '"]}',  # no "records" list (another format): not empty
+    '{"version": 1, "records": {}}',  # "records" is not a list
 ])
 def test_an_unreadable_file_is_never_overwritten(path, bad):
     store = JsonMemoryStore(path)

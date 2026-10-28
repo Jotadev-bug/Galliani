@@ -101,7 +101,7 @@ Then only scoped relevant records are returned.
 
 ## Amendment A: Concurrent Access to the Shared Memory File
 
-Status: Approved (2026-10-28, Decision 0040, Q1 answered: lock plus merge-by-id). Resolves spec 017 Open Item 5 and roadmap item F2. Needs user approval (Q1) before core-engineer starts.
+Status: Approved (2026-10-28, Decision 0040, Q1 answered: lock plus merge-by-id). Resolves spec 017 Open Item 5 and roadmap item F2. Implemented on branch `f2-memory-lock`.
 
 ### Problem
 
@@ -270,12 +270,12 @@ Owner: core-engineer, after the user approves (Q1). Review: qa-security.
 - [x] A2. Rework `JsonMemoryStore` in `galliani/memory.py`: load, apply and persist under the lock per call (R7, R8). Fresh-read dedupe and delete-by-id. Never overwrite an unreadable file (R12). Add `fsync` and replace retries (R11), stale temp cleanup (R14) and reload on change (R13). Keep `InMemoryMemoryStore` unchanged for in-process use.
 - [x] A3. Confirm that the `remember` tool and the desktop and TUI memory views surface `MemoryUnavailable` as a structured, retryable failure (R15). Change code only if a test shows they do not.
 - [x] A4. Write `tests/core/test_memory_concurrency.py` per "Tests (Amendment A)". First commit the race test failing on today's code, then make it pass.
-- [ ] A5. Docs (R17): the one-paragraph note in the user-facing memory or CLI docs (main agent routes it to the doc owner), and a CHANGELOG line (release-engineer).
+- [x] A5. Docs (R17): the one-paragraph note in the user-facing memory or CLI docs (main agent routes it to the doc owner), and a CHANGELOG line (release-engineer).
 - [x] A6. Verification: `pytest tests/core/test_memory.py tests/core/test_memory_concurrency.py`, then the full `pytest` run and `python -m galliani.evaluation`.
 
 ### Open Questions (Amendment A)
 
-- Q1 (user): Do you approve the recommendation, a cross-process lock plus a re-read and merge by record id on every change? This adds a sidecar `memory.json.lock` and has no new dependencies. The alternative is option (c): keep today's behavior and document it, which accepts that one app can silently erase memories saved by the other.
+- Q1 (user, answered 2026-10-28: approved, Decision 0040): Do you approve the recommendation, a cross-process lock plus a re-read and merge by record id on every change? This adds a sidecar `memory.json.lock` and has no new dependencies. The alternative is option (c): keep today's behavior and document it, which accepts that one app can silently erase memories saved by the other.
 - Q2 (informational, no decision needed unless you object): memory files on network or cloud-synced folders are not supported for concurrent use (R17). The default location (`%LOCALAPPDATA%\Galliani` on Windows) is local.
 
 ### Dependencies (Amendment A)

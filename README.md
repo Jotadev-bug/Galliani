@@ -79,6 +79,8 @@ A model plans the work, the supervisor validates the plan, cheap workers run the
 
 In the desktop app (`python -m app.desktop`), switch the message box from **Chat** to **Agent**, pick a folder, and type a task. The agent's reply shows the plan, live activity, approvals and the verified result. The **Memory** page lists what the agent remembers between tasks; it only saves a note when you approve it.
 
+**Shared memory.** The desktop app and `galliacli` share one memory file on your machine, and you can run them at the same time. Each save or delete locks the file briefly and re-reads it first, so neither app erases or brings back the other's notes, and each sees the other's changes without a restart. If the file stays busy for more than 5 seconds or cannot be read, memory shows as unavailable and you can try again; an unreadable file is never overwritten. Keeping the memory file on a network drive or in a folder synced by a cloud tool (OneDrive and similar) is not supported for use by two apps at once, because file locks are not reliable there (spec 010 Amendment A).
+
 ## Interactive terminal
 
 `galliacli` is a full-screen terminal chat for the agent (specs 017 and 018). It needs the optional `tui` extra. The command is `galliacli`; the name `galliani` belongs to the desktop app.
