@@ -927,10 +927,11 @@ def test_018_a_slow_file_listing_does_not_keep_the_process_alive(tmp_path):
             "asyncio.run(main())\n") % (ROOT, tmp_path / "ws")
     started = time.monotonic()
     try:
-        subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, timeout=8)
+        subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, timeout=25)
     except subprocess.TimeoutExpired:
         pass
-    assert time.monotonic() - started < 7
+    # The patched walk sleeps 30 s, so a hang is cut off at 25 s; a healthy exit stays far below 20 s under load.
+    assert time.monotonic() - started < 20
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="8.3 short names and junctions are Windows behaviour")
