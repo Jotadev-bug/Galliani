@@ -6,7 +6,7 @@ Approved (2026-10-06, Decision 0027). Phase 1 is implemented first. The license 
 
 Amended 2026-10-16 (Decision 0033, approved by the user): Phase 4 (Microsoft Store) is dropped; the `.exe` ships unsigned, with the SmartScreen warning stated plainly, until the user buys a code-signing certificate (Phase 6, no date, no vendor chosen); Open Question 4 (branding) is resolved. Distribution is GitHub Releases, winget and the landing page.
 
-Amended 2026-10-28 (Decision 0039, **Proposed, needs the user's approval**): Phase 5 is split. New Phase 5a (R27-R38, roadmap F1) makes a built wheel work without an editable install: the desktop console script stays `galliani`, the terminal stays `galliacli`, and the files they read at runtime ship as package data. It publishes nothing. Phase 5b (R24, PyPI with trusted publishing) stays optional and unscheduled. Open Questions 7-11 are user decisions for Phase 5a.
+Amended 2026-10-28 (Decision 0039, **Accepted 2026-10-28**: the user approved Phase 5a with the recommended answers to Open Questions 7-11 (keep `app` for now; reword the in-app install hint; add `keyring` to the `tui` extra; attach wheel and sdist to GitHub Releases; wheel check on Windows only)): Phase 5 is split. New Phase 5a (R27-R38, roadmap F1) makes a built wheel work without an editable install: the desktop console script stays `galliani`, the terminal stays `galliacli`, and the files they read at runtime ship as package data. It publishes nothing. Phase 5b (R24, PyPI with trusted publishing) stays optional and unscheduled. Open Questions 7-11 are user decisions for Phase 5a.
 
 ## Goal
 
@@ -362,7 +362,7 @@ None. This spec does not change agent behavior, so `evals/` is unchanged and its
 - [ ] Phase 3: ~~manifest generator script with tests~~ (`scripts/winget_manifest.py`, done); ~~attach the manifest zip in `release.yml`~~ (done); ~~document the submission~~ (done); `v0.1.0` manifest committed in `packaging/winget/0.1.0/` and passing `winget validate` (done); still to do: `winget install --manifest` on a clean machine, submit the first pull request to `microsoft/winget-pkgs`, add `winget install` to the site once it is merged.
 - [ ] ~~Phase 4: one-folder build (`build_desktop --onedir`), MSIX assets (`make_icon`), manifest template and `makeappx` step (`scripts/build_msix.py`, skipped in the workflow until the identity is committed), document the Store steps (all done, Decision 0030); still to do: reserve the name in Partner Center and commit the identity to `packaging/msix/identity.json`, test the package locally (`--local-test`) on a clean machine, submit.~~ **Dropped by the user 2026-10-16 (Decision 0033).** The done scaffold is kept; the remaining steps will not be done. Not ticked, because it was not completed.
 - [ ] Phase 5 (optional): packaging changes and the trusted-publishing PyPI job. (Split 2026-10-28, Decision 0039: the packaging changes are the Phase 5a tasks below; the PyPI job is Phase 5b.)
-- [ ] Phase 5a, P0 (user): approve this amendment and answer Open Questions 7-11. Nothing below starts before that.
+- [x] Phase 5a, P0 (user, 2026-10-28): approve this amendment and answer Open Questions 7-11. Nothing below starts before that.
 - [ ] Phase 5a, P1 (core-engineer; can start in parallel with P2 because the path `app/defaults/` is fixed here):
   - `git mv config/*.yaml app/defaults/`.
   - Apply the `CONFIG_DIR` rule in `app/config.py` (R30).

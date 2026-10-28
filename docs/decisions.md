@@ -381,7 +381,7 @@ Status: Proposed (2026-10-19). The user answered spec 018's four open questions 
 
 ## Decision 0039: Installable package: `galliani` and `galliacli` console scripts, configuration as package data (spec 016 Phase 5a, roadmap F1)
 
-Status: Proposed (2026-10-28). Amends spec 016: new Phase 5a, R27-R38; Phase 5 renamed to Phase 5b; plus Starting Point, Non-goals, Interfaces, Error Handling, Security, Acceptance Criteria, Tests, Implementation Tasks, Dependencies, and Open Questions 7-11. It does not change specs 017 or 018. Open Question 8 asks whether to amend 017 R5. Nothing is implemented until the user approves the spec and answers Open Questions 7-11.
+Status: Accepted (2026-10-28, user approved with the recommended answers to Open Questions 7-11). Amends spec 016: new Phase 5a, R27-R38; Phase 5 renamed to Phase 5b; plus Starting Point, Non-goals, Interfaces, Error Handling, Security, Acceptance Criteria, Tests, Implementation Tasks, Dependencies, and Open Questions 7-11. It does not change specs 017 or 018. Open Question 8 asks whether to amend 017 R5. Nothing is implemented until the user approves the spec and answers Open Questions 7-11.
 
 - **Problem (checked 2026-10-28).** A wheel built from `main` holds only Python files. It has no `config/*.yaml` and nothing from `app/web/`, it installs a stray top-level `benchmarks` package, and its only script is `galliacli`. As a result, `CONFIG_DIR` points at a missing `site-packages/config`, and both apps work only from a source or editable install (017 Open Item 4).
 - **Names (user decision 2026-10-19, Decision 0035, kept).**
