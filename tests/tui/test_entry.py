@@ -261,6 +261,7 @@ def test_pyproject_installs_galliacli_and_galliani_stays_the_desktop():
     data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = data["project"]["scripts"]
     assert scripts.get("galliacli") == "galliani.tui.entry:main"
-    assert "galliani" not in scripts
+    # Spec 016 R27 (Decision 0039): `galliani` is the desktop app, never the terminal UI.
+    assert scripts.get("galliani") == "app.desktop:main"
     assert [name for name, target in scripts.items() if target == "galliani.tui.entry:main"] == ["galliacli"]
     assert data["project"]["name"] == "galliani" and "tui" in data["project"]["optional-dependencies"]
