@@ -42,6 +42,18 @@ class ToolInputRejected(Exception):
     """Raised by a handler to refuse a request; the message must be safe to show (no internals)."""
 
 
+class ToolUnavailable(Exception):
+    """Raised by a handler when a resource it needs is briefly unavailable (for example a busy file).
+
+    The result is a failed, retryable tool result with `code`. The message must be safe to show: no internals
+    and no user content.
+    """
+
+    def __init__(self, message: str, *, code: str = "unavailable"):
+        super().__init__(message)
+        self.code = code
+
+
 class SideEffect(str, Enum):
     none = "none"
     read = "read"
@@ -205,6 +217,8 @@ class ToolSystem:
                          retryable=tool.retryable_on_timeout, status=ToolStatus.timed_out, permission=decision)
         except ToolInputRejected as e:
             return _fail(call, "rejected_input", str(e)[:200], permission=decision)
+        except ToolUnavailable as e:
+            return _fail(call, e.code, str(e)[:200], retryable=True, permission=decision)
         except Exception as e:  # noqa: BLE001 - crashes are normalized without internals
             return _fail(call, "tool_crashed", f"tool crashed ({type(e).__name__})", permission=decision)
 

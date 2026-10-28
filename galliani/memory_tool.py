@@ -19,10 +19,11 @@ from galliani.memory import (
     MemoryPolicy,
     MemoryStore,
     MemoryType,
+    MemoryUnavailable,
     MemoryWriteRequest,
 )
 from galliani.permissions import PermissionLevel
-from galliani.tools import SideEffect, ToolContext, ToolDefinition, ToolInputRejected
+from galliani.tools import SideEffect, ToolContext, ToolDefinition, ToolInputRejected, ToolUnavailable
 
 
 class RememberIn(BaseModel):
@@ -58,6 +59,8 @@ def remember_tool(store: MemoryStore, *, project_scope: str | None = None,
             record = store.write(request)
         except ContractError as e:
             raise ToolInputRejected(f"not saved: {e.safe_summary}") from None
+        except MemoryUnavailable as e:  # Amendment A R15: busy or unreadable file; the user can try again
+            raise ToolUnavailable(f"not saved: {e.safe_summary}", code=e.code) from None
         return {"id": record.id, "content": record.display_content(), "type": record.type, "scope": record.scope,
                 "provenance": record.provenance, "sensitivity": record.sensitivity}
 

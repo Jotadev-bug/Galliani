@@ -14,6 +14,9 @@ import os
 import re
 import tempfile
 import threading
+import time
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -23,6 +26,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from galliani.contracts import Sensitivity, new_id, utcnow
 from galliani.errors import ContractError, GallianiError
+from galliani.file_lock import LockTimeout, file_lock
 from galliani.redaction import REDACTED, contains_secret
 
 MemoryType = Literal["preference", "instruction", "fact", "note"]
@@ -187,52 +191,168 @@ class InMemoryMemoryStore:
         if contains_secret(request.content):
             raise ContractError("memory content contains a secret-like value; not saved")
         with self._lock:
-            for existing in self._records.values():
-                if existing.scope == request.scope and existing.content == request.content:
-                    updated = existing.model_copy(update={"updated_at": utcnow(), "type": request.type,
-                                                          "sensitivity": request.sensitivity, "ttl": request.ttl})
-                    self._records[existing.id] = updated
-                    self._persist()
-                    return updated
-            record = MemoryRecord(content=request.content, type=request.type, scope=request.scope,
-                                  provenance=request.provenance, sensitivity=request.sensitivity, ttl=request.ttl)
-            self._records[record.id] = record
-            self._persist()
-            return record
+            return _upsert(self._records, request)
 
     def delete(self, record_id: str) -> bool:
         with self._lock:
-            removed = self._records.pop(record_id, None) is not None
-            if removed:
-                self._persist()
-            return removed
+            return self._records.pop(record_id, None) is not None
 
-    def _persist(self) -> None:  # durable stores override
-        pass
+
+def _upsert(records: dict[str, MemoryRecord], request: MemoryWriteRequest) -> MemoryRecord:
+    """Add the record, or refresh the one with the same scope and content (one record per text)."""
+    for existing in records.values():
+        if existing.scope == request.scope and existing.content == request.content:
+            updated = existing.model_copy(update={"updated_at": utcnow(), "type": request.type,
+                                                  "sensitivity": request.sensitivity, "ttl": request.ttl})
+            records[existing.id] = updated
+            return updated
+    record = MemoryRecord(content=request.content, type=request.type, scope=request.scope,
+                          provenance=request.provenance, sensitivity=request.sensitivity, ttl=request.ttl)
+    records[record.id] = record
+    return record
+
+
+# Amendment A storage tuning; module constants so tests can shorten them.
+LOCK_TIMEOUT_SECONDS = 5.0
+REPLACE_ATTEMPTS = 5
+REPLACE_BACKOFF_SECONDS = 0.05
+STALE_TEMP_SECONDS = 3600
+TEMP_PREFIX, TEMP_SUFFIX = ".memory-", ".json"
+
+Identity = tuple[int, int] | None  # (st_mtime_ns, st_size), or None when the file does not exist
 
 
 class JsonMemoryStore(InMemoryMemoryStore):
-    """Durable store: one JSON file, replaced atomically on every change."""
+    """Durable store: one JSON file shared by several processes on one machine (spec 010 Amendment A).
+
+    Every change is one cross-process transaction under an OS lock on `<file>.lock`: re-read the file, apply
+    only this call's operation by record id, write a temp file, `fsync` it and `os.replace` it. Reads reload
+    when the file changed. Failures raise `MemoryUnavailable` (retryable) and never name memory content.
+    """
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
-        records: list[MemoryRecord] = []
-        if self.path.exists():
-            try:
-                raw = json.loads(self.path.read_text(encoding="utf-8"))
-                records = [MemoryRecord.model_validate(r) for r in raw.get("records", [])]
-            except (OSError, ValueError) as e:
-                raise MemoryUnavailable(f"memory file is unreadable ({type(e).__name__})") from None
-        super().__init__(records)
+        self.lock_path = self.path.with_name(self.path.name + ".lock")
+        self._identity: Identity = None
+        # Why the last reload failed, or None. Reads keep the last good snapshot meanwhile (R13).
+        self.unavailable_reason: str | None = None
+        super().__init__()
+        with self._lock:
+            if self._stat() is not None:  # a missing file is empty; nothing to lock for
+                with self._transaction():
+                    self._records, self._identity = self._read_disk()
 
-    def _persist(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"version": 1, "records": [r.model_dump(mode="json") for r in self._records.values()]}
-        fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".memory-", suffix=".json")
+    # ------------------------------------------------------------------ reads (R13)
+
+    def list(self, scopes: list[str] | None = None) -> list[MemoryRecord]:
+        self._refresh()
+        return super().list(scopes)
+
+    def _refresh(self) -> None:
+        with self._lock:
+            if self._stat() == self._identity and self.unavailable_reason is None:
+                return
+            try:
+                with self._transaction():
+                    self._records, self._identity = self._read_disk()
+            except MemoryUnavailable as e:
+                self.unavailable_reason = e.safe_summary
+                return
+            self.unavailable_reason = None
+
+    # ------------------------------------------------------------------ changes (R7, R8)
+
+    def write(self, request: MemoryWriteRequest) -> MemoryRecord:
+        if contains_secret(request.content):
+            raise ContractError("memory content contains a secret-like value; not saved")
+        with self._lock, self._transaction():
+            records, _ = self._read_disk()
+            record = _upsert(records, request)
+            self._commit(records)
+            return record
+
+    def delete(self, record_id: str) -> bool:
+        with self._lock, self._transaction():
+            records, identity = self._read_disk()
+            if records.pop(record_id, None) is None:
+                self._records, self._identity = records, identity
+                return False
+            self._commit(records)
+            return True
+
+    # ------------------------------------------------------------------ storage details (R9-R12, R14)
+
+    def _stat(self) -> Identity:
         try:
+            st = self.path.stat()
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return (-1, -1)  # cannot stat: force a (failing, reported) reload rather than trust the snapshot
+        return (st.st_mtime_ns, st.st_size)
+
+    @contextmanager
+    def _transaction(self) -> Iterator[None]:
+        stack = ExitStack()
+        try:  # only acquiring is translated here; errors raised by the caller's body pass through unchanged
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            stack.enter_context(file_lock(self.lock_path, LOCK_TIMEOUT_SECONDS))
+        except LockTimeout:
+            raise MemoryUnavailable("memory is busy in another Galliani window; try again") from None
+        except OSError as e:
+            raise MemoryUnavailable(f"memory lock could not be opened ({type(e).__name__}); try again") from None
+        with stack:
+            yield
+
+    def _read_disk(self) -> tuple[dict[str, MemoryRecord], Identity]:
+        """The records on disk now (call under the lock). A missing file is empty; a bad one raises (R12)."""
+        identity = self._stat()
+        if identity is None:
+            return {}, None
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            records = [MemoryRecord.model_validate(r) for r in raw.get("records", [])]
+        except FileNotFoundError:
+            return {}, None
+        except (OSError, ValueError, AttributeError, TypeError) as e:
+            # Only the exception type: pydantic and JSON messages can quote file content.
+            raise MemoryUnavailable(f"memory file is unreadable ({type(e).__name__})") from None
+        return {r.id: r for r in records}, identity
+
+    def _commit(self, records: dict[str, MemoryRecord]) -> None:
+        """Write `records` durably and adopt them as this process's snapshot (call under the lock)."""
+        self._remove_stale_temps()
+        payload = {"version": 1, "records": [r.model_dump(mode="json") for r in records.values()]}
+        tmp = ""
+        try:
+            fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=TEMP_PREFIX, suffix=TEMP_SUFFIX)
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 json.dump(payload, fh, ensure_ascii=False, indent=1)
-            os.replace(tmp, self.path)
+                fh.flush()
+                os.fsync(fh.fileno())
+            self._replace(tmp)
         except OSError as e:
-            Path(tmp).unlink(missing_ok=True)
-            raise MemoryUnavailable(f"memory could not be saved ({type(e).__name__})") from None
+            if tmp:
+                Path(tmp).unlink(missing_ok=True)
+            raise MemoryUnavailable(f"memory could not be saved ({type(e).__name__}); try again") from None
+        self._records, self._identity = records, self._stat()
+
+    def _replace(self, tmp: str) -> None:
+        """`os.replace`, retrying a transient `PermissionError` (another program briefly holding the file)."""
+        for attempt in range(REPLACE_ATTEMPTS):
+            try:
+                os.replace(tmp, self.path)
+                return
+            except PermissionError:
+                if attempt == REPLACE_ATTEMPTS - 1:
+                    raise
+                time.sleep(REPLACE_BACKOFF_SECONDS * (attempt + 1))
+
+    def _remove_stale_temps(self) -> None:
+        cutoff = time.time() - STALE_TEMP_SECONDS
+        for leftover in self.path.parent.glob(f"{TEMP_PREFIX}*{TEMP_SUFFIX}"):
+            try:
+                if leftover.stat().st_mtime < cutoff:
+                    leftover.unlink()
+            except OSError:
+                pass
