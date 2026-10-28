@@ -83,29 +83,29 @@ In the desktop app (`python -m app.desktop`), switch the message box from **Chat
 
 `galliacli` is a full-screen terminal chat for the agent (specs 017 and 018). It needs the optional `tui` extra. The command is `galliacli`; the name `galliani` belongs to the desktop app.
 
-Install, in order of preference:
+Galliani is not published on PyPI, so do not run `pip install galliani`. Install it from a clone of this repository or from the wheel attached to a GitHub release. Use a virtual environment of its own: the package installs a top-level `app` module that can clash with other projects in a shared environment.
 
-```bash
-# From a clone, recommended: pipx puts the command on PATH (run `pipx ensurepath` once)
-pipx install -e ".[tui]"
-
-# Or into a virtual environment
-pip install -e ".[tui]"
-
-# Or for your user only
-pip install --user -e ".[tui]"
-```
-
-Non-editable installs (`pip install "galliani[tui]"`) still lack package data until spec 016 Phase 5, so install from a clone for now.
-
-**Windows PATH.** `pip install --user` puts scripts in `%APPDATA%\Python\Python3XY\Scripts` (for example `Python312\Scripts`), which is not on PATH by default. Add it for your user in PowerShell, then open a new terminal:
+From a clone (a regular, non-editable install), in PowerShell:
 
 ```powershell
-$scripts = "$env:APPDATA\Python\Python312\Scripts"   # match your Python version
-[Environment]::SetEnvironmentVariable("Path", "$([Environment]::GetEnvironmentVariable('Path','User'));$scripts", "User")
+python -m venv .venv
+.venv\Scripts\activate
+pip install ".[tui]"
 ```
 
-`python -m galliani` always works, with or without PATH.
+From the release wheel, once a release carries the wheel (the release notes give the exact file name; replace `vX.Y.Z` and `X.Y.Z` with the release you want):
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install "galliani[tui] @ https://github.com/Jotadev-bug/Galliani/releases/download/vX.Y.Z/galliani-X.Y.Z-py3-none-any.whl"
+```
+
+Both forms install the terminal (`galliacli`) and the desktop launcher (`galliani`); the `tui` extra adds Textual.
+
+The desktop app from pip is Windows only. It needs the `desktop` extra and the Microsoft Edge WebView2 runtime: `pip install ".[desktop,tui]"`. `Galliani.exe` from [Download](#download) or winget remains the recommended way to install the desktop app. A pip-installed `galliani` and the winget `galliani` are the same app, so if both are installed the first one on PATH runs.
+
+**Which copy runs.** On Windows, `where galliacli` and `where galliani` list every copy on PATH, first match first. A virtual environment puts its commands on PATH only while it is activated, and `python -m galliani` always works inside it.
 
 Check it, then run it in any project folder (the folder you start in is the workspace):
 
@@ -115,7 +115,7 @@ cd path/to/your/project
 galliacli
 ```
 
-On Windows, `where galliacli` shows which copy is on PATH. No installer edits PATH for you.
+No installer edits PATH for you.
 
 ## Calling the local API
 
