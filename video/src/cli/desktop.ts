@@ -97,7 +97,7 @@ export function cursorAt(frame: number, beats: readonly CliBeat[] = BEATS, motio
   const grab = (c: Point) => ({x: c.x + DESKTOP.grab.x, y: c.y + DESKTOP.grab.y});
   if (inBeat(frame, hover)) {
     const t = progress(cursor, frame);
-    const to = grab(heroHome());
+    const to = grab(heroHome(true)); // onto the lifted tile, so the drag starts where the hover ends (R37)
     return {x: DESKTOP.cursorEntry.x + (to.x - DESKTOP.cursorEntry.x) * t, y: DESKTOP.cursorEntry.y + (to.y - DESKTOP.cursorEntry.y) * t};
   }
   if (inBeat(frame, drop)) return grab(DRAG_TO); // the cursor stays still after the release (R71)
