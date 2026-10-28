@@ -378,3 +378,53 @@ Status: Proposed (2026-10-19). The user answered spec 018's four open questions 
   - release-engineer: the docs and the `pyproject.toml` script rename. `scripts/winget_manifest.py` is not changed.
   - qa-security: the gate.
 - **Reversal.** Motion can be removed by making `motion_enabled` return false. Completion is additive and can be dropped by not opening the popup.
+
+## Decision 0039: Installable package: `galliani` and `galliacli` console scripts, configuration as package data (spec 016 Phase 5a, roadmap F1)
+
+Status: Proposed (2026-10-28). Amends spec 016: new Phase 5a, R27-R38; Phase 5 renamed to Phase 5b; plus Starting Point, Non-goals, Interfaces, Error Handling, Security, Acceptance Criteria, Tests, Implementation Tasks, Dependencies, and Open Questions 7-11. It does not change specs 017 or 018. Open Question 8 asks whether to amend 017 R5. Nothing is implemented until the user approves the spec and answers Open Questions 7-11.
+
+- **Problem (checked 2026-10-28).** A wheel built from `main` holds only Python files. It has no `config/*.yaml` and nothing from `app/web/`, it installs a stray top-level `benchmarks` package, and its only script is `galliacli`. As a result, `CONFIG_DIR` points at a missing `site-packages/config`, and both apps work only from a source or editable install (017 Open Item 4).
+- **Names (user decision 2026-10-19, Decision 0035, kept).**
+  - `galliani = "app.desktop:main"` is the desktop app. It matches the winget alias (016 R15).
+  - `galliacli = "galliani.tui.entry:main"` is the terminal.
+  - There is no other alias, and the distribution and extras keep the name `galliani`.
+  - `galliani` is a console script, not a GUI script, so `--smoke-test` output and start errors stay visible. Rejected: a `gui-scripts` entry, which hides that output.
+- **The configuration moves to `app/defaults/`.** `CONFIG_DIR` then follows one rule: `ROUTER_CONFIG_DIR`, otherwise the `defaults` folder next to `app/config.py`. One path serves the checkout, editable installs, wheels and PyInstaller. Rejected options:
+  - Keeping `config/` and mapping it into the wheel with `package-dir`. A plain source checkout (tests run from the repo root) would not see the mapped package, so the code would need two lookup paths.
+  - Making `config` its own top-level package. That adds another generic top-level name to `site-packages`.
+  - Using `data_files`, which installs relative to `sys.prefix`, not to the code.
+  - Keeping a fallback to `config/`. Two locations would drift apart.
+
+  Cost: the docs and scripts that name `config/` change (listed in R30), and anyone with local edits to `config/*.yaml` in a clone has to carry them over. History in `CHANGELOG.md` and this file is not edited.
+- **`app/web/` becomes package data** (`app = ["web/*", "defaults/*.yaml"]`), so a file added later is included without another change. `benchmarks` leaves the wheel because no installed code imports it.
+- **Desktop app without its extra.** `galliani` exits 2 with a fixed message (R28) instead of a traceback. The check comes before the server starts. `--smoke-test` and the frozen `.exe` are unaffected. This adds to the spec 012 start path and is the only runtime behavior change in Phase 5a.
+- **Verification by building the real artifact.** `scripts/check_wheel.py` does these steps:
+  1. builds the sdist and then the wheel from it,
+  2. inspects the file list, which is a pure function and unit-tested,
+  3. installs `[tui]` and, separately, `[desktop,tui]` into fresh venvs,
+  4. runs the commands from an empty folder with `PYTHONPATH` unset and the probe under `-I`, so the checkout cannot hide a missing file,
+  5. checks that nothing was written into the venvs.
+
+  It never runs a task, because a key in the OS credential store could make it spend money. CI adds a Windows `wheel` job that keeps `contents: read`. The full build is not a pytest test, because it needs a network and minutes. Rejected: checking only `pip install .` from the checkout, which still puts the repo on `sys.path` when run from the repo root and has hidden this exact bug before.
+- **No PyPI, and no PyPI install commands.** Phase 5b (R24, trusted publishing) stays optional and unscheduled. Until the project owns the name, docs, the site and release notes never tell users to fetch `galliani` from PyPI (R37), because someone else could register the unclaimed name. The in-app hint in 017 R5 is the one remaining case, and Open Question 8 covers it.
+- **Unchanged.** Spec 016's standing constraints all hold: no telemetry, no accounts, no project-run servers, no update checks and no new network calls. AGPL-3.0 stays. The `.exe` ships unsigned. The winget manifest and `scripts/winget_manifest.py` do not change. The core stays provider-neutral, and nothing touches Task State, Memory, tools or permissions.
+- **Open for the user** (spec 016 Open Questions 7-11), with the recommendations:
+  - 7: keep the `app` name for now, but rename it before PyPI;
+  - 8: reword the 017 R5 hint;
+  - 9: add `keyring` to the `tui` extra;
+  - 10: attach the wheel to GitHub Releases;
+  - 11: run the wheel check on Windows only.
+- **Ownership.**
+  - core-engineer: `app/`, the configuration move, and the docstrings and `docs/routing.md` that name the path.
+  - release-engineer: `pyproject.toml`, `scripts/`, `.github/` and `CHANGELOG.md`.
+  - product-growth: the README and `CONTRIBUTING.md`.
+  - qa-security: the review, the clean-venv and pipx runs, and `docs/security.md`.
+  - main agent: the `config/` row in `ORCHESTRATION.md`.
+
+  P1 and P2 can run in parallel because the path is fixed in the spec.
+- **Risks.**
+  - (a) A pip-installed `galliani` and the winget `galliani` both sit on PATH. They are the same app but can be different versions. The README says how to check which one runs.
+  - (b) A generic `app` package in a shared environment. pipx is recommended, and the rename is a gate for Phase 5b (Open Question 7).
+  - (c) The wheel job adds CI minutes on every pull request. This is accepted; it is the only check that catches missing package data.
+  - (d) A README install command might not work exactly as printed. Release-engineer runs each command in a clean venv before it goes in (R36).
+- **Reversal.** Removing the `galliani` script and `package-data` brings back today's editable-only state. Moving the YAML back means reverting R30's one-line rule and the `--add-data` path.
