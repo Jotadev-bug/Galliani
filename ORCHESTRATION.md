@@ -54,6 +54,10 @@ Definitions live in `.claude/agents/<name>.md`. Keep the roster at six; add a ro
 - **Outward-facing actions need the user's explicit yes:** pushing tags, publishing releases, Store or winget submissions, posting publicly, spending money. Agents prepare; the user triggers.
 - **Standing constraints** (spec 016, Decision 0033): no telemetry, no accounts, no project-run servers, AGPL-3.0; the `.exe` ships unsigned until the user buys a code-signing certificate (no date, no vendor chosen); SignPath ruled out; no Microsoft Store..
 
+## Kiro workers
+
+Kiro (user's Pro+ plan, 2000 credits) is an optional worker for when the Claude usage limit is close or for suitable tasks. When a task goes to Kiro, it must use Anthropic models only: Claude Opus 5.5 for complex work, Sonnet 5.5 for routine work, Haiku 5 for small or mechanical work. Never pick a non-Anthropic model. Hand the brief over with a file path (`orca terminal send ... --enter`) if the `worker-start` dispatch fails at `agent_readiness`, and read the final report from the scratchpad file because Kiro does not send `worker_done` through Orca. Kiro follows the same rules as every other worker: spec first, disjoint paths, handoff format below.
+
 ## Handoff format
 
 Every agent ends with: `Changed:` files · `Verified:` command and result · `Open:` anything unfinished, unverified or needing a decision · optionally `Memory:` durable facts the main agent should consider saving (agents never write memory themselves; no secrets, no reasoning traces).
