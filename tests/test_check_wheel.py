@@ -49,6 +49,19 @@ def test_loose_top_level_file_is_refused():
     assert "unexpected top-level file: .env" in inspect_wheel(GOOD_NAMES + [".env"], GOOD_ENTRY_POINTS)
 
 
+def test_wheel_data_folder_is_refused():
+    # Spec 016 Security: nothing outside app/ and galliani/ except the .dist-info metadata. A `.data` folder would
+    # let a wheel install files such as `.env` into the environment's root.
+    names = GOOD_NAMES + ["galliani-0.2.0.data/data/.env"]
+    assert "unexpected top-level package: galliani-0.2.0.data" in inspect_wheel(names, GOOD_ENTRY_POINTS)
+
+
+def test_galliani_script_pointing_at_the_terminal_is_refused():
+    entry = "[console_scripts]\ngalliacli = galliani.tui.entry:main\ngalliani = galliani.tui.entry:main\n"
+    assert inspect_wheel(GOOD_NAMES, entry) == [
+        "script galliani points to galliani.tui.entry:main, expected app.desktop:main"]
+
+
 def test_missing_package_is_reported():
     names = [n for n in GOOD_NAMES if not n.startswith("galliani/")]
     assert "missing top-level package: galliani" in inspect_wheel(names, GOOD_ENTRY_POINTS)

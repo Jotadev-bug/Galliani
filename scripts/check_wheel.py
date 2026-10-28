@@ -65,7 +65,7 @@ def inspect_wheel(names: list[str], entry_points: str) -> list[str]:
         top = name.split("/", 1)[0]
         if "/" not in name:
             problems.append(f"unexpected top-level file: {name}")
-        elif top.endswith(".dist-info") or top.endswith(".data"):
+        elif top.endswith(".dist-info"):  # only the metadata; a `.data` folder could install files anywhere (Security)
             continue
         elif top not in ALLOWED_PACKAGES:
             packages.add(top)
