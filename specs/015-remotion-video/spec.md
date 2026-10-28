@@ -10,6 +10,8 @@ Amended 2026-10-23 (Decision 0037): after viewing the built `GallianiCli`, the u
 
 Amended 2026-10-23 (Decision 0038): after viewing the reworked `GallianiCli` preview, the user found it "a bit of low quality", rejected the mark-and-prompt intro, and asked for the Galliani logo as a desktop icon dragged by a mouse into a terminal, a terminal that then loads the full Galliani UI, the robot from the showcase guiding the terminal, and a higher resolution. Part B adds R66-R82 and B-AC22-B-AC27, replaces the R46 storyboard, and amends R20, R21, R23, R28, R30, R31, R38, R39, R43, R45, R47, R49-R51, R54, R55, R57, R61, B-AC2-B-AC6, B-AC10, B-AC11, B-AC13-B-AC16, B-AC18 and B-AC20. Decision 0037's restraint rules still hold. This amendment is Accepted: the user directed it. The preview still needs the user's approval before the final render.
 
+Amended 2026-10-28 (Decision 0038 addendum): the independent V3-QA review (`video/tests/cli-v3qa.test.ts`) found 0 High; 1 Medium visual (the robot's arm drawn under the head); 1 Medium and 1 Low spec-vs-shipped conflict, ruled by the orchestrator and written in below (R46 `route-next`, R52 at-file exception); and 1 Low code fix (a 2 px cursor jump at the `desk-hover`/`desk-drag` cut). R46, R52, R78 and B-AC17 are amended. The fixes go to V3b; then the user reviews the preview and stills (V3 gate); the V4 final render runs only after approval. This amendment is Accepted: the orchestrator ruled it, and it removes UI states the product does not reach (R34) rather than adding new ones.
+
 ## Compositions and scope
 
 The Remotion project in `video/` holds these compositions:
@@ -346,13 +348,13 @@ A 28-34 second motion-graphics video that shows the shipped terminal UI (`gallia
     | `plan-steps` | Objective to plan | 330-390 | 11-13 | Plan entry; four step rows appear one by one as `...` pending, step 1 `>` running; working line `Planning…`; the cost changes by a cut, without a count | `gesture` | `point` at the plan panel | (same caption) |
     | `plan-check` | Objective to plan | 390-420 | 13-14 | Step 1 turns `[ok]` verified (`good`); step 2 running | - | idle | (same caption) |
     | `route-first` | Routing | 420-480 | 14-16 | A route line `·` for step 2; the status line shows `route <id>`; cost counts up | `count` | idle | `The cheapest capable model, every step.` |
-    | `route-next` | Routing | 480-540 | 16-18 | Step 2 `[ok]`; step 3 is routed to a different id; `step 3/4` | `gesture` | `glance` at the new route line | (same caption) |
+    | `route-next` | Routing | 480-540 | 16-18 | Step 2 `[ok]`; step 3 (`write_file`, a tool step with no route line) is next; `step 3/4`; no second route id appears (amended 2026-10-28) | `gesture` | `glance` at step 2's route line | (same caption) |
     | `slash-popup` | Commands | 540-600 | 18-20 | Cut to an idle prompt: `/` opens the completion popup with the real command rows | `gesture` | `nod` as the popup opens | `Slash commands. @ files.` |
     | `at-file` | Commands | 600-675 | 20-22.5 | `@sig` completes to a workspace file path from the popup | - | idle | (same caption) |
     | `approval-card` | Control | 675-705 | 22.5-23.5 | The inline approval card for the write step enters (step 3 `[?]` waiting, `warn`) | `card` | idle | `You approve what matters.` |
     | `approval-wait` | Control | 705-735 | 23.5-24.5 | The same waiting screen, held | `gesture` | `raise` one hand toward the card | (same caption) |
     | `approval-answer` | Control | 735-795 | 24.5-26.5 | `y` is pressed; the card closes; step 3 runs and turns `[ok]` | `gesture` | `lower` the hand when `y` is pressed | (same caption) |
-    | `verified-done` | Close | 795-855 | 26.5-28.5 | Step 4 `[ok]`; verification entry `●` (`agent`); result `●` (`good`) `Status: done - ...` | `gesture` | `cheer` once | `Local. No telemetry. Free.` |
+    | `verified-done` | Close | 795-855 | 26.5-28.5 | Step 4's route line `·` with its real, different id (`google/gemini-3.1-flash-lite`, captured under R33), the only route id other than step 2's; step 4 `[ok]`; verification entry `●` (`agent`); result `●` (`good`) `Status: done - ...` | `gesture` | `cheer` once | `Local. No telemetry. Free.` |
     | `end-card` | Close | 855-930 | 28.5-31 | The mark and the single line `galliacli`, centered (R65); the robot beside the block | `gesture` | `wave` once | (same caption) |
     | `end-seam` | Close | 930-960 | 31-32 | Cut back to the seam state: the opening desktop with the hero icon in place, the empty window and no cursor (R57) | - | - | (same caption) |
 
@@ -370,6 +372,7 @@ A 28-34 second motion-graphics video that shows the shipped terminal UI (`gallia
 50. Motion budget per frame (amended 2026-10-23; replaces Decision 0037's "at most two"): at any frame, at most three foreground elements are animating. An element counts while it has an active `CliMotion` or while it is being typed (the shell line or the prompt). The robot counts as one element for every frame it is on screen, whether it is gesturing or idling. The cursor and the dragged icon count as one element during `drag`. The ambient motions do not count: the background field, the caret blink (in the shell line and the prompt box) and the spinner glyph.
 51. Holds: every beat contains at least one stretch of 8 or more consecutive frames where nothing in the foreground moves or changes. That means no motion (a gesture included), no typed character, no new row and no state change. Only the ambient motions go on: the background field, the spinner glyph, the caret blink and the robot's idle breathing and blinks (R77) (amended 2026-10-23).
 52. Typing speeds up over each string. The interval between characters never grows from one character to the next, and the last third of a string is typed at least 1.5x faster than the first third. Typing has no pauses or bumps, and it finishes inside its beat.
+    Exception (amended 2026-10-28, Decision 0038 addendum), limited to the `at-file` beat: typing may pause once, for at most 30 frames, while the `@file` completion popup is fully shown and nothing else moves except the background field. The pause exists so the 3-row popup is readable at 1x (V2d QA finding). The interval rule and the 1.5x rule apply to the typed characters on either side of the pause, not across it. No other beat may pause typing.
 53. Rhythm grid: every beat start and every `CliMotion` start (gestures included) falls on a multiple of 15 frames (0.5 s).
 54. Pace (amended 2026-10-23): the total is 840-1020 frames (28-34 s). It is a multiple of 30, so the caret blink is continuous across the loop seam. Each beat is 30-105 frames (R23), and each caption segment is 60-180 frames, so R43 holds. The Hook segment (the desktop act) is 150-180 frames, Launch is 60-105 frames, and the end card plus seam is 75-120 frames. The R46 frame column is the reference timing. A retiming that stays within R23, R43, R53, R60 and this requirement keeps the beat ids, order, on-screen content, motions, gestures and captions unchanged.
 55. No dead start (amended 2026-10-23): frame 0 already shows the desktop (the hero icon, the faint icons and the terminal window) on the moving background field, and the hook caption cuts in at frame 0.
@@ -461,7 +464,7 @@ A 28-34 second motion-graphics video that shows the shipped terminal UI (`gallia
 78. Gestures: each gesture is one `gesture` `CliMotion` with a `pose` and a `target` (an element box in scene data). It lasts at most 30 frames and uses `outExpo` or `outQuart` on each leg. A gesture has at most two legs (out and back), except `wave`, which has three (raise, one swing, lower). There is no repeat, oscillation or overshoot. The poses:
     - `lean`: the head tilts at most 10° and the body leans at most 8° toward the prompt box, with the eyes looking at it.
     - `point`: one arm rotates to aim within 20° of the direction from its shoulder to the target's center (the plan panel), then holds.
-    - `glance`: only the eyes (at most 6 px horizontal and 4 px vertical, the `Robot.tsx` look range) and the head (at most 10°) turn toward the new route line, then back.
+    - `glance`: only the eyes (at most 6 px horizontal and 4 px vertical, the `Robot.tsx` look range) and the head (at most 10°) turn toward step 2's route line, then back (amended 2026-10-28: step 3 is a tool step with no route line, R34).
     - `nod`: the head tilts down at most 10° and back, once.
     - `raise`: one arm goes up toward the approval card and holds raised. The raised arm carries into `approval-answer` as a still pose; no motion runs across the cut (R37).
     - `lower`: the raised arm comes down, starting on the frame `y` is pressed.
@@ -584,7 +587,7 @@ Given the scene data, then every beat start and every `CliMotion` start is a mul
 
 ### B-AC17 Typing and cost count (R52, R56)
 
-Given each typing schedule, then `typedCount` is non-decreasing, the character intervals never grow, the last third is typed at least 1.5x faster than the first third, and typing completes inside the beat. Given each cost value over the timeline, then it never falls (R35) and its text length is constant.
+Given each typing schedule, then `typedCount` is non-decreasing, the character intervals never grow, the last third is typed at least 1.5x faster than the first third, and typing completes inside the beat. The one allowed exception is the `at-file` beat: a single pause of at most 30 frames while the `@file` popup is fully shown, during which nothing in the foreground moves; the interval checks skip only that pause. A fixture with a pause in any other beat, a second pause in `at-file`, or a pause over 30 frames fails (amended 2026-10-28). Given each cost value over the timeline, then it never falls (R35) and its text length is constant.
 
 ### B-AC18 Loop seam (R57)
 
@@ -726,6 +729,14 @@ Given the user's approval is recorded (this spec's Status or the PR), when `npm 
   - The scans still cover `src/cli/**`.
   - `cli-qa.test.ts` is updated, not weakened.
   Exit: findings fixed or accepted by tech-lead.
+  Verdict (2026-10-28, `video/tests/cli-v3qa.test.ts`): 0 High; Medium visual: the robot's arm is drawn under the head; Medium spec conflict: `route-next` (ruled, R46 and R78 amended); Low spec conflict: the at-file typing pause (ruled, R52 and B-AC17 amended); Low code: a 2 px cursor jump at the `desk-hover`/`desk-drag` cut. All open items go to V3b.
+- [ ] V3b (ui-engineer, owns only `video/`). Fix the V3-QA findings, tests first:
+  1. Fix the robot arm drawn under the head: the layer order matches `Robot.tsx`, and no arm is hidden by the head in any pose (R74).
+  2. `route-next`: no second route id before step 4; the `glance` targets step 2's route line; step 4's route line shows the captured `google/gemini-3.1-flash-lite` in `verified-done` (R46, R78).
+  3. The `at-file` pause stays within the R52 exception (one pause, at most 30 frames, popup fully shown, nothing else moving); the B-AC17 tests encode the exception and its failing fixtures.
+  4. The cursor position is continuous across the `desk-hover`/`desk-drag` cut (no 2 px jump; R37).
+  5. Turn the three `cli-v3qa.test.ts` todo findings into passing tests; do not weaken them.
+  Exit: `npm test`, `npm run typecheck` and `npm run smoke` pass in `video/`; `npm run stills:cli` and `npm run preview:cli` rerun and their paths are reported; the diff touches only `video/`.
 - [ ] V3 gate: stills (3840x2160) and the 1x preview to the user (B-AC13). Stop until the user approves. Any change to beats, gestures or captions after review is a spec amendment (R24).
 - [ ] V4 Final 4K render (B-AC14), only after the user's approval is recorded. The user publishes.
 

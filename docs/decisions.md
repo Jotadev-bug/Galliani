@@ -440,3 +440,11 @@ Status: Accepted (2026-10-23). The user directed it after viewing the reworked p
   - qa-security does V3-QA: privacy, determinism, no brand or asset, showcase untouched, and QA tests updated rather than weakened.
   - The user reviews the 4K stills and the 1x preview (V3), then approves the final 4K render (V4) and publishes.
 - **Reversal.** Restore the Decision 0037 storyboard, R38-R39 and R49-R57 from git history, and delete `robot.tsx`, the desktop code, the `ROBOT` palette group and R66-R82. The showcase is not affected.
+
+### Addendum (2026-10-28): V3-QA rulings
+
+Status: Accepted (2026-10-28), ruled by the orchestrator on the independent V3-QA review (`video/tests/cli-v3qa.test.ts`). Verdict: 0 High; 1 Medium visual (robot arm drawn under the head); 1 Medium and 1 Low spec-vs-shipped conflict (ruled below); 1 Low code fix (2 px cursor jump at the `desk-hover`/`desk-drag` cut). Fixes go to V3b, then the user's review of the preview and stills, then V4 only after approval.
+
+- **`route-next` (Medium).** R46 said step 3 is routed to a different id. In the shipped UI step 3 (`write_file`) is a tool step with no route line, and R34 forbids states the product does not reach. Ruling: the robot glances at step 2's existing route line, and no second route id appears before step 4. Step 4's real route (`google/gemini-3.1-flash-lite`) stays in `verified-done`. R46 and R78 are amended. Rejected: drawing a route line on a tool step, which would show an unreal state.
+- **At-file pause (Low).** R52 bans typing pauses, but the `at-file` beat holds 26 frames after `@` so the 3-row popup is readable (a V2d QA finding). Ruling: an explicit R52 exception limited to `at-file`: one pause of at most 30 frames while the popup is fully shown and nothing else moves except the background. No other beat may pause. R52 and B-AC17 are amended. Rejected: removing the pause, which brings back the unreadable popup.
+- **Reversal.** Restore the earlier R46 rows, R52, R78 and B-AC17 from git history.
