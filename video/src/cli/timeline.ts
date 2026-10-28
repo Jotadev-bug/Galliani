@@ -342,6 +342,8 @@ export const ROBOT_FRAME = {
   eyeRow: -10,
   eyeHeight: 10,
   restArm: 12, // degrees: the left arm rests at +12, the right at -12
+  // The furthest an arm turns from hanging before the head, drawn above it as in Robot.tsx, covers any of it (R74).
+  armReach: 124,
   antennaWidth: 3,
   thrusterOpacity: 0.2,
   antennaTipOpacity: 0.85,
@@ -351,7 +353,7 @@ export const ROBOT_SCALE = ROBOT_HEIGHT / ROBOT_FRAME.viewBox.height;
 const robotBox = (x: number, y: number): Box => ({x, y, width: ROBOT_FRAME.viewBox.width * ROBOT_SCALE, height: ROBOT_HEIGHT});
 // Act 3: in the margin at the terminal's lower right; the end card: beside the block (R76).
 export const ROBOT_PLACE = {
-  act3: robotBox(TERMINAL.x + TERMINAL.width + 24, 770),
+  act3: robotBox(TERMINAL.x + TERMINAL.width + 24, 680), // high enough that `point` aims within armReach + 20°
   end: robotBox(1212, 440),
 };
 export const ROBOT_BREATH = {px: 2.5, period: 90}; // R77: at most 3 px, a 60-120 frame period
@@ -376,11 +378,11 @@ export const POSES = {
   lean: {legs: [8, 10, 8], headTilt: -8, lean: -6, eyeX: -5, eyeY: 3},
   point: {legs: [8, 14, 8]},
   glance: {legs: [6, 12, 6], headTilt: -6, eyeX: -6, eyeY: -3},
-  nod: {legs: [6, 6], headTilt: -8},
+  nod: {legs: [8, 6, 8], headTilt: -8, eyeY: 2, headDip: 3}, // headDip: robot units down, the nod's downward cue
   raise: {legs: [9]},
   lower: {legs: [9]},
-  cheer: {legs: [9, 6, 9], arm: 140},
-  wave: {legs: [8, 10, 8], arm: 140, swing: 20},
+  cheer: {legs: [9, 6, 9], arm: 112}, // restArm + arm = armReach
+  wave: {legs: [8, 10, 8], arm: 112, swing: 20},
 } as const;
 
 // ---------------------------------------------------------------- beats (R46)
@@ -550,7 +552,7 @@ const BEATS_RAW: readonly Omit<CliBeat, 'start'>[] = [
     }}]},
     gesture: {at: 15, pose: 'cheer', target: 'prompt'},
   },
-  {id: 'end-card', segment: 'Close', duration: 75, shot: {kind: 'end'}, gesture: {at: 15, pose: 'wave', target: 'cta'}},
+  {id: 'end-card', segment: 'Close', duration: 75, shot: {kind: 'end'}, gesture: {at: 30, pose: 'wave', target: 'cta'}},
   {id: 'end-seam', segment: 'Close', duration: 30, shot: {kind: 'desk'}},
 ];
 

@@ -31,7 +31,7 @@ export const GuideRobot: React.FC<{pose: RobotPose}> = ({pose}) => {
       <circle {...S.chest} fill={ROBOT.dark} />
       <rect {...S.armLeft} fill={ROBOT.shellShade} transform={`rotate(${pose.armLeft} ${ROBOT_FRAME.pivotLeft.x} ${ROBOT_FRAME.pivotLeft.y})`} />
       <rect {...S.armRight} fill={ROBOT.shellShade} transform={`rotate(${pose.armRight} ${ROBOT_FRAME.pivotRight.x} ${ROBOT_FRAME.pivotRight.y})`} />
-      <g transform={`rotate(${pose.headTilt} 0 0)`}>
+      <g transform={`translate(0 ${pose.headDip}) rotate(${pose.headTilt} 0 0)`}>
         <line {...S.antenna} stroke={ROBOT.shellShade} strokeWidth={ROBOT_FRAME.antennaWidth} strokeLinecap="round" />
         <circle {...S.antennaTip} fill={ROBOT.eye} opacity={ROBOT_FRAME.antennaTipOpacity} />
         <rect {...S.head} fill={ROBOT.shell} />

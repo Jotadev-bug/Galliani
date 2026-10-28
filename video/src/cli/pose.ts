@@ -12,6 +12,7 @@ export interface RobotPose {
   box: Box; // the robot's box at rest; `breath` moves it vertically
   breath: number; // px
   headTilt: number; // degrees
+  headDip: number; // robot units down, the nod's cue
   lean: number; // degrees, the whole robot
   eyeX: number; // robot units
   eyeY: number;
@@ -20,7 +21,7 @@ export interface RobotPose {
   blink: number; // eye height factor, 1 open
 }
 
-const REST = {headTilt: 0, lean: 0, eyeX: 0, eyeY: 0, armLeft: ROBOT_FRAME.restArm, armRight: -ROBOT_FRAME.restArm};
+const REST = {headTilt: 0, headDip: 0, lean: 0, eyeX: 0, eyeY: 0, armLeft: ROBOT_FRAME.restArm, armRight: -ROBOT_FRAME.restArm};
 type Parts = typeof REST;
 
 /** The only free-running motion: a sine of the frame, at most ROBOT_BREATH.px (R77). */
@@ -51,6 +52,9 @@ export function aimAngle(box: Box, target: Box, side: 'left' | 'right' = 'left')
   return (Math.atan2(-dx, dy) * 180) / Math.PI; // SVG rotate(θ) turns (0, 1) into (-sin θ, cos θ)
 }
 
+/** An arm angle limited to armReach, so the head never covers the arm (R74). */
+const reach = (degrees: number) => Math.max(-ROBOT_FRAME.armReach, Math.min(ROBOT_FRAME.armReach, degrees));
+
 /** Each leg's eased progress at a frame: [out, back] or [raise, swing, lower]. */
 function legProgress(m: CliMotion, frame: number): number[] {
   const legs = m.legs ?? [m.frames];
@@ -78,15 +82,18 @@ function gesturePose(m: CliMotion, frame: number, from: Parts, box: Box): Parts 
     case 'lean':
     case 'glance':
     case 'nod': {
-      const shape = POSES[pose] as {headTilt: number; lean?: number; eyeX?: number; eyeY?: number};
-      return {...from, headTilt: shape.headTilt * there, lean: (shape.lean ?? 0) * there, eyeX: (shape.eyeX ?? 0) * there, eyeY: (shape.eyeY ?? 0) * there};
+      const shape = POSES[pose] as {headTilt: number; headDip?: number; lean?: number; eyeX?: number; eyeY?: number};
+      return {
+        ...from, headTilt: shape.headTilt * there, headDip: (shape.headDip ?? 0) * there, lean: (shape.lean ?? 0) * there,
+        eyeX: (shape.eyeX ?? 0) * there, eyeY: (shape.eyeY ?? 0) * there,
+      };
     }
     case 'point': {
-      const aim = aimAngle(box, target);
+      const aim = reach(aimAngle(box, target));
       return {...from, armLeft: from.armLeft + (aim - from.armLeft) * there};
     }
     case 'raise': {
-      const aim = aimAngle(box, target);
+      const aim = reach(aimAngle(box, target));
       return {...from, armLeft: from.armLeft + (aim - from.armLeft) * p[0]};
     }
     case 'lower':
