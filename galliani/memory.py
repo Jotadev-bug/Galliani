@@ -311,8 +311,10 @@ class JsonMemoryStore(InMemoryMemoryStore):
             return {}, None
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
-            if not isinstance(raw, dict) or not isinstance(raw.get("records"), list):
-                raise TypeError  # not the {"version": 1, "records": [...]} format: never treat it as empty
+            if not isinstance(raw, dict) or raw.get("version") != 1 or not isinstance(raw.get("records"), list):
+                # Not the {"version": 1, "records": [...]} format (a newer version included): never treat it as
+                # empty and never rewrite it, so a downgrade cannot drop fields this version does not know.
+                raise TypeError
             records = [MemoryRecord.model_validate(r) for r in raw["records"]]
         except FileNotFoundError:
             return {}, None

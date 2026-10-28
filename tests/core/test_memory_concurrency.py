@@ -246,6 +246,20 @@ def test_an_unreadable_file_is_never_overwritten(path, bad):
     assert path.read_bytes() == before and temp_files(path.parent) == []
 
 
+def test_a_file_with_another_version_is_never_overwritten(path):
+    store = JsonMemoryStore(path)
+    store.write(req("kept record"))
+    future = {"version": 2, "records": [], "future_field": ["keep me"]}
+    path.write_text(json.dumps(future), encoding="utf-8")
+    before = path.read_bytes()
+    with pytest.raises(MemoryUnavailable) as caught:
+        store.write(req("new record"))
+    assert "keep me" not in str(caught.value)
+    assert path.read_bytes() == before and temp_files(path.parent) == []
+    with pytest.raises(MemoryUnavailable):
+        JsonMemoryStore(path)
+
+
 def test_a_missing_file_counts_as_empty(path):
     store = JsonMemoryStore(path)
     store.write(req("first"))
