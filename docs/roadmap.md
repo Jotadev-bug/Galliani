@@ -39,7 +39,7 @@ Branding (name, logo, Claude mascot) was checked by the user and is no longer a 
 | # | Item | Owner | Spec |
 |---|---|---|---|
 | 14 | macOS and Linux builds (PyInstaller + pywebview already portable in principle) | release-engineer | New spec; amends 016 non-goals |
-| 15 | PyPI package, trusted publishing (`pipx install galliani`) | release-engineer | 016 Phase 5 |
+| 15 | PyPI package, trusted publishing (optional; the PyPI name `galliani` is not claimed yet, so no doc tells users to install from PyPI) | release-engineer | 016 Phase 5 |
 | 16 | Plugin/tool packs: user-installable registered tools with schemas and permission metadata | tech-lead + core-engineer | 005 extension |
 | 17 | Team features: shared routing policies and budget caps as a config file, no server | core-engineer | New spec |
 | 18 | Custom domain and docs site | ui-engineer + user | Open Question 2 |

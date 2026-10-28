@@ -52,16 +52,16 @@ Delete `docs/summary.md` and `smoke.jsonl` afterwards.
 
 ## 4a. Terminal command smoke (manual)
 
-Spec 018 R24, R26, R27. In a fresh virtual environment (or with `pipx install -e ".[tui]"`), from a clone:
+Spec 018 R24, R26, R27. In a fresh virtual environment, from a clone:
 
 ```powershell
-pipx install -e ".[tui]"
+pip install ".[tui]"
 galliacli --version      # prints: galliacli <version>, exit 0
 where.exe galliacli      # shows the Scripts folder on PATH
 python -m galliani --version
 ```
 
-`galliacli --version` must print the `pyproject.toml` version. If `where.exe galliacli` finds nothing, run `pipx ensurepath` and open a new terminal (for `pip install --user`, see the README "Interactive terminal" PATH note). The Scripts folder must hold `galliacli` and no terminal `galliani` script; the desktop keeps `galliani`. Record the result in the pull request.
+`galliacli --version` must print the `pyproject.toml` version. If `where.exe galliacli` finds nothing, check that the virtual environment is activated (see the README "Interactive terminal" PATH note). The Scripts folder must hold `galliacli` and no terminal `galliani` script; the desktop keeps `galliani`. Record the result in the pull request.
 
 ## 5. Publish
 
