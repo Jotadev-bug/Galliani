@@ -371,7 +371,7 @@ None. This spec does not change agent behavior, so `evals/` is unchanged and its
   - Add the `CONFIG_DIR`, R28 and stale-path unit tests.
 
   Done when `pytest` and the evals pass and the R28 tests cover the failure path and the `--smoke-test` path.
-- [ ] Phase 5a, P2 (release-engineer):
+- [x] Phase 5a, P2 (release-engineer; implemented on branch f1-wheel-ci, 2026-10-28; check_wheel passes fully only after P1 merges):
   - In `pyproject.toml`: the two scripts, `packages.find` without `benchmarks`, `package-data`, and `build` in the `build` extra (R27, R29-R31).
   - Point `--add-data` in `scripts/build_desktop.py` at `app/defaults`.
   - Update the path in `scripts/sync_pricing.py`.
@@ -380,7 +380,7 @@ None. This spec does not change agent behavior, so `evals/` is unchanged and its
   - Add the `CHANGELOG.md` line.
 
   Done when `python -m scripts.check_wheel` passes locally on Windows after P1 is merged into the branch, and the `wheel` job is green on the pull request.
-- [ ] Phase 5a, P3 (release-engineer, only if Open Question 10 is yes): R38 in `release.yml`, and the release-checklist line for checking the attached wheel.
+- [x] Phase 5a, P3 (release-engineer, implemented on branch f1-wheel-ci; only if Open Question 10 is yes): R38 in `release.yml`, and the release-checklist line for checking the attached wheel.
 - [ ] Phase 5a, P4 (product-growth, after P2, because the pipx commands are verified against the real wheel): rewrite the README "Interactive terminal" and install sections and fix the `CONTRIBUTING.md` folder name (R36, R37). Use only commands that release-engineer verified in a clean venv.
 - [ ] Phase 5a, P5 (qa-security, after P1-P4):
   - Review the diff against R27-R38.

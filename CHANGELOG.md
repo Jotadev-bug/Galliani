@@ -8,6 +8,7 @@ This project follows spec-driven development. Changelog entries should reference
 
 ### Added
 
+- Installable wheel, release-engineering side (spec 016 Phase 5a P2/P3, R27, R29, R31-R35, R38, Decision 0039): `pyproject.toml` declares the `galliani` (desktop) and `galliacli` scripts, package data for `app/web/*` and `app/defaults/*.yaml`, no `benchmarks` package, `keyring` in the `tui` extra and `build` in the `build` extra. New `scripts/check_wheel.py` (`python -m scripts.check_wheel`) builds the sdist and wheel, inspects them, installs them into clean venvs and checks the terminal and desktop smoke test; a `wheel` CI job runs it, and the Release workflow runs it, attaches the wheel, sdist and `.sha256` files and gives the pipx command in the notes. `build_desktop` bundles `app/defaults`. The check passes fully only with the core-engineer branch (config move, R28). Nothing is published to PyPI.
 - Packaging for the interactive terminal UI (spec 017 R1-R2, Decision 0034): a new optional `tui` extra (`textual>=8.2.8,<9`) and the `galliacli` console script (`galliani.tui.entry:main`; spec 018 R27). The terminal command is `galliacli`; the desktop app keeps `galliani` (winget alias, spec 016 R15), and `python -m galliani` also starts the terminal UI. CI and the Release workflow install the extra, and CI sets `GALLIANI_REQUIRE_TUI=1` so the TUI tests fail instead of skipping. The TUI is not bundled into `Galliani.exe` yet (documented follow-up); install it with `pip install ".[tui]"`.
 
 ### Changed

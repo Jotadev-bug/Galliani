@@ -63,7 +63,7 @@ def test_main_accepts_matching_tag_and_writes_output(repo, tmp_path_factory, mon
     output = tmp_path_factory.mktemp("gh") / "output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     assert main(["v0.1.0"]) == 0
-    assert output.read_text(encoding="utf-8") == "prerelease=false\n"
+    assert output.read_text(encoding="utf-8") == "prerelease=false\nversion=0.1.0\n"
 
 
 def test_main_reads_version_at_the_tag_not_the_branch(repo):

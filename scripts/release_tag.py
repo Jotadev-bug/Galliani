@@ -82,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a", encoding="utf-8") as f:
             f.write(f"prerelease={'true' if result.prerelease else 'false'}\n")
+            f.write(f"version={version}\n")  # names the wheel and sdist assets (spec 016 R38)
     return 0
 
 

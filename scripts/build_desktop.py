@@ -4,7 +4,7 @@
     python -m scripts.build_desktop            # -> dist/Galliani.exe (Windows) / dist/Galliani.app (macOS)
     python -m scripts.build_desktop --onedir   # -> dist/onedir/Galliani/Galliani.exe, the MSIX layout (spec 016 R20)
 
-The build bundles config/ and the web UI, then runs the binary's --smoke-test to verify it.
+The build bundles app/defaults/ and the web UI, then runs the binary's --smoke-test to verify it.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         "--distpath", str(dist),
         "--workpath", str(work),
         "--specpath", str(work),
-        "--add-data", f"{ROOT / 'config'}{sep}config",
+        "--add-data", f"{ROOT / 'app' / 'defaults'}{sep}app/defaults",
         "--add-data", f"{ROOT / 'app' / 'web'}{sep}app/web",
         "--collect-submodules", "uvicorn",
         "--collect-submodules", "keyring",
