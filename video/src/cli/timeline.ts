@@ -366,7 +366,8 @@ const rowY = (row: number) => TERMINAL.y + TERMINAL.titleBar + row * TERMINAL.ro
 export const TARGETS = {
   prompt: {x: TERMINAL.x + 20, y: TERMINAL.y + TERMINAL.height - 150, width: TERMINAL.width - 40, height: 75},
   plan: {x: TERMINAL.x + TERMINAL.width - 520, y: rowY(0.5), width: 500, height: 6 * TERMINAL.row},
-  route: {x: TERMINAL.x + 20, y: rowY(16), width: 960, height: TERMINAL.row},
+  // Step 2's route line in route-next (R78 glance): transcript row 16 below the content padding.
+  route: {x: TERMINAL.x + 20, y: rowY(16) + TERMINAL.border + TERMINAL.pad.top, width: 960, height: TERMINAL.row},
   popup: {x: TERMINAL.x + 20, y: rowY(12), width: 900, height: 9 * TERMINAL.row},
   card: {x: TERMINAL.x + 20, y: TERMINAL.y + TERMINAL.height - 240, width: TERMINAL.width - 40, height: 170},
   cta: {x: 787, y: 362, width: 346, height: 356},
