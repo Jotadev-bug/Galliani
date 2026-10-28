@@ -152,6 +152,7 @@ Option (c) is rejected because it loses data silently, which goes against spec 0
 12. A process never overwrites a file it cannot read. If the re-read under the lock fails (bad JSON or schema), the change raises `MemoryUnavailable`, and `memory.json` stays byte for byte as it was so the user can recover it. A missing file counts as empty.
 13. Reads see other processes' changes:
     - `list` and `query` reload from disk when the file's identity has changed since the last load. Identity is (`st_mtime_ns`, `st_size`), or the file appearing or disappearing.
+    - A file modified within the last 3 seconds is also reloaded on each read, because FAT/exFAT keep only 2 seconds of mtime precision and a change of the same size can leave the identity equal. The extra read is cheap.
     - The reload reads under the lock (R9, same deadline).
     - If the reload fails (lock timeout, unreadable file), the read returns the last good snapshot. The store then reports itself unavailable through the existing paths (`memory: unavailable` in the TUI, the desktop memory panel's error). Task execution is not blocked (010 Error Handling).
 14. Crash safety:

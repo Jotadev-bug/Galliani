@@ -383,12 +383,27 @@ def test_reads_see_another_process_changes_without_a_restart(path):
 def test_an_unchanged_file_is_not_reread(path, monkeypatch):
     store = JsonMemoryStore(path)
     store.write(req("one"))
+    long_ago = time.time() - 60  # outside the recent-change window, so the identity alone decides
+    os.utime(path, (long_ago, long_ago))
+    store.list()
     reads = []
     real_read = memory_mod.JsonMemoryStore._read_disk
     monkeypatch.setattr(memory_mod.JsonMemoryStore, "_read_disk", lambda self: reads.append(1) or real_read(self))
     store.list()
     store.list()
     assert reads == []
+
+
+def test_a_recent_change_with_the_same_mtime_and_size_is_still_noticed(path):
+    """FAT/exFAT keep 2 s of mtime precision: an equal (mtime_ns, size) inside the window must not hide a change."""
+    store = JsonMemoryStore(path)
+    store.write(req("aaaa"))
+    assert [r.content for r in store.list()] == ["aaaa"]
+    stat = path.stat()
+    path.write_text(path.read_text(encoding="utf-8").replace("aaaa", "bbbb"), encoding="utf-8")
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    assert path.stat().st_size == stat.st_size and path.stat().st_mtime_ns == stat.st_mtime_ns
+    assert [r.content for r in store.list()] == ["bbbb"]
 
 
 # ---------------------------------------------------------------------- remember tool (R15)

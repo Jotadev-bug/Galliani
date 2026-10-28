@@ -217,6 +217,9 @@ LOCK_TIMEOUT_SECONDS = 5.0
 REPLACE_ATTEMPTS = 5
 REPLACE_BACKOFF_SECONDS = 0.05
 STALE_TEMP_SECONDS = 3600
+# FAT/exFAT keep 2 s of mtime precision, so a change of the same size can leave (mtime_ns, size) equal. A file
+# modified within this many seconds is therefore re-read on every refresh (cheap), whatever its identity says.
+RECENT_CHANGE_SECONDS = 3.0
 TEMP_PREFIX, TEMP_SUFFIX = ".memory-", ".json"
 # Exactly what `tempfile.mkstemp` makes for this prefix and suffix: 8 random characters. Nothing else is ours.
 TEMP_NAME = re.compile(re.escape(TEMP_PREFIX) + r"[a-z0-9_]{8}" + re.escape(TEMP_SUFFIX))
@@ -252,7 +255,8 @@ class JsonMemoryStore(InMemoryMemoryStore):
 
     def _refresh(self) -> None:
         with self._lock:
-            if self._stat() == self._identity and self.unavailable_reason is None:
+            identity = self._stat()
+            if identity == self._identity and self.unavailable_reason is None and not self._recently_changed(identity):
                 return
             try:
                 with self._transaction():
@@ -261,6 +265,10 @@ class JsonMemoryStore(InMemoryMemoryStore):
                 self.unavailable_reason = e.safe_summary
                 return
             self.unavailable_reason = None
+
+    @staticmethod
+    def _recently_changed(identity: Identity) -> bool:
+        return identity is not None and time.time() - identity[0] / 1e9 < RECENT_CHANGE_SECONDS
 
     # ------------------------------------------------------------------ changes (R7, R8)
 
