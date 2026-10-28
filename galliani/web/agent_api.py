@@ -343,7 +343,27 @@ class AgentService:
         decision = MemoryPolicy().evaluate(request)
         if decision.status is not MemoryDecisionStatus.allowed:
             raise HTTPException(422, f"Not saved: {decision.reason}.")
-        return memory_item(store.write(request))
+        try:
+            return memory_item(store.write(request))
+        except MemoryUnavailable as e:  # 010 Amendment A R15: retryable, and never names the note's text
+            raise HTTPException(503, f"Not saved: {e.safe_summary}.") from None
+
+    def memory_records(self) -> list[MemoryItem]:
+        store = self.require_memory()
+        records = store.list()
+        reason = getattr(store, "unavailable_reason", None)  # R13: the file changed but could not be reloaded
+        if reason:
+            raise HTTPException(503, f"Memory is unavailable right now ({reason}).")
+        return [memory_item(r) for r in records]
+
+    def forget(self, record_id: str) -> dict:
+        try:
+            deleted = self.require_memory().delete(record_id)
+        except MemoryUnavailable as e:
+            raise HTTPException(503, f"Not forgotten: {e.safe_summary}.") from None
+        if not deleted:
+            raise HTTPException(404, "Memory record not found.")
+        return {"deleted": record_id}
 
     def summaries(self) -> list[TaskSummary]:
         out = []
@@ -404,7 +424,7 @@ def agent_router(keys_for: Callable[[Request], dict[str, str]], service: AgentSe
 
     @router.get("/memory")
     def memory_list() -> list[MemoryItem]:
-        return [memory_item(r) for r in svc.require_memory().list()]
+        return svc.memory_records()
 
     @router.post("/memory")
     def memory_add(body: MemoryBody) -> MemoryItem:
@@ -412,8 +432,6 @@ def agent_router(keys_for: Callable[[Request], dict[str, str]], service: AgentSe
 
     @router.delete("/memory/{record_id}")
     def memory_delete(record_id: str) -> dict:
-        if not svc.require_memory().delete(record_id):
-            raise HTTPException(404, "Memory record not found.")
-        return {"deleted": record_id}
+        return svc.forget(record_id)
 
     return router

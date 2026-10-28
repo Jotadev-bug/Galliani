@@ -14,7 +14,7 @@ from app.models.schemas import ProviderConfig
 from app.providers.factory import ProviderPool
 from app.providers.mock import MockProvider
 from galliani.cli import build_runtime
-from galliani.memory import InMemoryMemoryStore, MemoryRecord, project_scope
+from galliani.memory import InMemoryMemoryStore, MemoryRecord, MemoryUnavailable, project_scope
 from galliani.permissions import EditMode
 from galliani.state import TaskStatus
 from galliani.tui import session as session_mod
@@ -579,6 +579,28 @@ async def test_memory_forget_out_of_scope_or_unknown_deletes_nothing(workspace, 
     assert [r.id for r in store.list()] == ["mem_other"]
     await session.submit("/memory list")
     assert session.entries()[-1].text == "No memory records for you or this workspace."
+
+
+async def test_unavailable_shared_memory_is_reported_and_retryable(workspace):
+    """010 Amendment A R13/R15: a busy or unreadable shared file shows as unavailable, not a crash."""
+    class Busy(InMemoryMemoryStore):
+        unavailable_reason = None
+
+        def delete(self, record_id):
+            raise MemoryUnavailable("memory is busy in another Galliani window; try again")
+
+    store = Busy([MemoryRecord(id="mem_1", content="likes tea", type="preference", provenance="user")])
+    session, _ = make_session(workspace, memory=store)
+    assert session.state.status.memory == "on"
+    await session.submit("/memory forget mem_1")
+    last = session.entries()[-1]
+    assert last.kind is EntryKind.error and "MemoryUnavailable" in last.text and "try again" in last.text
+    store.unavailable_reason = "memory file is unreadable (JSONDecodeError)"
+    await session.submit("/memory list")
+    assert session.state.status.memory == "unavailable"
+    error, listing = session.entries()[-2:]
+    assert error.kind is EntryKind.error and "unreadable" in error.text
+    assert "likes tea" in "\n".join(listing.detail)  # the last good records stay visible
 
 
 async def test_memory_list_redacts_sensitive_records(workspace):

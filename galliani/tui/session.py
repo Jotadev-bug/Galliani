@@ -812,6 +812,10 @@ class Session:
             return
         scopes = memory_scopes(self.config.workspace)
         records = store.list(scopes)
+        reason = getattr(store, "unavailable_reason", None)  # 010 Amendment A R13: last good records only
+        if reason:
+            self._add(EntryKind.error, f"Memory is unavailable right now ({reason}); "
+                                       "showing the records loaded last.")
         if sub == "list":
             if not records:
                 self._add(EntryKind.notice, "No memory records for you or this workspace.")
@@ -847,7 +851,9 @@ class Session:
     def _memory_label(self) -> Literal["on", "off", "unavailable"]:
         if not self.config.memory_on:
             return "off"
-        return "unavailable" if self._memory is None and not self._memory_pending else "on"
+        if self._memory is None and not self._memory_pending:
+            return "unavailable"
+        return "unavailable" if getattr(self._memory, "unavailable_reason", None) else "on"
 
     def _build_runtime(self) -> None:
         memory = self._memory if self.config.memory_on else None

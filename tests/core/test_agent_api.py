@@ -15,7 +15,7 @@ from galliani.supervisor import Supervisor
 from galliani.testing import ScriptedAdapter
 from galliani.tools import ToolSystem
 from galliani.web.agent_api import ROOT_ENV, AgentService, agent_router
-from galliani.memory import InMemoryMemoryStore, project_scope
+from galliani.memory import InMemoryMemoryStore, MemoryUnavailable, project_scope
 from galliani.memory_tool import remember_tool
 from galliani.workspace import Workspace
 from tests.core.helpers import worker
@@ -234,6 +234,30 @@ def test_memory_api_add_list_redact_delete(ws, monkeypatch):
         assert client.delete(f"/api/agent/memory/{added['id']}").status_code == 200
         assert client.delete(f"/api/agent/memory/{added['id']}").status_code == 404
         assert len(store.list()) == 2
+
+
+def test_memory_api_reports_unavailable_memory_as_retryable_503(ws, monkeypatch):
+    """010 Amendment A R13/R15: a busy or unreadable shared file is a 503 the panel shows, never a 500."""
+    class Busy(InMemoryMemoryStore):
+        unavailable_reason = None
+
+        def write(self, request):
+            raise MemoryUnavailable("memory is busy in another Galliani window; try again")
+
+        def delete(self, record_id):
+            raise MemoryUnavailable("memory is busy in another Galliani window; try again")
+
+    store = Busy()
+    with client_for([PLAN], monkeypatch, ws, memory=store) as client:
+        assert client.get("/api/agent/memory").json() == []
+        added = client.post("/api/agent/memory", json={"content": "Private zebra note"})
+        assert added.status_code == 503 and "try again" in added.json()["detail"]
+        assert "zebra" not in added.json()["detail"]
+        forgot = client.delete("/api/agent/memory/mem_1")
+        assert forgot.status_code == 503 and "try again" in forgot.json()["detail"]
+        store.unavailable_reason = "memory file is unreadable (JSONDecodeError)"
+        listed = client.get("/api/agent/memory")
+        assert listed.status_code == 503 and "unreadable" in listed.json()["detail"]
 
 
 def test_task_view_shows_memory_used_and_saved(ws, monkeypatch):
