@@ -1,4 +1,4 @@
-"""Bridge adapter: exposes the existing provider stack (`app/providers` + `config/models.yaml`) as Agent Workers.
+"""Bridge adapter: exposes the existing provider stack (`app/providers` + `app/defaults/models.yaml`) as Agent Workers.
 
 - `worker_profiles` derives provider-neutral `WorkerProfile`s from the model registry. Models whose
   provider has no usable key are marked unavailable, so the router falls back (003 AC Fallback).

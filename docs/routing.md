@@ -47,7 +47,8 @@ P(success) = Π_d sigmoid(steepness · (skill_d − requirement_d) + bias)
 ```
 
 `precision` is checked against the model's `instruction_following` skill. Skills are **priors**
-in `config/models.yaml`; `steepness` and `bias` are in `config/routing.yaml`.
+in `app/defaults/models.yaml`; `steepness` and `bias` are in `app/defaults/routing.yaml`
+(set `ROUTER_CONFIG_DIR` to read both files from another folder).
 
 ## 3. Utility and "sufficiently capable"
 

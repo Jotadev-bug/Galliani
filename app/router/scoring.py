@@ -2,7 +2,7 @@
 
 Utility = q*P(success) - c*cost_penalty - l*latency_penalty - r*(1-P(success))*precision
 
-Weights and the success bar come from config/routing.yaml (one set per mode).
+Weights and the success bar come from app/defaults/routing.yaml (one set per mode).
 """
 
 from __future__ import annotations

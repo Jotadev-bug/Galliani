@@ -13,6 +13,7 @@ This project follows spec-driven development. Changelog entries should reference
 ### Changed
 
 - The terminal console script is renamed from `galliani` to `galliacli` (spec 018 R27, Decision 0035), so it no longer clashes with the desktop app's `galliani` command. `pyproject.toml` `[project.scripts]` now has `galliacli` only; the PyPI package and the `tui` extra keep the name `galliani`. The README has an "Interactive terminal" section with the install options and the Windows PATH note (spec 018 R26), and the release checklist has a `galliacli --version` smoke step.
+- The shipped configuration moved from `config/` to `app/defaults/` (spec 016 R30, Decision 0039). `CONFIG_DIR` is `ROUTER_CONFIG_DIR` when set, otherwise the `defaults` folder next to `app/config.py`, for source checkouts, installs and the frozen build alike; nothing reads the old `config/` folder. Started without pywebview (the `desktop` extra), the desktop app now prints one fixed message to stderr and exits with code 2 before the server starts; `--smoke-test` is unaffected (spec 016 R28).
 
 ## 0.2.0 - 2026-10-16
 

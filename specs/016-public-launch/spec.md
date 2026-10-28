@@ -363,7 +363,7 @@ None. This spec does not change agent behavior, so `evals/` is unchanged and its
 - [ ] ~~Phase 4: one-folder build (`build_desktop --onedir`), MSIX assets (`make_icon`), manifest template and `makeappx` step (`scripts/build_msix.py`, skipped in the workflow until the identity is committed), document the Store steps (all done, Decision 0030); still to do: reserve the name in Partner Center and commit the identity to `packaging/msix/identity.json`, test the package locally (`--local-test`) on a clean machine, submit.~~ **Dropped by the user 2026-10-16 (Decision 0033).** The done scaffold is kept; the remaining steps will not be done. Not ticked, because it was not completed.
 - [ ] Phase 5 (optional): packaging changes and the trusted-publishing PyPI job. (Split 2026-10-28, Decision 0039: the packaging changes are the Phase 5a tasks below; the PyPI job is Phase 5b.)
 - [x] Phase 5a, P0 (user, 2026-10-28): approve this amendment and answer Open Questions 7-11. Nothing below starts before that.
-- [ ] Phase 5a, P1 (core-engineer; can start in parallel with P2 because the path `app/defaults/` is fixed here):
+- [x] Phase 5a, P1 (core-engineer; can start in parallel with P2 because the path `app/defaults/` is fixed here; done 2026-10-28 on branch `f1-config-defaults`. The stale-path test stays red only for the `scripts/sync_pricing.py` docstring until P2 updates it):
   - `git mv config/*.yaml app/defaults/`.
   - Apply the `CONFIG_DIR` rule in `app/config.py` (R30).
   - Add the R28 check and message in `app/desktop.py`.
