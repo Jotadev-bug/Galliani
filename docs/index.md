@@ -37,7 +37,7 @@ Also useful: [[docs/agent-loop]], [[docs/tool-system]], [[docs/model-routing]], 
 | 012 | Desktop UI | Approved, with approved amendments (WebView2, local API guard) | The desktop app front end | [[specs/012-desktop-ui/spec\|012]] |
 | 013 | Evaluation | Approved (v0.1) | Evaluation strategy and quality gates | [[specs/013-evaluation/spec\|013]] |
 | 014 | Accept-Edits Mode | Approved, hardened 2026-10-15 | Per-task opt-in to file writes in the workspace without per-write approval | [[specs/014-accept-edits/spec\|014]] |
-| 015 | Remotion Video | Draft | Short kinetic marketing video built with Remotion in `video/` | [[specs/015-remotion-video/spec\|015]] |
+| 015 | Remotion Video | Part A (explainer) Draft; Part B (`GallianiCli` CLI-update video) Accepted 2026-10-20, Decision 0036 | Remotion videos in `video/`: the showcase (Decision 0024) and the 25 s CLI-update video | [[specs/015-remotion-video/spec\|015]] |
 | 016 | Public Launch | Approved, amended 2026-10-16 (no Store; unsigned until a certificate is bought) | Release, landing page, winget, PyPI, signing | [[specs/016-public-launch/spec\|016]] |
 | 017 | Interactive CLI (terminal UI) | Implemented; command is `galliacli` | Claude Code-style full-screen terminal front end | [[specs/017-interactive-cli/spec\|017]] |
 | 018 | TUI polish | Implemented, reviewed 2026-10-20 | Look and feel, motion, `/` and `@` completion, easier launch | [[specs/018-tui-polish/spec\|018]] |

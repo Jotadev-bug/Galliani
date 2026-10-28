@@ -10,7 +10,10 @@
     "render": "remotion render src/index.ts GallianiShowcase out/galliani-showcase.mp4",
     "poster": "remotion still src/index.ts GallianiShowcase out/galliani-showcase-poster.png --frame=700",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"tests/*.test.ts\""
+    "test": "node --test \"tests/*.test.ts\"",
+    "render:cli": "remotion render src/index.ts GallianiCli out/galliani-cli.mp4 --scale=2 --codec=h264 --crf=16 --pixel-format=yuv420p --image-format=png",
+    "stills:cli": "node scripts/cli-stills.ts",
+    "preview:cli": "remotion render src/index.ts GallianiCli out/galliani-cli-preview.mp4 --scale=1"
   },
   "dependencies": {
     "@remotion/cli": "4.0.533",

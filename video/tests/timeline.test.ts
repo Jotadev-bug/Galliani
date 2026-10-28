@@ -113,8 +113,10 @@ test('the camera moves smoothly and never shows past the scene edge', () => {
 
 test('source is deterministic, self-contained, and has no secrets', () => {
   const dir = fileURLToPath(new URL('../src', import.meta.url));
-  for (const name of readdirSync(dir)) {
-    const source = readFileSync(join(dir, name), 'utf8');
+  const files = readdirSync(dir, {recursive: true, withFileTypes: true}).filter((entry) => entry.isFile());
+  for (const entry of files) {
+    const name = entry.name;
+    const source = readFileSync(join(entry.parentPath, name), 'utf8');
     assert.doesNotMatch(source, /https?:\/\//, `${name} references a URL`);
     assert.doesNotMatch(source, /<Audio|<Video/, `${name} loads media`);
     for (const [, file] of source.matchAll(/staticFile\('([^']+)'\)/g)) {
