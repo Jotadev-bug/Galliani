@@ -415,3 +415,27 @@ Open findings from this review, each pinned by a strict-xfail test:
   and `a` do nothing until the card is focused again (`Esc` still denies). This fails closed: nothing is
   approved. Fix: keep focus on the card while it is shown, or bind the keys at the app level while the
   session waits. Test: `test_018_tab_on_the_approval_card_keeps_its_keys_live`.
+
+## Installable Package (spec 016 Phase 5a, Decision 0039)
+
+- **Nothing is written into the installation (R32).** The installed `galliani --smoke-test`, `galliacli --version`,
+  `galliacli --help`, `galliacli` without a TTY and the import probe create, change or delete no file under the
+  virtual environment, apart from `__pycache__` and `.pyc`. User data stays in `user_data_dir()` and the chosen
+  workspace. `python -m scripts.check_wheel` step 5 compares venv snapshots before and after to prove it.
+- **No PyPI install instructions (R37).** The project does not own the PyPI name `galliani`, so no doc, site page
+  or release note tells users to fetch it from PyPI. The release notes install the wheel attached to the
+  versioned release through a PEP 508 direct URL (`"galliani[tui] @ https://.../releases/download/vX.Y.Z/..."`),
+  which never resolves `galliani` on PyPI. Its dependencies still come from PyPI, as for any source install.
+  Closed on branch `f1-qa-fixes` (2026-10-28): the README "Interactive terminal" section and the in-app
+  Textual-missing hint in `galliani/tui/entry.py` (spec 017 R5 and 018 R27 amended, Open Question 8(a)) no
+  longer name a PyPI command.
+- **The wheel ships only runtime code and data.** `inspect_wheel` refuses any file outside `app/` and `galliani/`
+  other than the `.dist-info` metadata, including a `.data` folder, so no `.env`, fixture or request log is
+  packaged. `check_wheel` runs no task, calls no provider and prints no environment variable or key; the CI job
+  keeps `contents: read` and uses no secret.
+- **`.env` lookup unchanged.** `app.config.load_dotenv` still reads `.env` from the folder above `app/`. In a wheel
+  install that is `site-packages`, where no `.env` exists unless someone who can already write to the
+  environment puts one there. That is no new exposure.
+- **Top-level `app` package (Open Question 7, accepted for Phase 5a).** The generic name can collide with another
+  distribution's `app` in a shared environment; install with pipx or a dedicated venv. It must be renamed before
+  any PyPI publication (Phase 5b).

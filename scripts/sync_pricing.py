@@ -1,7 +1,7 @@
 """Refresh registry prices from OpenRouter's public model list (no API key needed).
 
     python -m scripts.sync_pricing           # show differences
-    python -m scripts.sync_pricing --write   # update config/models.yaml in place
+    python -m scripts.sync_pricing --write   # update app/defaults/models.yaml in place
 
 Only models whose provider is `openrouter` are updated; the line-level edit keeps comments intact.
 """

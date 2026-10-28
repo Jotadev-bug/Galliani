@@ -1,4 +1,9 @@
-"""Loads configuration from config/*.yaml and environment variables (.env supported)."""
+"""Loads configuration from app/defaults/*.yaml and environment variables (.env supported).
+
+CONFIG_DIR follows one rule everywhere (spec 016 R30): `ROUTER_CONFIG_DIR` when it is set, otherwise the
+`defaults` folder next to this file. The same rule serves a source checkout, an editable install, a wheel
+and the PyInstaller build.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +15,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_DIR = Path(os.environ.get("ROUTER_CONFIG_DIR", ROOT / "config"))
+CONFIG_DIR = Path(os.environ.get("ROUTER_CONFIG_DIR", Path(__file__).resolve().parent / "defaults"))
 
 
 class ModeWeights(BaseModel):

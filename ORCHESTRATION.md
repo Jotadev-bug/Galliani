@@ -9,7 +9,7 @@ Modeled on a small product company. Six roles, one owner per area.
 | Agent | Company role | Owns | Model |
 |---|---|---|---|
 | `tech-lead` | Architect / Tech Lead | `specs/`, `docs/decisions.md`, architecture | opus |
-| `core-engineer` | Senior Backend | `galliani/`, `app/` (non-web), `config/` | opus |
+| `core-engineer` | Senior Backend | `galliani/`, `app/` (non-web), `app/defaults/` | opus |
 | `ui-engineer` | Senior Frontend | `app/web/`, `site/`, `video/`, `assets/` | sonnet |
 | `qa-security` | QA + Security (independent reviewer) | `tests/`, `evals/`, `docs/security.md` | opus |
 | `release-engineer` | DevOps / Release | `.github/`, `scripts/`, `packaging/`, `CHANGELOG.md` | sonnet |

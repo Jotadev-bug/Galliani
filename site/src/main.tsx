@@ -68,7 +68,7 @@ function Hero() {
   );
 }
 
-/* The models in config/models.yaml that the router picks between. Names only, no vendor logos. */
+/* The models in app/defaults/models.yaml that the router picks between. Names only, no vendor logos. */
 const ROUTED_MODELS = [
   "Gemini 3.1 Flash Lite", "Claude Haiku 4.5", "GPT-5.4 mini", "Gemini 3.8 Flash", "Claude Sonnet 5.5", "Claude Opus 5.5", "Claude Fable 5.1",
 ];

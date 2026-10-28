@@ -85,7 +85,7 @@ def _fallback_reason() -> str | None:
     """R5: why the interactive terminal cannot start here, or None."""
     if _textual_missing():
         return ('The interactive terminal needs Textual, which is not installed. '
-                'Install it with: pip install "galliani[tui]"')
+                'Install the "tui" extra from your clone or the release wheel: pipx install ".[tui]"')
     if not (_isatty(sys.stdin) and _isatty(sys.stdout)):
         return "The interactive terminal needs a terminal: stdin and stdout must be a TTY."
     if os.environ.get("TERM", "").lower() == "dumb":

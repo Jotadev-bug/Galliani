@@ -52,16 +52,16 @@ Delete `docs/summary.md` and `smoke.jsonl` afterwards.
 
 ## 4a. Terminal command smoke (manual)
 
-Spec 018 R24, R26, R27. In a fresh virtual environment (or with `pipx install -e ".[tui]"`), from a clone:
+Spec 018 R24, R26, R27. In a fresh virtual environment, from a clone:
 
 ```powershell
-pipx install -e ".[tui]"
+pip install ".[tui]"
 galliacli --version      # prints: galliacli <version>, exit 0
 where.exe galliacli      # shows the Scripts folder on PATH
 python -m galliani --version
 ```
 
-`galliacli --version` must print the `pyproject.toml` version. If `where.exe galliacli` finds nothing, run `pipx ensurepath` and open a new terminal (for `pip install --user`, see the README "Interactive terminal" PATH note). The Scripts folder must hold `galliacli` and no terminal `galliani` script; the desktop keeps `galliani`. Record the result in the pull request.
+`galliacli --version` must print the `pyproject.toml` version. If `where.exe galliacli` finds nothing, check that the virtual environment is activated (see the README "Interactive terminal" PATH note). The Scripts folder must hold `galliacli` and no terminal `galliani` script; the desktop keeps `galliani`. Record the result in the pull request.
 
 ## 5. Publish
 
@@ -75,6 +75,8 @@ git push origin v0.2.0
 Push the tag on its own, not with `--tags` or together with a branch, so GitHub sends the tag push event that starts the `Release` workflow. If no Release run appears under **Actions** within a minute, start it by hand: **Actions > Release > Run workflow**, leave the branch on `main`, enter the tag (for example `v0.2.0`), and click **Run workflow** (spec 016 R1).
 
 Either way the workflow refuses a tag that is malformed, missing or does not match `pyproject.toml` (`scripts/release_tag.py`), runs the tests, builds `Galliani.exe`, and fails unless the binary's `--smoke-test` passes. Check the published release has the `.exe`, its `.sha256` and the winget zip. Stable releases become "latest"; pre-releases never do, so `https://github.com/Jotadev-bug/Galliani/releases/latest/download/Galliani.exe` always serves the newest stable build.
+
+The workflow also runs `python -m scripts.check_wheel` before building the `.exe` (a failure stops the release) and attaches the checked wheel, the sdist and a `.sha256` file for each (spec 016 R38). Check the release page lists `galliani-<version>-py3-none-any.whl`, `galliani-<version>.tar.gz` and their `.sha256` files, that the SHA-256 of the downloaded wheel matches, and that the pipx command in the release notes installs it in a clean environment (`pipx install "galliani[tui] @ <wheel URL>"`, then `galliacli --version`). Nothing is published to PyPI.
 
 The `.exe` is **not code-signed** (user decision, 2026-10-16); a certificate comes later. Expect the SmartScreen "unknown publisher" warning and say so in the release notes.
 

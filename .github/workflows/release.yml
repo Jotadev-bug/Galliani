@@ -46,6 +46,11 @@ jobs:
       - name: Tests
         run: python -m pytest -q
 
+      # Builds the sdist and wheel, installs the wheel into clean venvs and copies the checked files to pkg/.
+      # A failure stops the release, like a failed smoke test (spec 016 R38). Nothing is published to PyPI.
+      - name: Check the wheel
+        run: python -m scripts.check_wheel --dist-dir pkg
+
       # Builds dist/Galliani.exe and runs its --smoke-test; a failed smoke test fails the job.
       - name: Build and smoke-test
         run: python -m scripts.build_desktop
@@ -56,6 +61,11 @@ jobs:
           $hash = (Get-FileHash dist/Galliani.exe -Algorithm SHA256).Hash.ToLower()
           "$hash  Galliani.exe" | Out-File -Encoding ascii dist/Galliani.exe.sha256
           Get-Content dist/Galliani.exe.sha256
+          foreach ($file in Get-ChildItem pkg/* -Include *.whl, *.tar.gz) {
+            $h = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h  $($file.Name)" | Out-File -Encoding ascii "$($file.FullName).sha256"
+          }
+          Get-ChildItem pkg
 
       # The manifest zip lets the maintainer submit to winget-pkgs without editing by hand (spec 016 R16).
       - name: Winget manifest
@@ -76,6 +86,9 @@ jobs:
             dist/Galliani.exe.sha256
             dist/galliani-winget-*.zip
             dist/Galliani.msix
+            pkg/*.whl
+            pkg/*.tar.gz
+            pkg/*.sha256
           prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
           make_latest: ${{ steps.tag.outputs.prerelease == 'true' && 'false' || 'true' }}
           generate_release_notes: true
@@ -88,6 +101,12 @@ jobs:
 
             ```powershell
             (Get-FileHash Galliani.exe -Algorithm SHA256).Hash
+            ```
+
+            **Install the terminal or the Python package without git (pipx):** this installs the wheel attached to this release, not a package from PyPI.
+
+            ```powershell
+            pipx install "galliani[tui] @ https://github.com/Jotadev-bug/Galliani/releases/download/${{ env.TAG }}/galliani-${{ steps.tag.outputs.version }}-py3-none-any.whl"
             ```
 
             Galliani is free software under the GNU AGPL-3.0. The source code for this release is attached below.

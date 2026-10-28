@@ -39,7 +39,7 @@ Branding (name, logo, Claude mascot) was checked by the user and is no longer a 
 | # | Item | Owner | Spec |
 |---|---|---|---|
 | 14 | macOS and Linux builds (PyInstaller + pywebview already portable in principle) | release-engineer | New spec; amends 016 non-goals |
-| 15 | PyPI package, trusted publishing (`pipx install galliani`) | release-engineer | 016 Phase 5 |
+| 15 | PyPI package, trusted publishing (optional; the PyPI name `galliani` is not claimed yet, so no doc tells users to install from PyPI) | release-engineer | 016 Phase 5 |
 | 16 | Plugin/tool packs: user-installable registered tools with schemas and permission metadata | tech-lead + core-engineer | 005 extension |
 | 17 | Team features: shared routing policies and budget caps as a config file, no server | core-engineer | New spec |
 | 18 | Custom domain and docs site | ui-engineer + user | Open Question 2 |
@@ -52,7 +52,7 @@ Branding (name, logo, Claude mascot) was checked by the user and is no longer a 
 
 | Order | Item | Owner | Prerequisite | Spec |
 |---|---|---|---|---|
-| F1 | Name and package the entry points: desktop script keeps `galliani`, terminal is `galliacli`; package data so `galliacli` works from a non-editable install (spec 018 R27, 017 Open Item 4) | release-engineer, with core-engineer | Spec 018 implementation merged | 016 R24 and Phase 5 (PyPI) |
+| F1 | Name and package the entry points: desktop script keeps `galliani`, terminal is `galliacli`; package data so `galliacli` works from a non-editable install (spec 018 R27, 017 Open Item 4) | release-engineer, with core-engineer | Spec 018 implementation merged | 016 R24 and Phase 5 (PyPI). Spec drafted 2026-10-28: 016 Phase 5a, R27-R38, Open Questions 7-11 (Decision 0039, Proposed) |
 | F2 | Shared `memory.json`: desktop and a TUI session can run at once and writes are last-writer-wins (017 Open Item 5). Decide between a file lock, merge-on-write or accepting it, and say so in the docs | tech-lead, then core-engineer | None. Do it before the CLI is announced widely | 010 amendment |
 | F3 | TUI in the `.exe`, or a separate terminal binary (017 Open Item 1) | tech-lead (amend scope), then release-engineer | F1, so the console scripts and package data are settled | New spec, amends 016 and 017 |
 | F4 | Streaming output in the TUI and desktop. Supervisor and adapters return whole worker outputs today (017 Open Item 2), so this touches the core | tech-lead, then core-engineer, then ui-engineer | Spec 018 merged; F2 not required. Needs adapter-by-adapter feasibility check | Amendments to 001, 006, 011 |

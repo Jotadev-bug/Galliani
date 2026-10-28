@@ -9,6 +9,9 @@ If it is missing, a message box offers Microsoft's download page and the app exi
 window fails to start, or WebView2 reports that it failed to initialize (R20), it exits with code 4.
 Details go to desktop.log in the user data folder only.
 
+Without pywebview (the "desktop" extra) any start except --smoke-test prints one fixed message to
+stderr and exits with code 2 before the server starts (spec 016 R28).
+
 Each launch picks a free localhost port and a random token. The window's URL carries the token
 and the server rejects /api calls without it, so other programs on the machine cannot use the
 OpenRouter key saved in the OS credential store.
@@ -17,6 +20,7 @@ OpenRouter key saved in the OS credential store.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import io
 import logging
 import os
@@ -34,6 +38,24 @@ from app.webview2 import LOG, PYWEBVIEW_LOGGER, WindowHooks, launch_window, smok
 from galliani.redaction import REDACTED, redact_text
 
 APP_NAME = "Galliani"
+
+# Spec 016 R28: a fixed string with no interpolated paths.
+DESKTOP_EXTRA_MISSING = (
+    'galliani: the desktop app needs the "desktop" extra (pywebview is not installed). '
+    'See the README "Install" section. For the terminal, run: galliacli'
+)
+EXIT_DESKTOP_EXTRA_MISSING = 2
+
+
+def webview_installed() -> bool:
+    """R28: can pywebview be imported? Looks the package up without importing it, so pywebview's import-time
+    setup and its Windows backend stay untouched until the R7 check has decided (spec 012)."""
+    if "webview" in sys.modules:  # already imported (or blocked with None, the documented way to hide a module)
+        return sys.modules["webview"] is not None
+    try:
+        return importlib.util.find_spec("webview") is not None
+    except (ImportError, ValueError):
+        return False
 
 
 def user_data_dir() -> Path:
@@ -285,6 +307,10 @@ def main(argv: list[str] | None = None, hooks: WindowHooks | None = None) -> int
     p.add_argument("--simulate-missing-webview2", action="store_true",
                    help="show the missing-WebView2 message on any machine, then exit with code 3 (spec 012 R14)")
     args = p.parse_args(argv)
+
+    if not args.smoke_test and not webview_installed():  # R28: before any folder, log, server or window
+        print(DESKTOP_EXTRA_MISSING, file=sys.stderr)
+        return EXIT_DESKTOP_EXTRA_MISSING
 
     data = user_data_dir()
     token = secrets.token_urlsafe(32)

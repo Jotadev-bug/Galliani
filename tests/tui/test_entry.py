@@ -67,7 +67,8 @@ def test_fallback_when_textual_is_missing(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(session_mod, "Session", lambda *a, **k: built.append(1))
     assert entry.main(["--workspace", str(tmp_path)]) == 2
     err = capsys.readouterr().err
-    assert "Textual" in err and 'pip install "galliani[tui]"' in err and 'galliacli "<objective>"' in err
+    assert "Textual" in err and 'pipx install ".[tui]"' in err and 'galliacli "<objective>"' in err
+    assert "PyPI" not in err and 'galliani[tui]' not in err
     assert sys.modules["textual"] is None and "galliani.tui.app" not in sys.modules and built == []
 
 
@@ -89,7 +90,7 @@ def test_fallback_ignores_galliani_require_tui(monkeypatch, tmp_path, capsys):
     monkeypatch.setitem(sys.modules, "textual", None)
     monkeypatch.setenv("GALLIANI_REQUIRE_TUI", "1")
     assert entry.main(["--workspace", str(tmp_path)]) == 2
-    assert "pip install" in capsys.readouterr().err
+    assert 'pipx install ".[tui]"' in capsys.readouterr().err
 
 
 def test_real_stdout_pipe_falls_back_without_importing_textual(tmp_path):
@@ -255,12 +256,13 @@ def test_one_shot_hint_and_flag_errors_name_galliacli(tty, tmp_path, capsys):
     assert capsys.readouterr().err.startswith("galliacli: --context needs an objective.")
 
 
-def test_pyproject_installs_galliacli_and_no_galliani_script():
+def test_pyproject_installs_galliacli_and_galliani_stays_the_desktop():
     import tomllib
 
     data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = data["project"]["scripts"]
     assert scripts.get("galliacli") == "galliani.tui.entry:main"
-    assert "galliani" not in scripts
+    # Spec 016 R27 (Decision 0039): `galliani` is the desktop app, never the terminal UI.
+    assert scripts.get("galliani") == "app.desktop:main"
     assert [name for name, target in scripts.items() if target == "galliani.tui.entry:main"] == ["galliacli"]
     assert data["project"]["name"] == "galliani" and "tui" in data["project"]["optional-dependencies"]

@@ -99,12 +99,13 @@ The supervisor, permissions, Task State, Memory and observability stay unchanged
 23. **`python -m galliani`** runs `galliani.tui.entry:main` through a new `galliani/__main__.py`, with behavior identical to `galliacli` and `python -m galliani.tui`. The module names stay `galliani`; only the console script is renamed (R27).
 24. **`galliacli --version`** prints `galliacli <__version__>` and exits 0 without importing Textual. `-h`/`--help` is unchanged apart from the name.
 25. **Wide-workspace warning.** When the resolved workspace is the user's home folder or a filesystem root, the banner adds a `$g-warn` line: "This workspace is your whole home folder (or drive). The agent can read any file in it that is not protected. Start galliacli in a project folder, or use /workspace." This is a notice only. It needs no answer and stores nothing. The session still starts.
-26. **On PATH after install.** The docs (README "Interactive terminal" and `docs/release-checklist.md` smoke step) give the supported installs in order:
-    - From a clone: `pipx install -e ".[tui]"` (recommended, because `pipx ensurepath` fixes PATH), or `pip install -e ".[tui]"` in a venv.
-    - `pip install --user` on Windows: scripts go to `%APPDATA%\Python\Python3XY\Scripts`, which is not on PATH by default. The docs give the PowerShell command to add it, and say that `python -m galliani` always works.
+26. **On PATH after install.** Amended 2026-10-28 (Decision 0039, spec 016 Phase 5a R36), approved by the user. The docs (README "Interactive terminal" and `docs/release-checklist.md` smoke step) give the supported installs, with no PyPI command (016 R37):
+    - From a clone, in a virtual environment of its own: `python -m venv .venv`, activate it, then `pip install ".[tui]"` (a regular, non-editable install).
+    - From the release wheel, in a virtual environment: `pip install "galliani[tui] @ https://github.com/Jotadev-bug/Galliani/releases/download/vX.Y.Z/galliani-X.Y.Z-py3-none-any.whl"`, once a release carries the wheel.
+    - The docs say Galliani is not on PyPI, so `pip install galliani` must not be run, and that a virtual environment puts `galliacli` on PATH only while it is activated. `python -m galliani` always works inside it, and `where galliacli` lists every copy on PATH.
 
-    Non-editable installs still lack package data until 016 Phase 5 (017 Open Item 4), and the docs say so. No installer edits PATH by itself.
-27. **Command name (user decision, 2026-10-19).** The terminal console script is `galliacli` (`[project.scripts] galliacli = "galliani.tui.entry:main"`). `galliani` belongs to the desktop app: the winget alias (016 R15) and the future 016 R24 desktop script, neither of which is renamed. `argparse` `prog`, usage, help, the R5 fallback text (one-shot form `galliacli "<objective>"`) and all docs name `galliacli`. The PyPI package and extra keep the name `galliani` (`pip install "galliani[tui]"`). No extra alias in v1.
+    Non-editable installs include their package data since 016 Phase 5a (the configuration is in `app/defaults/`), so the docs no longer warn about it. No installer edits PATH by itself.
+27. **Command name (user decision, 2026-10-19).** The terminal console script is `galliacli` (`[project.scripts] galliacli = "galliani.tui.entry:main"`). `galliani` belongs to the desktop app: the winget alias (016 R15) and the future 016 R24 desktop script, neither of which is renamed. `argparse` `prog`, usage, help, the R5 fallback text (one-shot form `galliacli "<objective>"`) and all docs name `galliacli`. The distribution and the extra keep the name `galliani` / `tui`. The R5 missing-Textual hint no longer names PyPI (amended 2026-10-28, Decision 0039, spec 016 Open Question 8(a), approved by the user; see 017 R5): it tells users to install the `tui` extra from the clone or the release wheel (`pipx install ".[tui]"`). No extra alias in v1.
 
 ## Behavior
 
@@ -260,7 +261,7 @@ Then `/help` is sent at once; `/theme ` is inserted and nothing is sent.
   - Widths 80 and 60.
   - At least one failure path each: an unknown command filtered to empty, a listing error.
 - **Security (qa-security):** the File Mention, Unsafe Name and Banner criteria as tests, plus a review that no completion path bypasses `Workspace` checks.
-- **Release (release-engineer):** a fresh-venv smoke test of `pipx install -e ".[tui]"`, then `galliacli --version`, recorded in the PR, and `where galliacli` shows it on PATH. The existing 017 tests stay green.
+- **Release (release-engineer):** a fresh-venv smoke test of `pip install ".[tui]"` (non-editable, from a clone), then `galliacli --version`, recorded in the PR, and `where galliacli` shows it on PATH while the venv is active (R26, amended 2026-10-28). The existing 017 tests stay green.
 
 ## Evaluation
 
