@@ -381,7 +381,7 @@ Status: Proposed (2026-10-19). The user answered spec 018's four open questions 
 
 ## Decision 0040: Shared memory file: locked re-read and apply by record id (spec 010 Amendment A drafted)
 
-Status: Proposed (2026-10-28). Waiting for the user's choice (spec 010 Amendment A, Q1). Resolves spec 017 Open Item 5 and roadmap item F2.
+Status: Accepted (2026-10-28, user approved the recommended lock plus merge-by-id option, Q1). Resolves spec 017 Open Item 5 and roadmap item F2.
 
 - **Problem.** The desktop app and `galliacli` share `user_data_dir()/memory.json`. Each process loads the file once and replaces it with its own in-process snapshot on every change. So a write can silently erase records the other process saved and bring back records it deleted. Neither process sees the other's records until it restarts. Temp files are not `fsync`ed before `os.replace`.
 - **Choice (recommended).** A file lock plus merge-on-write. Each `write` and `delete` takes an exclusive OS advisory lock on `memory.json.lock`, re-reads the file, applies only its own operation by record id, writes a temp file, `fsync`s it, `os.replace`s it and unlocks. Reads reload when the file's mtime or size changes. Lock waits are bounded (5 s), and on timeout the call raises `MemoryUnavailable`, never a silent skip. A file that cannot be read is never overwritten. On Windows, a transient `PermissionError` from `os.replace` is retried a few times.

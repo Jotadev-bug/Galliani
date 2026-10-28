@@ -4,7 +4,7 @@
 
         Approved for v0.1 implementation (2026-10-04, see `docs/decisions.md` Decision 0019).
 
-        Amendment A (concurrent access to the shared memory file, requirements 6-17): Draft (2026-10-28, `docs/decisions.md` Decision 0040). Awaiting user approval; see Amendment A open question Q1. Requirements 1-5 are unchanged.
+        Amendment A (concurrent access to the shared memory file, requirements 6-17): Approved (2026-10-28, `docs/decisions.md` Decision 0040). The user chose the recommended lock plus merge-by-id option (Q1). Requirements 1-5 are unchanged.
 
         ## Goal
 
@@ -101,7 +101,7 @@ Then only scoped relevant records are returned.
 
 ## Amendment A: Concurrent Access to the Shared Memory File
 
-Status: Draft (2026-10-28, Decision 0040). Resolves spec 017 Open Item 5 and roadmap item F2. Needs user approval (Q1) before core-engineer starts.
+Status: Approved (2026-10-28, Decision 0040, Q1 answered: lock plus merge-by-id). Resolves spec 017 Open Item 5 and roadmap item F2. Needs user approval (Q1) before core-engineer starts.
 
 ### Problem
 
