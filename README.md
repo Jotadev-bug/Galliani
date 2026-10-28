@@ -147,7 +147,7 @@ The desktop app is stricter: every `/api/` call needs the per-launch app token, 
 
 ## Download
 
-Get it from the website: https://galliani.vercel.app/
+Get it from the website: https://galliani.app
 
 Windows builds are published on [GitHub Releases](https://github.com/Jotadev-bug/Galliani/releases/latest). The direct link to the newest stable build is `https://github.com/Jotadev-bug/Galliani/releases/latest/download/Galliani.exe`. You need your own OpenRouter key, which the app keeps in your OS credential store. 
 
