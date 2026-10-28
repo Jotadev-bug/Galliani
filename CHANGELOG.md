@@ -14,6 +14,10 @@ This project follows spec-driven development. Changelog entries should reference
 
 - The terminal console script is renamed from `galliani` to `galliacli` (spec 018 R27, Decision 0035), so it no longer clashes with the desktop app's `galliani` command. `pyproject.toml` `[project.scripts]` now has `galliacli` only; the PyPI package and the `tui` extra keep the name `galliani`. The README has an "Interactive terminal" section with the install options and the Windows PATH note (spec 018 R26), and the release checklist has a `galliacli --version` smoke step.
 
+### Fixed
+
+- The desktop app and `galliacli` can share memory safely on one machine (spec 010 Amendment A, Decision 0040). Before, each process wrote its own stale copy of `memory.json`, so records the other one saved could silently disappear and deleted ones came back. Every save and delete now locks a sidecar `memory.json.lock` (standard library only), re-reads the file, applies only its own change by record id, and `fsync`s the temp file before the atomic replace. Each app sees the other's notes without a restart. A lock wait over 5 s or an unreadable file is reported as memory being unavailable, with a retryable error that never quotes memory content, and an unreadable file is never overwritten. Network drives and cloud-synced folders are not supported for concurrent use.
+
 ## 0.2.0 - 2026-10-16
 
 This release hardens what the agent can touch on your computer and what the local server accepts, and it explains clearly what happens when Microsoft Edge WebView2 is missing or broken. `Galliani.exe` is still not code-signed (a certificate is planned), so Windows SmartScreen shows an "unknown publisher" warning on first launch.

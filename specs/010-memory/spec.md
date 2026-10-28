@@ -266,12 +266,12 @@ Tests go in `tests/core/test_memory_concurrency.py`. Use `multiprocessing` with 
 
 Owner: core-engineer, after the user approves (Q1). Review: qa-security.
 
-- [ ] A1. Add a small stdlib cross-process lock helper (for example `galliani/file_lock.py`): a context manager on a path, `msvcrt.locking` on Windows, `fcntl.flock` elsewhere, a non-blocking retry loop up to a deadline, raising a typed timeout. It must import only the standard library and contain nothing about memory or providers (R9, R10).
-- [ ] A2. Rework `JsonMemoryStore` in `galliani/memory.py`: load, apply and persist under the lock per call (R7, R8). Fresh-read dedupe and delete-by-id. Never overwrite an unreadable file (R12). Add `fsync` and replace retries (R11), stale temp cleanup (R14) and reload on change (R13). Keep `InMemoryMemoryStore` unchanged for in-process use.
-- [ ] A3. Confirm that the `remember` tool and the desktop and TUI memory views surface `MemoryUnavailable` as a structured, retryable failure (R15). Change code only if a test shows they do not.
-- [ ] A4. Write `tests/core/test_memory_concurrency.py` per "Tests (Amendment A)". First commit the race test failing on today's code, then make it pass.
+- [x] A1. Add a small stdlib cross-process lock helper (for example `galliani/file_lock.py`): a context manager on a path, `msvcrt.locking` on Windows, `fcntl.flock` elsewhere, a non-blocking retry loop up to a deadline, raising a typed timeout. It must import only the standard library and contain nothing about memory or providers (R9, R10).
+- [x] A2. Rework `JsonMemoryStore` in `galliani/memory.py`: load, apply and persist under the lock per call (R7, R8). Fresh-read dedupe and delete-by-id. Never overwrite an unreadable file (R12). Add `fsync` and replace retries (R11), stale temp cleanup (R14) and reload on change (R13). Keep `InMemoryMemoryStore` unchanged for in-process use.
+- [x] A3. Confirm that the `remember` tool and the desktop and TUI memory views surface `MemoryUnavailable` as a structured, retryable failure (R15). Change code only if a test shows they do not.
+- [x] A4. Write `tests/core/test_memory_concurrency.py` per "Tests (Amendment A)". First commit the race test failing on today's code, then make it pass.
 - [ ] A5. Docs (R17): the one-paragraph note in the user-facing memory or CLI docs (main agent routes it to the doc owner), and a CHANGELOG line (release-engineer).
-- [ ] A6. Verification: `pytest tests/core/test_memory.py tests/core/test_memory_concurrency.py`, then the full `pytest` run and `python -m galliani.evaluation`.
+- [x] A6. Verification: `pytest tests/core/test_memory.py tests/core/test_memory_concurrency.py`, then the full `pytest` run and `python -m galliani.evaluation`.
 
 ### Open Questions (Amendment A)
 
