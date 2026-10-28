@@ -104,7 +104,7 @@ The supervisor, permissions, Task State, Memory and observability stay unchanged
     - `pip install --user` on Windows: scripts go to `%APPDATA%\Python\Python3XY\Scripts`, which is not on PATH by default. The docs give the PowerShell command to add it, and say that `python -m galliani` always works.
 
     Non-editable installs still lack package data until 016 Phase 5 (017 Open Item 4), and the docs say so. No installer edits PATH by itself.
-27. **Command name (user decision, 2026-10-19).** The terminal console script is `galliacli` (`[project.scripts] galliacli = "galliani.tui.entry:main"`). `galliani` belongs to the desktop app: the winget alias (016 R15) and the future 016 R24 desktop script, neither of which is renamed. `argparse` `prog`, usage, help, the R5 fallback text (one-shot form `galliacli "<objective>"`) and all docs name `galliacli`. The PyPI package and extra keep the name `galliani` (`pip install "galliani[tui]"`). No extra alias in v1.
+27. **Command name (user decision, 2026-10-19).** The terminal console script is `galliacli` (`[project.scripts] galliacli = "galliani.tui.entry:main"`). `galliani` belongs to the desktop app: the winget alias (016 R15) and the future 016 R24 desktop script, neither of which is renamed. `argparse` `prog`, usage, help, the R5 fallback text (one-shot form `galliacli "<objective>"`) and all docs name `galliacli`. The distribution and the extra keep the name `galliani` / `tui`. The R5 missing-Textual hint no longer names PyPI (amended 2026-10-28, Decision 0039, spec 016 Open Question 8(a), approved by the user; see 017 R5): it tells users to install the `tui` extra from the clone or the release wheel (`pipx install ".[tui]"`). No extra alias in v1.
 
 ## Behavior
 
