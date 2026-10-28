@@ -290,7 +290,7 @@ def test_a_failed_replace_keeps_the_previous_file_and_stale_temps_are_cleaned(pa
     assert [r.content for r in JsonMemoryStore(path).list()] == ["previous record"]
     assert temp_files(path.parent) == []
 
-    old, fresh = path.parent / ".memory-old.json", path.parent / ".memory-fresh.json"
+    old, fresh = path.parent / ".memory-abcd1234.json", path.parent / ".memory-wxyz5678.json"
     old.write_text("{}", encoding="utf-8")
     fresh.write_text("{}", encoding="utf-8")
     hours_ago = time.time() - 2 * 3600
@@ -298,6 +298,26 @@ def test_a_failed_replace_keeps_the_previous_file_and_stale_temps_are_cleaned(pa
     store.write(req("next record"))
     assert temp_files(path.parent) == [fresh.name]  # only temps older than an hour are removed
     assert sorted(file_contents(path)) == ["next record", "previous record"]
+
+
+def test_stale_temp_cleanup_only_removes_the_stores_own_temp_names(tmp_path):
+    folder = tmp_path / "custom"
+    folder.mkdir()
+    path = folder / "memory.json"
+    store = JsonMemoryStore(path)
+    store.write(req("first"))
+    own = folder / ".memory-abcd1234.json"
+    others = [folder / n for n in (".memory-notes.json", ".memory-abcd1234.json.bak", "notes.json",
+                                   ".memory-abcd12345.json", ".memory-abc.json")]
+    for f in [own, *others]:
+        f.write_text("{}", encoding="utf-8")
+    hours_ago = time.time() - 2 * 3600
+    for f in [own, *others, path, store.lock_path]:
+        os.utime(f, (hours_ago, hours_ago))
+    store.write(req("second"))
+    assert not own.exists()
+    assert all(f.exists() for f in others) and store.lock_path.exists()
+    assert sorted(file_contents(path)) == ["first", "second"]
 
 
 # ---------------------------------------------------------------------- Transient PermissionError on replace (R11)

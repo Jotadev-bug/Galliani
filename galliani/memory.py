@@ -218,6 +218,8 @@ REPLACE_ATTEMPTS = 5
 REPLACE_BACKOFF_SECONDS = 0.05
 STALE_TEMP_SECONDS = 3600
 TEMP_PREFIX, TEMP_SUFFIX = ".memory-", ".json"
+# Exactly what `tempfile.mkstemp` makes for this prefix and suffix: 8 random characters. Nothing else is ours.
+TEMP_NAME = re.compile(re.escape(TEMP_PREFIX) + r"[a-z0-9_]{8}" + re.escape(TEMP_SUFFIX))
 
 Identity = tuple[int, int] | None  # (st_mtime_ns, st_size), or None when the file does not exist
 
@@ -356,7 +358,7 @@ class JsonMemoryStore(InMemoryMemoryStore):
         cutoff = time.time() - STALE_TEMP_SECONDS
         for leftover in self.path.parent.glob(f"{TEMP_PREFIX}*{TEMP_SUFFIX}"):
             try:
-                if leftover.stat().st_mtime < cutoff:
+                if TEMP_NAME.fullmatch(leftover.name) and leftover.stat().st_mtime < cutoff:
                     leftover.unlink()
             except OSError:
                 pass

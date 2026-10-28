@@ -157,7 +157,7 @@ Option (c) is rejected because it loses data silently, which goes against spec 0
 14. Crash safety:
     - A process that dies while holding the lock releases it, because the OS releases advisory locks when their handle closes.
     - A crash before `os.replace` leaves the previous `memory.json` intact.
-    - Leftover `.memory-*.json` temp files older than 1 hour are removed while the lock is held, during the next change.
+    - Leftover temp files older than 1 hour are removed while the lock is held, during the next change. Only names the store itself creates are removed: `.memory-` plus 8 random characters (`a-z`, `0-9`, `_`) plus `.json`. Other files in the folder (a custom `GALLIANI_MEMORY_PATH` folder may hold anything), `memory.json` and the lock are never touched.
 15. The secret refusal, `MemoryPolicy`, scopes, sensitivity redaction and the `MemoryRecord`, `MemoryQuery`, `MemoryResult` and `MemoryWriteRequest` contracts are unchanged. Lock and retry failures surface as structured `MemoryUnavailable` errors, and the `remember` tool reports them as a failed, retryable tool result. Their messages never include memory content.
 16. Memory stays separate from Task State (R1). The lock file, temp files and refresh state are storage details of `JsonMemoryStore`. They are not Memory records and are not logged as task events. No task observation is written to Memory because of this amendment.
 17. Docs state the behavior in one short paragraph: memory can be shared safely by the desktop app and `galliacli` on one machine. Memory files on network drives or folders synced by cloud tools (OneDrive and similar) are not supported for concurrent use, because advisory locks are not reliable there.
