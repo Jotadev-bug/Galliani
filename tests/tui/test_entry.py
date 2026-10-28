@@ -67,7 +67,8 @@ def test_fallback_when_textual_is_missing(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(session_mod, "Session", lambda *a, **k: built.append(1))
     assert entry.main(["--workspace", str(tmp_path)]) == 2
     err = capsys.readouterr().err
-    assert "Textual" in err and 'pip install "galliani[tui]"' in err and 'galliacli "<objective>"' in err
+    assert "Textual" in err and 'pipx install ".[tui]"' in err and 'galliacli "<objective>"' in err
+    assert "PyPI" not in err and 'galliani[tui]' not in err
     assert sys.modules["textual"] is None and "galliani.tui.app" not in sys.modules and built == []
 
 
@@ -89,7 +90,7 @@ def test_fallback_ignores_galliani_require_tui(monkeypatch, tmp_path, capsys):
     monkeypatch.setitem(sys.modules, "textual", None)
     monkeypatch.setenv("GALLIANI_REQUIRE_TUI", "1")
     assert entry.main(["--workspace", str(tmp_path)]) == 2
-    assert "pip install" in capsys.readouterr().err
+    assert 'pipx install ".[tui]"' in capsys.readouterr().err
 
 
 def test_real_stdout_pipe_falls_back_without_importing_textual(tmp_path):
