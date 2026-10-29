@@ -31,8 +31,19 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Claude Code local settings
+# Claude Code local state (agent worktrees, personal plugin settings)
 .claude/settings.local.json
+.claude/settings.json
+.claude/worktrees/
+
+# Local assistant memory (claude-memory / remember plugin)
+.remember/
+
+# Build artifacts and renders
+*.whl
+*.tar.gz
+video/out/
+node_modules/
 
 # Galliani run outputs (event logs from --events)
 *.jsonl
